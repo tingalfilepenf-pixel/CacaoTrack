@@ -4,18 +4,22 @@
 - The Laravel app root is this directory: `C:\laragon\www\Capstone\Capstone`. When your working
   directory is `C:\laragon\www\Capstone`, run every command from the `Capstone\` subfolder.
 - A stale duplicate checkout exists at `Capstone\capstone\`. **Ignore it; never edit it.**
-- No git repository is initialized here. Do not run git/commit workflows.
+- A git repo now exists (Session BM: `git init` + initial snapshot commit `62a521a`). Commit
+  checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
+  gitignored.
 
 ## REFACTOR IN PROGRESS — READ THIS FIRST
 - The source-of-truth PRD and ERD were **replaced with the revised 15-entity model**. Canonical
   `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md` now contain the revised content; identical
   copies are retained for provenance at `docs/CacaoTrack_PRD_REVISED.md` /
   `docs/CacaoTrack_ERD_REVISED.md`. The **canonical files (no `_REVISED` suffix) are authoritative.**
-- **P1 (schema) is DONE. The app code is NOT refactored yet.** `db_capstone` now uses the revised
-  schema (`scion_varieties` + `stock_out_details` added; the six removed tables/columns dropped). The
-  current models/controllers/tests/views still describe the OLD model, so the app is temporarily
-  inconsistent until **P2–P6** land.
-- Until P2–P6 land: **do not** reintroduce removed tables/columns or add new features without checking
+- **P1 (schema) and P2 (models) are DONE. The controllers/routes/views/seeders/tests are NOT
+  refactored yet.** `db_capstone` uses the revised schema (`scion_varieties` + `stock_out_details`
+  added; the six removed tables/columns dropped) and `app/Models` now matches it (Session BM
+  implemented the models). The controllers/routes/views/seeders/tests and
+  `app/Support/AnalyticsMetrics.php` still describe the OLD model, so the app is temporarily broken
+  and the test suite fails until **P3–P6** land.
+- Until P3–P6 land: **do not** reintroduce removed tables/columns or add new features without checking
   the plan. New schema/business-logic work must follow the revised ERD.
 - Phase 0 (safety/docs) is DONE: `db_capstone` backed up, PRD/ERD replaced, this file updated.
 - Phase 1 (migrations) is DONE — eight reversible migrations `2026_09_25_000001..000008` applied
@@ -23,6 +27,8 @@
   `stock_ins.viable`/`origin`; migrate Stock Out to header + details; convert `inventories` to
   monthly snapshots; drop the six removed tables/columns). Validated up→down→up on a scratch copy.
   Pre-P1 backup: `...\Temp\opencode\db_capstone_pre_p1_<timestamp>.sql`.
+- Phase 2 (models) is DONE — see "Locked refactor plan" below and `session.handoff.md` §2 Session BM.
+  `app/Models` now matches the revised 15-entity schema. No migration was run.
 - **Do not invent, rename, or add tables, columns, FKs, or relationships** beyond the revised ERD.
 
 ## Source-of-truth docs (read before schema or business-logic changes)
@@ -79,15 +85,23 @@ snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` 
 - **Account:** Activity History, User Management, Profile, Logout
 - Removed nav items: Batch Monitoring, Variety, Stock Reversal, Scion, Pot Type.
 
-## Locked refactor plan (Session BH — P0 done, P1–P6 pending)
+## Locked refactor plan (Session BH — P0–P2 done, P3–P6 pending)
 - **P0 Safety/docs (DONE):** back up `db_capstone`; replace PRD/ERD with the revised content;
   update `AGENTS.md`. Backup: `...\Temp\opencode\db_capstone_pre_revised_refactor_20260925.sql`.
 - **P1 Migrations (DONE):** created `scion_varieties` + `stock_out_details`; altered `batches`,
   `stock_ins`, `stock_outs`, `inventories`; migrated/repointed data; dropped the six removed
   tables/columns. Eight migrations `2026_09_25_000001..000008`; validated reversible.
-- **P2 Models:** new `ScionVariety`, `StockOutDetail`; rework `Batch`/`StockIn`/`StockOut`/
-  `Inventory`/`MortalityRecord`/`ReplantingRecord`; delete `BatchMonitoring`, `Variety`, `PotType`,
-  `Scion`, `MortalityAdjustment`, `StockReversal`, `ScionMetrics`.
+- **P2 Models (DONE — Session BM):** added `ScionVariety`, `StockOutDetail`; reworked
+  `Batch`/`StockIn`/`StockOut`/`Inventory`/`MortalityRecord` (replanting unchanged); deleted
+  `BatchMonitoring`, `Variety`, `PotType`, `Scion`, `MortalityAdjustment`, `StockReversal`,
+  `ScionMetrics`; fixed `Analytic::rules()` + `ActivityLog::TYPES`. Model-layer rules implemented:
+  mortality **never** mutates `viable_count` (cap = `max(0, viable_count − effectiveMortalityQuantity())`);
+  `Inventory::statusForAvailable()`/`statusForBatch()` + a `creating` hook **freeze** the snapshot
+  status; `StockOutDetail` derives `scion_variety_id` from the batch in a `saving` hook; `StockIn`
+  enforces `viable <= quantity` via `rules()` + a `saving` guard. **Flag:** the DB has **no** unique
+  index enforcing one Inventory snapshot per batch per calendar month (`2026_09_25_000007` added only
+  `index('batch_id')`) — P3's "Record Monthly Inventory" must enforce it at the app layer, and a
+  future migration is needed for DB enforcement.
 - **P3 Controllers/routes:** delete BatchMonitoring/Variety/PotType/StockReversal + `Mortality@adjust`;
   rename `ScionController` → `ScionVarietyController`; multi-line `StockOutController`; rework
   StockIn/Inventory/Batch; move route `scions` → `/operational/scion-varieties`.
@@ -133,12 +147,14 @@ snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` 
 - (c) `stock_ins.origin` is **NOT NULL**; the 8 legacy rows were backfilled to `''` and the app
   enforces a non-empty origin for new records in P3. No other P1 decision remains.
 
-## Current code state (OLD model — P2–P6 will migrate it to the P1 schema)
-The running app currently implements the previous 19-table model with these modules: Daily Checklist,
-Batch, Mortality Tracking (+ adjustments), Replanting, Inventory (per-batch balance), Stock In,
-Stock Out, Stock Reversal, Supplier/Client/Variety/Scion/Pot Type/Batch/Users management, Analytics,
-Activity History, Profile and Dashboard. This is **transitional**; the mapping below shows what P1–P6
-will do. (For full historical detail see `session.handoff.md` §2.)
+## Current code state (models = NEW (P2 done); controllers/views/tests = OLD — P3–P6 migrate them)
+`app/Models` now matches the P1 schema (P2 done, Session BM). The **controller/view layer still
+implements the previous 19-table model**: Daily Checklist, Batch, Mortality Tracking (+ adjustments),
+Replanting, Inventory (per-batch balance), Stock In, Stock Out, Stock Reversal, Supplier/Client/
+Variety/Scion/Pot Type/Batch/Users management, Analytics, Activity History, Profile and Dashboard.
+This is **transitional**: the app errors and the test suite fails until P3–P6 land. The mapping below
+records what P1–P2 changed and what P3–P6 still must change. (For full historical detail see
+`session.handoff.md` §2.)
 
 | Revised entity | Current state | Action |
 |---|---|---|
