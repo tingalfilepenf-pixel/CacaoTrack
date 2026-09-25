@@ -13,13 +13,13 @@
   `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md` now contain the revised content; identical
   copies are retained for provenance at `docs/CacaoTrack_PRD_REVISED.md` /
   `docs/CacaoTrack_ERD_REVISED.md`. The **canonical files (no `_REVISED` suffix) are authoritative.**
-- **P1 (schema) and P2 (models) are DONE. The controllers/routes/views/seeders/tests are NOT
-  refactored yet.** `db_capstone` uses the revised schema (`scion_varieties` + `stock_out_details`
-  added; the six removed tables/columns dropped) and `app/Models` now matches it (Session BM
-  implemented the models). The controllers/routes/views/seeders/tests and
-  `app/Support/AnalyticsMetrics.php` still describe the OLD model, so the app is temporarily broken
-  and the test suite fails until **P3–P6** land.
-- Until P3–P6 land: **do not** reintroduce removed tables/columns or add new features without checking
+- **P1 (schema), P2 (models) and P3 (controllers/routes) are DONE. The views/sidebar/seeders/tests
+  are NOT refactored yet.** `db_capstone` uses the revised schema, `app/Models` matches it (Session
+  BM), and `app/Http/Controllers` + `routes/web.php` now match it too (Session BN, checkpoint
+  `3d3f9f9`). The **views/sidebar**, `app/Support/AnalyticsMetrics.php`, the PDF/CSV classes and the
+  seeders/tests still describe the OLD model, so the app is temporarily broken (the sidebar references
+  deleted routes) and the test suite fails until **P4–P6** land.
+- Until P4–P6 land: **do not** reintroduce removed tables/columns or add new features without checking
   the plan. New schema/business-logic work must follow the revised ERD.
 - Phase 0 (safety/docs) is DONE: `db_capstone` backed up, PRD/ERD replaced, this file updated.
 - Phase 1 (migrations) is DONE — eight reversible migrations `2026_09_25_000001..000008` applied
@@ -29,6 +29,9 @@
   Pre-P1 backup: `...\Temp\opencode\db_capstone_pre_p1_<timestamp>.sql`.
 - Phase 2 (models) is DONE — see "Locked refactor plan" below and `session.handoff.md` §2 Session BM.
   `app/Models` now matches the revised 15-entity schema. No migration was run.
+- Phase 3 (controllers & routes) is DONE — Session BN, checkpoint `3d3f9f9`. `app/Http/Controllers`
+  and `routes/web.php` now match the revised model; see `session.handoff.md` §2 Session BN for the
+  route/permission map and the P3 flags. No migration, model, view, seeder or test file was touched.
 - **Do not invent, rename, or add tables, columns, FKs, or relationships** beyond the revised ERD.
 
 ## Source-of-truth docs (read before schema or business-logic changes)
@@ -85,7 +88,7 @@ snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` 
 - **Account:** Activity History, User Management, Profile, Logout
 - Removed nav items: Batch Monitoring, Variety, Stock Reversal, Scion, Pot Type.
 
-## Locked refactor plan (Session BH — P0–P2 done, P3–P6 pending)
+## Locked refactor plan (Session BH — P0–P3 done, P4–P6 pending)
 - **P0 Safety/docs (DONE):** back up `db_capstone`; replace PRD/ERD with the revised content;
   update `AGENTS.md`. Backup: `...\Temp\opencode\db_capstone_pre_revised_refactor_20260925.sql`.
 - **P1 Migrations (DONE):** created `scion_varieties` + `stock_out_details`; altered `batches`,
@@ -100,13 +103,22 @@ snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` 
   status; `StockOutDetail` derives `scion_variety_id` from the batch in a `saving` hook; `StockIn`
   enforces `viable <= quantity` via `rules()` + a `saving` guard. **Flag:** the DB has **no** unique
   index enforcing one Inventory snapshot per batch per calendar month (`2026_09_25_000007` added only
-  `index('batch_id')`) — P3's "Record Monthly Inventory" must enforce it at the app layer, and a
-  future migration is needed for DB enforcement.
-- **P3 Controllers/routes:** delete BatchMonitoring/Variety/PotType/StockReversal + `Mortality@adjust`;
-  rename `ScionController` → `ScionVarietyController`; multi-line `StockOutController`; rework
-  StockIn/Inventory/Batch; move route `scions` → `/operational/scion-varieties`.
-- **P4 Views/sidebar:** Operational = Checklist/Mortality/Replanting/Batches/Scion Variety;
-  Inventory = Stock In/Stock Out/Inventory; Management = Supplier/Client; delete removed pages.
+  `index('batch_id')`) — P3's "Record Monthly Inventory" (`InventoryController@store`) enforces it at
+  the app layer; a future migration is still needed for DB enforcement.
+- **P3 Controllers/routes (DONE — Session BN, checkpoint `3d3f9f9`):** deleted
+  `BatchMonitoringController`/`VarietyController`/`PotTypeController`/`StockReversalController`/
+  `ScionController` + `Mortality@adjust`; added `ScionVarietyController`
+  (`/operational/scion-varieties`, `manage_inventory`); multi-line `StockOutController` (header +
+  `details[]`, per-line + per-batch aggregate checks vs `available_count`, scion variety derived
+  server-side, `amount`/`total_amount` computed); reworked StockIn/Inventory/Batch/Mortality/
+  Replanting; Batches moved to `/operational/batches` (`record_operations`); added Form Requests for
+  every transactional store/update + `App\Support\DuplicateSubmissionGuard`. **Flags:** inventory
+  snapshot uniqueness is app-layer only (no DB unique index); snapshots write no Activity_Log row (no
+  `inventory_recorded` type; model edit out of scope); snapshot permission = `manage_inventory`.
+- **P4 Views/sidebar (NEXT):** Operational = Checklist/Mortality/Replanting/Batches/Scion Variety;
+  Inventory = Stock In/Stock Out/Inventory; Management = Supplier/Client; delete removed pages;
+  repoint the sidebar/views to the P3 renamed routes and create the
+  `resources/views/operational/scion-varieties/index.blade.php` view.
 - **P5 Analytics/reports:** `AnalyticsMetrics` drop adjustments/scion-pool/reversal references;
   Gap = `viable_count − available_count`; update FPDF/CSV classes; remove `ScionMetrics` usage.
 - **P6 Tests/docs/verify:** rewrite affected tests; run MySQL suite + Pint + `view:cache` +
@@ -141,20 +153,21 @@ snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` 
 
 ## OPEN DECISIONS — RESOLVED (before P1)
 - (a) Monthly `inventories` rows are written by an explicit **"Record Monthly Inventory"** action
-  (stored snapshots), **not** auto-derived at query time. P3 builds the action.
+  (stored snapshots), **not** auto-derived at query time. Built in P3 (`InventoryController@store`).
 - (b) `stock_out_details.unit` is a **fixed list**: `seedlings`, `pieces`, `bags` (centralized
-  constant in P2/P3). Legacy migrated Stock Out lines default to `seedlings`.
-- (c) `stock_ins.origin` is **NOT NULL**; the 8 legacy rows were backfilled to `''` and the app
-  enforces a non-empty origin for new records in P3. No other P1 decision remains.
+  constant `StockOutDetail::UNITS` in P2; validated in P3). Legacy migrated lines default to
+  `seedlings`.
+- (c) `stock_ins.origin` is **NOT NULL**; the 8 legacy rows were backfilled to `''` and P3 enforces a
+  non-empty origin for new records (`StoreStockInRequest`). No other P1 decision remains.
 
-## Current code state (models = NEW (P2 done); controllers/views/tests = OLD — P3–P6 migrate them)
-`app/Models` now matches the P1 schema (P2 done, Session BM). The **controller/view layer still
-implements the previous 19-table model**: Daily Checklist, Batch, Mortality Tracking (+ adjustments),
-Replanting, Inventory (per-batch balance), Stock In, Stock Out, Stock Reversal, Supplier/Client/
-Variety/Scion/Pot Type/Batch/Users management, Analytics, Activity History, Profile and Dashboard.
-This is **transitional**: the app errors and the test suite fails until P3–P6 land. The mapping below
-records what P1–P2 changed and what P3–P6 still must change. (For full historical detail see
-`session.handoff.md` §2.)
+## Current code state (DB + models + controllers = NEW (P1–P3 done); views/tests = OLD — P4–P6 migrate them)
+`db_capstone` (P1), `app/Models` (P2 — Session BM) and `app/Http/Controllers` + `routes/web.php`
+(P3 — Session BN, checkpoint `3d3f9f9`) all match the revised 15-entity model. The **view layer
+(Blade + sidebar), `App\Support\AnalyticsMetrics`, the PDF/CSV classes and the seeders/tests still
+implement the previous 19-table model** — the sidebar references deleted route names, so the app 500s
+and the test suite fails until P4–P6 land. **Transitional.** The mapping below records the P1–P3
+transition (now complete); P4 repoints views/sidebar, P5 migrates analytics/reports, P6 rewrites
+tests + docs. (For full historical detail see `session.handoff.md` §2.)
 
 | Revised entity | Current state | Action |
 |---|---|---|
