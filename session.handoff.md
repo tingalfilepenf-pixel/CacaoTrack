@@ -1,5 +1,20 @@
 # Session Handoff — CacaoTrack
 
+> ### ▶ Continue here (latest: Session BQ → next session)
+> - **P0–P5 are DONE and committed.** Feature checkpoint `d139286` (P5 analytics/reports), docs
+>   checkpoint `7cf3ca1` (AGENTS.md banner + this file). Working tree clean.
+> - **NEXT = P6 (seeders/tests/docs/verify).** The analytics layer now matches the revised model and
+>   `/` (Dashboard) returns **200**; the **seeders/tests still target the OLD 19-table model**, so the
+>   feature suite fails until P6 rewrites them.
+> - **Open decision #1 (needs your call):** the locked Gap formula
+>   `max(0, viable_count − available_count − total_stock_out_for_batch)` currently resolves to **0**
+>   for every batch, because `available_count` is already decremented by Stock Out. Say the word to
+>   switch it to `viable_count − available_count` (the AGENTS P5 short form) instead.
+> - **Flag #2:** Stock Ledger "Ready to Plant" maps to the batch's live `available_count` — a
+>   best-guess interpretation pending client confirmation.
+> - **Verify quickly:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
+>   (never point tests at `db_capstone`). Full detail: §2 Session BQ, §5, §6.
+
 Paste this file into a new chat to continue. It captures the exact state of the
 project after the latest session (**Session BQ — Phase 5 (Analytics/reports) of the revised-PRD/ERD
 refactor was IMPLEMENTED**): the **analytic/report layer was migrated onto the revised model** —
@@ -3954,6 +3969,15 @@ run** (deferred to P6 — the seeders/tests still target the OLD model).
 `2026_09_25_000009_create_regraft_records_table` created the `regraft_records` table (0 rows — no
 fabricated data). No other schema/data change: the analytics layer is read-only. The DB is now
 **24 tables** (15 revised entities + `regraft_records` + framework).
+
+**Live `db_capstone` re-read in Session BQ (real UI usage — no session fabricated rows):** `users` 5;
+`scion_varieties` **8** (0 archived); `batches` **9** (0 archived); `stock_ins` **8** (quantity
+**2250** / viable **2250**); `stock_outs` **7** with **7** details (released **2130**);
+`mortality_records` **17** (quantity **580**); `replanting_records` **13** (sum **195**);
+**`regraft_records` 0** (new table); `inventories` **9**; `suppliers` 5; `clients` 4; `analytics`
+**12**; `activity_logs` **74**. Batch totals: `available_count` sum **1130**, `viable_count` sum
+**1170**, `total_grafted` sum **1450**. Scion varieties in use include Batangas, Batangas-Scion,
+Criollo, Diaman, Forastero, Trinitario, White Flag, tanom buh1.
 
 **No schema and no data change in Session BO** (Phase 4 was the view/sidebar layer only — the one
 controller edit was a view-path string; no migration was run and `db_capstone` was not modified).
