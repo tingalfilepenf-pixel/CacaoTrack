@@ -13,13 +13,14 @@
   `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md` now contain the revised content; identical
   copies are retained for provenance at `docs/CacaoTrack_PRD_REVISED.md` /
   `docs/CacaoTrack_ERD_REVISED.md`. The **canonical files (no `_REVISED` suffix) are authoritative.**
-- **P1 (schema), P2 (models) and P3 (controllers/routes) are DONE. The views/sidebar/seeders/tests
-  are NOT refactored yet.** `db_capstone` uses the revised schema, `app/Models` matches it (Session
-  BM), and `app/Http/Controllers` + `routes/web.php` now match it too (Session BN, checkpoint
-  `3d3f9f9`). The **views/sidebar**, `app/Support/AnalyticsMetrics.php`, the PDF/CSV classes and the
-  seeders/tests still describe the OLD model, so the app is temporarily broken (the sidebar references
-  deleted routes) and the test suite fails until **P4–P6** land.
-- Until P4–P6 land: **do not** reintroduce removed tables/columns or add new features without checking
+- **P1 (schema), P2 (models), P3 (controllers/routes) and P4 (views/sidebar) are DONE. The
+  analytics/report layer and the seeders/tests are NOT refactored yet.** `db_capstone` uses the
+  revised schema, `app/Models` matches it (Session BM), `app/Http/Controllers` + `routes/web.php`
+  match it (Session BN, checkpoint `3d3f9f9`), and the **views/sidebar match it** (Session BO,
+  checkpoint `0803bdf` — sidebar repointed, dead modules removed). `app/Support/AnalyticsMetrics.php`,
+  the PDF/CSV classes and the seeders/tests still describe the OLD model, so the app is temporarily
+  broken (`/` (Dashboard) still 500s) and the test suite fails until **P5–P6** land.
+- Until P5–P6 land: **do not** reintroduce removed tables/columns or add new features without checking
   the plan. New schema/business-logic work must follow the revised ERD.
 - Phase 0 (safety/docs) is DONE: `db_capstone` backed up, PRD/ERD replaced, this file updated.
 - Phase 1 (migrations) is DONE — eight reversible migrations `2026_09_25_000001..000008` applied
@@ -115,11 +116,13 @@ snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` 
   every transactional store/update + `App\Support\DuplicateSubmissionGuard`. **Flags:** inventory
   snapshot uniqueness is app-layer only (no DB unique index); snapshots write no Activity_Log row (no
   `inventory_recorded` type; model edit out of scope); snapshot permission = `manage_inventory`.
-- **P4 Views/sidebar (NEXT):** Operational = Checklist/Mortality/Replanting/Batches/Scion Variety;
-  Inventory = Stock In/Stock Out/Inventory; Management = Supplier/Client; delete removed pages;
-  repoint the sidebar/views to the P3 renamed routes and create the
-  `resources/views/operational/scion-varieties/index.blade.php` view.
-- **P5 Analytics/reports:** `AnalyticsMetrics` drop adjustments/scion-pool/reversal references;
+- **P4 Views/sidebar (DONE — Session BO, checkpoint `0803bdf`):** sidebar repointed to the P3 routes
+  and the dead modules removed; `resources/views/operational/scion-varieties/index.blade.php` added;
+  Batches moved to `operational/batches/`; Stock In / Stock Out / Inventory / Mortality reworked;
+  view folders for the removed modules deleted; `ActivityController@index` (`batch.scionVariety`) and
+  `UserController::hasOperationalRecords()` follow-up fixes applied. Remaining flag: `/` (Dashboard)
+  500s (`AnalyticsMetrics` OLD — P5).
+- **P5 Analytics/reports (NEXT):** `AnalyticsMetrics` drop adjustments/scion-pool/reversal references;
   Gap = `viable_count − available_count`; update FPDF/CSV classes; remove `ScionMetrics` usage.
 - **P6 Tests/docs/verify:** rewrite affected tests; run MySQL suite + Pint + `view:cache` +
   `migrate:status` + live spot-checks; update handoff and this file.
@@ -160,14 +163,14 @@ snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` 
 - (c) `stock_ins.origin` is **NOT NULL**; the 8 legacy rows were backfilled to `''` and P3 enforces a
   non-empty origin for new records (`StoreStockInRequest`). No other P1 decision remains.
 
-## Current code state (DB + models + controllers = NEW (P1–P3 done); views/tests = OLD — P4–P6 migrate them)
-`db_capstone` (P1), `app/Models` (P2 — Session BM) and `app/Http/Controllers` + `routes/web.php`
-(P3 — Session BN, checkpoint `3d3f9f9`) all match the revised 15-entity model. The **view layer
-(Blade + sidebar), `App\Support\AnalyticsMetrics`, the PDF/CSV classes and the seeders/tests still
-implement the previous 19-table model** — the sidebar references deleted route names, so the app 500s
-and the test suite fails until P4–P6 land. **Transitional.** The mapping below records the P1–P3
-transition (now complete); P4 repoints views/sidebar, P5 migrates analytics/reports, P6 rewrites
-tests + docs. (For full historical detail see `session.handoff.md` §2.)
+## Current code state (DB + models + controllers + views = NEW (P1–P4 done); analytics/seeders/tests = OLD — P5–P6 migrate them)
+`db_capstone` (P1), `app/Models` (P2 — Session BM), `app/Http/Controllers` + `routes/web.php`
+(P3 — Session BN, checkpoint `3d3f9f9`) and the **view layer (Blade + sidebar)** (P4 — Session BO,
+checkpoint `0803bdf`) all match the revised 15-entity model. **`App\Support\AnalyticsMetrics`, the
+PDF/CSV classes and the seeders/tests still implement the previous 19-table model** — `/` (Dashboard)
+500s and the test suite fails until P5–P6 land. **Transitional.** The mapping below records the P1–P3
+schema transition (now complete); P5 migrates analytics/reports, P6 rewrites tests + docs. (For full
+historical detail see `session.handoff.md` §2.)
 
 | Revised entity | Current state | Action |
 |---|---|---|
