@@ -1,22 +1,21 @@
 # Session Handoff — CacaoTrack
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after the latest session (**Session BO — Phase 4 (Views & sidebar) of the revised-PRD/ERD
-refactor was IMPLEMENTED**): the **sidebar was repointed to the real P3 route names** and every
-dead entry (Batch Monitoring, Variety, Scion, Pot Type, Stock Reversal) was removed;
-**`resources/views/operational/scion-varieties/index.blade.php` was added** (CRUD); and the
-**Batches, Stock In, Stock Out, Inventory and Mortality views were reworked** onto the revised
-model (plus the Replanting/Activity History `variety` refs). A runtime smoke test of every
-authenticated page in scope returns **200**; `php artisan view:cache` is clean and Pint passes.
-**No migration, model, seeder or test file was touched.** Controller changes: the approved
-one-line `BatchController@index` view path (`inventory.batches.index` →
-`operational.batches.index`), plus the two P4 follow-up fixes in `ActivityController@index`
-(`batch.variety` → `batch.scionVariety`) and `UserController::hasOperationalRecords()` (removed the
-dropped `stock_reversals`/`mortality_adjustments` checks). See the Session BO entry in §2/§5/§6. The
-refactor is now **mid-P4–P6**: the DB (P1), models (P2), controllers/routes (P3) **and
-views/sidebar (P4)** match the revised 15-entity PRD/ERD, but **`AnalyticsMetrics`/PDF/CSV (P5) and
-the seeders/tests (P6)** still target the OLD model, so `/` (Dashboard) still 500s and the feature
-suite still fails until P5–P6 land. Before that, Session BN implemented Phase 3
+project after the latest session (**Session BQ — Phase 5 (Analytics/reports) of the revised-PRD/ERD
+refactor was IMPLEMENTED**): the **analytic/report layer was migrated onto the revised model** —
+`App\Support\AnalyticsMetrics` was rewritten (no `Variety`/`adjustments`/`current_quantity`/
+`inventory` references), the **Dashboard `/` returns 200**, and the **Stock Ledger is now a monthly
+grid** with dynamic per-Scion-Variety columns in both the Blade view and the FPDF. One **approved
+schema exception** landed: migration `2026_09_25_000009` created `regraft_records` +
+`App\Models\RegraftRecord` + `Batch::regraftRecords()` (Part B). All seven analytics pages and all
+seven PDF/CSV exports return **200**; `php artisan view:cache` is clean and Pint passes. **The
+seeders/tests were NOT touched (P6).** P5 is committed as its own checkpoint (`d139286`, "feat(analytics):
+implement P5 revised-model analytics, dashboard and stock ledger"). See the Session BQ entry in
+§2/§5/§6. The refactor is now **P0–P5 DONE / P6 next**: the DB (P1), models (P2), controllers/routes
+(P3), views/sidebar (P4) **and analytics/reports (P5)** match the revised model, but the
+**seeders/tests still target the OLD model**, so the feature suite fails until P6 rewrites them.
+Two P5 flags remain: the locked Gap formula currently resolves to 0 (see the Session BQ entry), and
+Stock Ledger "Ready to Plant" is a flagged best-guess mapping. Before that, Session BN implemented Phase 3
 (Controllers & routes) — the removed controllers deleted, `ScionVarietyController` added, Form
 Requests added for every transactional store/update, and `routes/web.php` rewritten (Batches moved
 to `/operational/batches`; checkpoint `3d3f9f9`, 66 routes; **no migration/model/view/seeder/test
@@ -428,16 +427,25 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ NEXT: revised-PRD/ERD refactor — P0/P1/P2/P3/P4 DONE; implement P5 (Analytics/reports) next.**
-  `db_capstone` has the revised **15-entity** schema (P1: 23 tables incl. framework; eight reversible
-  migrations `2026_09_25_000001..000008`), `app/Models` matches it (**P2 — Session BM**),
+- **▶ NEXT: revised-PRD/ERD refactor — P0/P1/P2/P3/P4/P5 DONE; implement P6 (Tests/docs/verify) next.**
+  `db_capstone` has the revised schema (P1: eight reversible migrations
+  `2026_09_25_000001..000008`; **P5 added the one approved exception `2026_09_25_000009`
+  `regraft_records`** → 24 tables incl. framework), `app/Models` matches it (**P2 — Session BM**),
   `app/Http/Controllers` + `routes/web.php` match it (**P3 — Session BN, checkpoint `3d3f9f9`**;
-  66 routes), and the **views/sidebar match it** (**P4 — Session BO**; sidebar repointed, dead
-  modules removed, scion-varieties view added, Batches/Stock In/Stock Out/Inventory/Mortality
-  reworked; runtime smoke test 200s). **`AnalyticsMetrics`/PDF/CSV and the seeders/tests still target
-  the OLD model** — `/` (Dashboard) still 500s and the feature suite fails until P5–P6 land
-  (expected; the `/activity` and user delete-guard flags were fixed in Session BO). Pre-P1 backup:
-  `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`.
+  66 routes), the **views/sidebar match it** (**P4 — Session BO, committed `0803bdf`**) and the
+  **analytics/report layer matches it** (**P5 — Session BQ, checkpoint `d139286`**; `AnalyticsMetrics`
+  rewritten, Dashboard `/` returns **200**, Stock Ledger is a monthly grid, PDF/CSV rebuilt). **The
+  seeders/tests still target the OLD model**, so the feature suite fails until **P6** rewrites them.
+  Pre-P1 backup: `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`.
+- **P5 (DONE — Session BQ, checkpoint `d139286`; see the Session BQ entry in §2/§5/§6):** fixed the two
+  narrow `AnalyticsMetrics` bugs (`totalActiveInventory` → `Batch::totalAvailableQuantity()`; false
+  PRD §12.2 citation removed) and removed every other stale `Variety`/`adjustments`/
+  `current_quantity`/`inventory` reference; added the **approved `regraft_records`** migration +
+  `RegraftRecord` + `Batch::regraftRecords()`; rebuilt the **Stock Ledger as a monthly grid** (dynamic
+  per-Scion-Variety columns, view + FPDF); rebuilt remaining pages and PDF/CSV exports; Gap uses the
+  locked formula. **Two flags:** the locked Gap formula currently resolves to **0** (available_count
+  already nets Stock Out), and "Ready to Plant" is a flagged best-guess mapping. **No seeders/tests
+  touched (P6).**
 - **P4 (DONE — Session BO; see the Session BO entry in §2/§5/§6):** repointed
   `resources/views/layouts/sidebar.blade.php` to the real P3 routes and deleted the Batch Monitoring /
   Variety / Scion / Pot Type / Stock Reversal entries; added
@@ -593,7 +601,7 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
   "could not find driver". Tests were run against a dedicated MySQL DB instead (see §5).
 - `.npmrc` has `ignore-scripts=true`.
 
-## 2. Session log (oldest → newest; detailed entries end with Session BH, followed by the refactor entries BI (P0), BJ (P1), BK (P2 plan), BL (P3 plan), BM (P2 implemented), BN (P3 implemented) and BO (P4 views/sidebar implemented))
+## 2. Session log (oldest → newest; detailed entries end with Session BH, followed by the refactor entries BI (P0), BJ (P1), BK (P2 plan), BL (P3 plan), BM (P2 implemented), BN (P3 implemented), BO (P4 views/sidebar implemented), BP (housekeeping: commit P4 + correct the `AGENTS.md` banner) and BQ (P5 analytics/reports implemented))
 
 ### Session A — Daily Checklist (previous session)
 The Operational → **Daily Checklist** page (`/operational/checklist`) was converted from a static
@@ -3843,10 +3851,115 @@ rules, not P5, so they were fixed before starting P5):**
   detail modal reads `$batch->user` and `$batch->stockOutDetails()->count()` (2 extra queries/row);
   `->with('user')->withCount('stockOutDetails')` would remove them (optional perf, out of scope).
 
+### Session BP — housekeeping: commit P4 + correct the `AGENTS.md` banner (DONE, docs-only)
+
+Bookkeeping only — **no code, migration, model, view, seeder or test file was touched, and no test
+suite was run.** P4 was sitting uncommitted in the working tree with the last commit still
+`6eb41dd` ("docs: record P3 controllers/routes…").
+
+1. **P4 committed as its own checkpoint** — `git add -A` + commit **`0803bdf`**
+   ("feat(views): implement P4 revised-model views and sidebar, plus Activity/UserController
+   follow-up fixes"); **17 files changed, 1112 insertions(+), 2357 deletions(-)** (5 deleted views,
+   the `inventory/batches` → `operational/batches` move, the `inventory/pot-types` →
+   `operational/scion-varieties` rewrite, the sidebar/Stock In/Stock Out/Inventory/Mortality/
+   Replanting/Activity views, the two controller follow-up fixes, the `BatchController@index` view
+   path and the Session BO handoff update). Deliberately **not** squashed into the P3 commit.
+2. **Stale `AGENTS.md` refactor banner corrected** — it still read the pre-P4
+   "P1, P2, P3 are DONE. The views/sidebar/seeders/tests are NOT refactored yet". It now reads
+   **"P1 (schema), P2 (models), P3 (controllers/routes) and P4 (views/sidebar) are DONE. The
+   analytics/report layer and the seeders/tests are NOT refactored yet"** (Dashboard `/` still 500s;
+   `AnalyticsMetrics`/PDF/CSV = P5, seeders/tests = P6), committed as **`5a2a1ae`**
+   ("docs: update AGENTS.md refactor banner for P4 completion (P5 next)"). The same commit also
+   repointed the plan's `P4 (NEXT)` → **P4 DONE / P5 NEXT** and the "Current code state" heading
+   (P1–P4 NEW; analytics/seeders/tests OLD).
+3. **Git identity:** no git identity is configured, so commits used inline
+   `-c user.name="opencode" -c user.email="opencode@localhost"` (as Session BM did) — **no global git
+   config changed**. Final log head: `5a2a1ae` → `0803bdf` → `6eb41dd` → `3d3f9f9` → `e4b7b85` →
+   `1f44412` → `62a521a`.
+
+**No migration was run; `db_capstone` is unchanged.** Next is **P5** (Analytics/reports).
+
+### Session BQ — Phase 5 (Analytics/reports) of the revised-PRD/ERD refactor (IMPLEMENTED, one approved schema exception)
+
+Implemented **P5 (Analytics/reports)** against the canonical revised PRD/ERD and the P2/P3/P4 code.
+Committed as checkpoint **`d139286`** ("feat(analytics): implement P5 revised-model analytics,
+dashboard and stock ledger"). **The seeders and tests were deliberately NOT touched (P6).**
+
+**Part A — `App\Support\AnalyticsMetrics` rewritten onto the current models.** The two narrow fixes
+requested were applied:
+1. `totalActiveInventory()` now calls `Batch::totalAvailableQuantity()` (it previously called the
+   deleted `Inventory::totalActiveQuantity()`, which is why `/` 500'd). Archived batches remain
+   included (deliberate).
+2. The false `(PRD §12.2)` citation above `mortalityRateComponents()` was corrected to
+   **`(PRD §10 Dashboard / §11 Data Consistency)`** (PRD §12 is Activity Traceability).
+All other stale references were removed/rewritten: the `use App\Models\Variety;` import;
+`->with('adjustments')` (mortality adjustments removed); `batch.variety` → `batch.scionVariety`;
+`Variety::query()` → `ScionVariety::query()`; the old `inventoryByVariety()` (joined `inventories` +
+`varieties` on `current_quantity`) → **`inventoryByScionVariety()`** (sums `batches.available_count`);
+`$batch->inventory?->current_quantity` (singular relation, gone) → `available_count` (age profile)
+or `latestInventory`; the removed `stockLedgerQuery()` per-batch query; and the raw/adjustment
+matrix fields (`rawTotal`/`adjustmentTotal`/`rawCells`/`adjustmentCells`) — the matrix is now
+adjustment-free. `survivalVsMortality()` was corrected (`viable_count` is never decremented by
+mortality now): surviving = `max(0, viable − recorded mortality)`, totalViable = `viable`. Filter
+params across the analytics layer were renamed `variety_id` → **`scion_variety_id`**
+(`exists:scion_varieties,scion_variety_id`); `Analytic::rules()` already used the new key, and
+`latestMatrixReport()` accepts the new key with a legacy `variety_id` fallback. Replanting Deficit
+was left unchanged (already correct).
+
+**Part B — approved schema exception (the only migration/model change in P5):**
+migration `2026_09_25_000009_create_regraft_records_table` created `regraft_records` mirroring
+`mortality_records` (`regraft_id` PK, `batch_id` FK, `user_id` FK, `quantity` unsigned, `regraft_date`
+date indexed, nullable `remark`); `App\Models\RegraftRecord` mirrors `MortalityRecord`/
+`ReplantingRecord` (belongsTo Batch/User, `totalForBatch()`); and `Batch::regraftRecords()` was added.
+`inventories.regraft` (the monthly aggregate) is **untouched** — this is an additional, more granular
+record. **No CRUD controller/route/view was added** for it (the Stock Ledger reads it) — flagged as a
+follow-up.
+
+**Part C — Stock Ledger rebuilt as a MONTHLY GRID** (`AnalyticsMetrics::stockLedgerGrid()` +
+`resources/views/analytics/stock-ledger.blade.php` + `App\Support\StockLedgerPdf`), matching the
+client's real manual ledger rather than PRD §9.3's looser list. Grouped by month with dynamic
+per-Scion-Variety columns (queried from `scion_varieties`, not hardcoded) across six sections:
+Seedlings (`stock_ins.quantity` by `date_received`), Grafted (`batches.total_grafted` by
+`grafted_date`), Mortality (`mortality_records.quantity` by `recorded_at`), Re Graft
+(`regraft_records.quantity` by `regraft_date`), Ready to Plant, and Pullout
+(`stock_out_details.quantity` by the parent `stock_outs.release_date`). Each month has a TOTAL row
+and the report has a GRAND TOTAL. On-screen and PDF share the same grid. **FLAG:** "Ready to Plant"
+is mapped to the batch's live `available_count` aligned to its `grafted_date` row — an explicit,
+unconfirmed best-guess interpretation pending the client's actual definition (also noted in the
+view and in `AnalyticsMetrics`).
+
+**Part D — remaining pages/PDF/CSV rebuilt against current models.** Dashboard (`/`), Operational
+Analytics, Root Cause Matrix, Seasonality, Age Profile and Gap Report all query the current model;
+the matrix lost its adjustment UI (single Total Mortality card / summary line); Age Profile counts
+`available_count`; Gap uses the locked formula (below). OperationalAnalyticsPdf / StockLedgerPdf /
+MortalityMatrixPdf / GapReportPdf and all CSV exports were rebuilt (Gap now shows a Pulled Out
+column; Stock Ledger follows the Part C grid). **FLAG:** the locked Gap formula
+`max(0, viable_count − available_count − total_stock_out_for_batch)` currently resolves to **0** for
+every batch, because `available_count` is already decremented by Stock Out on save (so
+`viable − available` ≈ stock-out and the extra subtraction cancels it) — this needs panel
+confirmation before the Gap Report is relied on.
+
+**Verification:** `php -l` clean; `php artisan view:cache` clean; `vendor\bin\pint` passed on all
+changed files; migration applied (`migrate:status` 0 pending). A runtime smoke test
+(auth as Administrator) returned **200** for `/`, `/analytics`, `/analytics/stock-ledger`,
+`/analytics/mortality-matrix`, `/analytics/historical/seasonality`, `/analytics/historical/age-profile`,
+`/analytics/historical/gap-report`, and for all seven exports (`/analytics/export`,
+`/analytics/export/csv`, `/analytics/stock-ledger/export`, `/analytics/mortality-matrix/export`,
+`/mortality-matrix/export/csv`, `/gap-report/export`, `/gap-report/export/csv`). **No test suite was
+run** (deferred to P6 — the seeders/tests still target the OLD model).
+
 ## 3. Current database state (`db_capstone`)
+
+**Schema changed in Session BQ (P5 — the one approved exception):** migration
+`2026_09_25_000009_create_regraft_records_table` created the `regraft_records` table (0 rows — no
+fabricated data). No other schema/data change: the analytics layer is read-only. The DB is now
+**24 tables** (15 revised entities + `regraft_records` + framework).
 
 **No schema and no data change in Session BO** (Phase 4 was the view/sidebar layer only — the one
 controller edit was a view-path string; no migration was run and `db_capstone` was not modified).
+
+**No schema and no data change in Session BP** (housekeeping only — committing P4 and correcting the
+`AGENTS.md` banner; no migration was run, `db_capstone` was not modified, and no live rows were read).
 
 **Schema + data changed in Session BJ (P1 — the revised model is now live in the DB):** eight
 reversible migrations `2026_09_25_000001..000008` applied (pre-P1 backup
@@ -4253,6 +4366,21 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
       `Batch_Monitoring` is retained for history but is never written.
 
 ## 5. Verification status
+- **Session BQ (P5 Analytics/reports implemented): no test suite run** (deferred to P6 — the
+  seeders/tests still target the OLD model). **`php -l` clean**; **`php artisan view:cache` clean**;
+  **`vendor\bin\pint` passed** on all changed files; migration `2026_09_25_000009` applied
+  (`migrate:status` 0 pending). A runtime smoke test (auth as Administrator, request dispatched
+  through the HTTP kernel) returned **200** for `/` (Dashboard — no longer 500s), `/analytics`,
+  `/analytics/stock-ledger`, `/analytics/mortality-matrix`, `/analytics/historical/seasonality`,
+  `/analytics/historical/age-profile`, `/analytics/historical/gap-report` and all seven PDF/CSV
+  exports. The Stock Ledger response contains the monthly grid markers (`September 2026`, `Seedlings`,
+  `Re Graft`, `Ready to Plant`, `Pullout`, `GRAND TOTAL`). **Schema changed:** `regraft_records`
+  created (the one approved P5 migration); `db_capstone` operational rows are unchanged. Flags: the
+  locked Gap formula currently resolves to **0**; "Ready to Plant" is a best-guess mapping.
+- **Session BP (housekeeping): no test suite run** — docs/git only (P4 commit `0803bdf` + the
+  `AGENTS.md` banner commit `5a2a1ae`); **no code, migration, model, view, seeder or test file
+  touched** and **no migration run / `db_capstone` unchanged**. Working tree is clean after the
+  commits.
 - **Session BO (P4 Views/sidebar implemented): no test suite run** (deferred to P6 — the seeders/tests
   are still the OLD model). **`php artisan view:cache` clean** on all views; **`vendor\bin\pint
   --test` passed** on the changed controllers; a runtime smoke test (Administrator, request
@@ -4470,17 +4598,23 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
-- **▶ NEXT — Revised PRD/ERD refactor: P0 + P1 + P2 + P3 + P4 DONE; implement P5 (Analytics/reports) next.**
-  The revised **15-entity** `docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` are canonical, and
+- **▶ NEXT — Revised PRD/ERD refactor: P0 + P1 + P2 + P3 + P4 + P5 DONE; implement P6 (Tests/docs/verify) next.**
+  **Session BP housekeeping:** P4 committed as `0803bdf` and the `AGENTS.md` banner corrected in
+  `5a2a1ae` — no code/DB change, no test suite run. The revised **15-entity** `docs/CacaoTrack_PRD.md`
+  + `docs/CacaoTrack_ERD.md` are canonical, and
   **`db_capstone` has the revised schema** (P1), `app/Models` matches it (P2 — Session BM),
   `app/Http/Controllers` + `routes/web.php` match it (**P3 — Session BN, checkpoint `3d3f9f9`**;
   66 routes), and the **views/sidebar match it** (**P4 — Session BO**; sidebar repointed, the dead
   modules removed, the scion-varieties CRUD view added, and Batches/Stock In/Stock Out/Inventory/
-  Mortality reworked; runtime smoke test 200s). **`AnalyticsMetrics`/PDF/CSV (P5) and the
-  seeders/tests (P6) are still the OLD model** — `/` (Dashboard) still 500s and the feature suite
-  still fails until P5–P6 land (expected). (The `/activity` and user delete-guard flags were fixed
-  in Session BO — see above.) Pre-P1 backup:
-  `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`. **P2 delivered:** added
+  Mortality reworked; runtime smoke test 200s). **P5 (DONE — Session BQ, checkpoint `d139286`) migrated
+  the analytics/report layer**: `AnalyticsMetrics` rewritten onto the current models, Dashboard `/`
+  returns **200**, Stock Ledger is a monthly grid, PDF/CSV rebuilt, plus the one approved
+  `regraft_records` migration/model. **The seeders/tests (P6) are still the OLD model** — the feature
+  suite still fails until P6 rewrites it (expected). (The `/activity` and user delete-guard flags were
+  fixed in Session BO — see above.) Pre-P1 backup:
+  `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`. **P5 flags:** locked Gap formula
+  currently resolves to **0** (available_count already nets Stock Out); "Ready to Plant" is a
+  best-guess mapping. **P2 delivered:** added
   `ScionVariety`/`StockOutDetail`; reworked `Batch`/`StockIn`/`StockOut`/`Inventory`/`MortalityRecord`
   (replanting unchanged); deleted `BatchMonitoring`/`Variety`/`PotType`/`Scion`/`MortalityAdjustment`/
   `StockReversal`/`ScionMetrics`; fixed `Analytic::rules()` + `ActivityLog::TYPES`; **no new table**.
@@ -4502,7 +4636,7 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   model edit out of scope); (3) snapshot permission = `manage_inventory`; (4) view paths still old —
   P4 must repoint the sidebar/views and create
   `resources/views/operational/scion-varieties/index.blade.php`.
-  **P4 (DONE — Session BO)** views/sidebar implemented (sidebar repointed to the P3 routes; dead
+  **P4 (DONE — Session BO, committed Session BP as `0803bdf`)** views/sidebar implemented (sidebar repointed to the P3 routes; dead
   modules removed; `operational/scion-varieties` CRUD view added; Batches/Stock In/Stock Out/
   Inventory/Mortality reworked; runtime smoke test returns 200s — see the Session BO entry in §2);
   **P5 (NEXT)** analytics/reports (Gap = `viable_count − available_count`); **P6** tests/docs/verify. **All open decisions are RESOLVED:** P1-era: (a)
@@ -4812,6 +4946,8 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
 
 ## 7. Constraints to keep honoring
 - Follow the ERD; do not invent/rename columns or tables without recording an explicit ERD revision.
+  The **only** approved exception is `regraft_records` + `RegraftRecord` (P5 Part B); do not extend
+  that pattern or add a Regraft CRUD UI without explicit approval.
 - Real data only — no hardcoded KPIs/chart values.
 - Inventory/stock operations must be transaction-safe: Stock Out validates every line, writes the
   header + all detail lines and decrements `batches.available_count` inside one `DB::transaction`;
