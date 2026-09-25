@@ -5,6 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * Revised ERD entity `Inventory` (ERD §3.12).
+ *
+ * A **monthly snapshot** per batch (many rows per batch — the old per-batch
+ * balance row is gone). The monthly counts and `status` are frozen into the row
+ * when it is recorded; `status` is never derived on read (locked business
+ * rule 2).
+ */
 class Inventory extends Model
 {
     protected $table = 'inventories';
@@ -19,7 +27,11 @@ class Inventory extends Model
 
     protected $fillable = [
         'batch_id',
-        'current_quantity',
+        'inventory_date',
+        'total_grafted',
+        'viable',
+        'regraft',
+        'mortality',
         'status',
         'last_update',
     ];
@@ -27,8 +39,27 @@ class Inventory extends Model
     protected function casts(): array
     {
         return [
+            'inventory_date' => 'date',
             'last_update' => 'datetime',
         ];
+    }
+
+    /**
+     * Freeze the snapshot status at creation time from the batch's live
+     * available balance (locked business rule 2). The status is a stored,
+     * historical value — it is never re-derived when the row is read.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $inventory): void {
+            if ($inventory->batch_id !== null) {
+                $batch = Batch::query()->find($inventory->batch_id);
+
+                if ($batch !== null) {
+                    $inventory->status = self::statusForBatch($batch);
+                }
+            }
+        });
     }
 
     public function batch(): BelongsTo
@@ -38,76 +69,22 @@ class Inventory extends Model
 
     /**
      * Inventory status definition (RULE 6: single definition shared by the
-     * listing, stock operations and analytics).
+     * snapshot writer and the listing).
      *
-     * active   = positive balance still available
-     * depleted = no balance left to release
+     * active   = the batch still had an available balance at snapshot time
+     * depleted = no available balance left at snapshot time
      */
-    public static function statusForQuantity(int $quantity): string
+    public static function statusForAvailable(int $availableCount): string
     {
-        return $quantity > 0 ? self::STATUS_ACTIVE : self::STATUS_DEPLETED;
+        return $availableCount > 0 ? self::STATUS_ACTIVE : self::STATUS_DEPLETED;
     }
 
     /**
-     * Status implied by the stored balance.
+     * Status implied by a batch's live `available_count` — call this when a
+     * monthly snapshot row is created (not in an accessor).
      */
-    public function derivedStatus(): string
+    public static function statusForBatch(Batch $batch): string
     {
-        return self::statusForQuantity((int) $this->current_quantity);
-    }
-
-    /**
-     * Total Active Inventory KPI: current quantity across active inventory
-     * records (PRD §12.1). Defined once so dashboard, reports and this listing
-     * all share the same formula (RULE 6).
-     */
-    public static function totalActiveQuantity(): int
-    {
-        return (int) static::query()
-            ->where('status', self::STATUS_ACTIVE)
-            ->sum('current_quantity');
-    }
-
-    /**
-     * Apply a signed quantity change to the stored balance.
-     *
-     * Single writer used by stock operations (RULE 7). Callers must run this
-     * inside a DB transaction and must not allow the balance to go negative.
-     */
-    public function applyDelta(int $delta): self
-    {
-        $newQuantity = (int) $this->current_quantity + $delta;
-
-        if ($newQuantity < 0) {
-            throw new \InvalidArgumentException('Inventory balance cannot become negative.');
-        }
-
-        $this->current_quantity = $newQuantity;
-        $this->status = self::statusForQuantity($newQuantity);
-        $this->last_update = now();
-        $this->save();
-
-        return $this;
-    }
-
-    /**
-     * Initialize (or refresh) the inventory balance for a batch.
-     *
-     * The ERD keeps the balance on Inventory.Current_Quantity; it begins as the
-     * batch's available count and is only changed by stock operations (RULE 7).
-     */
-    public static function syncFromBatch(Batch $batch, bool $overwriteQuantity = false): self
-    {
-        $inventory = static::firstOrNew(['batch_id' => $batch->batch_id]);
-
-        if ($overwriteQuantity || ! $inventory->exists) {
-            $inventory->current_quantity = (int) $batch->available_count;
-        }
-
-        $inventory->status = self::statusForQuantity((int) $inventory->current_quantity);
-        $inventory->last_update = now();
-        $inventory->save();
-
-        return $inventory;
+        return self::statusForAvailable((int) $batch->available_count);
     }
 }

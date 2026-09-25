@@ -4,8 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * Revised ERD entity `Mortality_Record` (ERD §3.10).
+ *
+ * Records mortality during the batch cycle. The `mortality_adjustments` table
+ * was removed with the revised model, so effective mortality is simply the raw
+ * recorded quantity (locked business rule 1).
+ */
 class MortalityRecord extends Model
 {
     protected $table = 'mortality_records';
@@ -39,24 +45,13 @@ class MortalityRecord extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function adjustments(): HasMany
-    {
-        return $this->hasMany(MortalityAdjustment::class, 'mortality_id', 'mortality_id');
-    }
-
     /**
-     * Effective mortality for this record after signed adjustments.
-     *
-     * Effective = original Quantity + sum of Adjustment_Quantity (RULE 6:
-     * this is the single definition shared by listing, validation and analytics).
+     * Effective mortality for this record. With adjustments removed, this is
+     * the raw recorded quantity (RULE 6: the single shared definition).
      */
     public function effectiveQuantity(): int
     {
-        $adjustments = $this->relationLoaded('adjustments')
-            ? $this->adjustments
-            : $this->adjustments()->get();
-
-        return (int) $this->quantity + (int) $adjustments->sum('adjustment_quantity');
+        return (int) $this->quantity;
     }
 
     public function getEffectiveQuantityAttribute(): int
@@ -66,7 +61,7 @@ class MortalityRecord extends Model
 
     /**
      * Total effective mortality recorded against a batch, optionally excluding
-     * one record (used when adjusting that record).
+     * one record.
      */
     public static function effectiveQuantityForBatch(int $batchId, ?int $excludeMortalityId = null): int
     {
@@ -76,25 +71,12 @@ class MortalityRecord extends Model
             $records->where('mortality_id', '!=', $excludeMortalityId);
         }
 
-        $base = (int) $records->sum('quantity');
-
-        $adjustments = MortalityAdjustment::query()
-            ->whereHas('mortalityRecord', function ($query) use ($batchId, $excludeMortalityId): void {
-                $query->where('batch_id', $batchId);
-
-                if ($excludeMortalityId !== null) {
-                    $query->where('mortality_id', '!=', $excludeMortalityId);
-                }
-            })
-            ->sum('adjustment_quantity');
-
-        return $base + (int) $adjustments;
+        return (int) $records->sum('quantity');
     }
 
     /**
-     * Total effective mortality across a set of batches (RULE 6: the same
-     * definition as effectiveQuantityForBatch, set-based for scion-level
-     * aggregation).
+     * Total effective mortality across a set of batches (set-based counterpart
+     * of effectiveQuantityForBatch — RULE 6).
      *
      * @param  iterable<int, int|string>  $batchIds
      */
@@ -106,12 +88,6 @@ class MortalityRecord extends Model
             return 0;
         }
 
-        $base = (int) static::query()->whereIn('batch_id', $ids)->sum('quantity');
-
-        $adjustments = MortalityAdjustment::query()
-            ->whereHas('mortalityRecord', fn ($query) => $query->whereIn('batch_id', $ids))
-            ->sum('adjustment_quantity');
-
-        return $base + (int) $adjustments;
+        return (int) static::query()->whereIn('batch_id', $ids)->sum('quantity');
     }
 }

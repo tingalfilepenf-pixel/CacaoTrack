@@ -10,6 +10,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
+/**
+ * Revised ERD entity `Batch` (ERD §3.8).
+ *
+ * A batch is the established grafted cacao record. `viable_count` is set once
+ * at establishment and is never decremented by mortality; the live available
+ * balance is `available_count`, and the monthly operational status lives in the
+ * related Inventory snapshots.
+ */
 class Batch extends Model
 {
     use Archivable;
@@ -21,7 +29,7 @@ class Batch extends Model
     public $timestamps = false;
 
     /**
-     * Allowed Batch.Status values (ERD §2.6 declares the column but no
+     * Allowed Batch.Status values (ERD §3.8 declares the column but no
      * enumeration; RULE 6 single source of truth for the listing and validation).
      *
      * @var list<string>
@@ -39,19 +47,16 @@ class Batch extends Model
      *
      * @var list<string>
      */
-    public const OPERATIONAL_RELATIONS = ['mortalityRecords', 'replantingRecords', 'stockIns', 'stockOuts'];
+    public const OPERATIONAL_RELATIONS = ['mortalityRecords', 'replantingRecords', 'stockOutDetails'];
 
     protected $fillable = [
-        'variety_id',
-        'scion_id',
-        'pot_id',
+        'scion_variety_id',
         'user_id',
         'batch_code',
         'total_grafted',
         'viable_count',
         'available_count',
         'grafted_date',
-        'monitoring_start_date',
         'created_at',
         'status',
         'archived_at',
@@ -61,25 +66,14 @@ class Batch extends Model
     {
         return [
             'grafted_date' => 'date',
-            'monitoring_start_date' => 'date',
             'created_at' => 'datetime',
             'archived_at' => 'datetime',
         ];
     }
 
-    public function variety(): BelongsTo
+    public function scionVariety(): BelongsTo
     {
-        return $this->belongsTo(Variety::class, 'variety_id', 'variety_id');
-    }
-
-    public function scion(): BelongsTo
-    {
-        return $this->belongsTo(Scion::class, 'scion_id', 'scion_id');
-    }
-
-    public function potType(): BelongsTo
-    {
-        return $this->belongsTo(PotType::class, 'pot_id', 'pot_id');
+        return $this->belongsTo(ScionVariety::class, 'scion_variety_id', 'scion_variety_id');
     }
 
     public function user(): BelongsTo
@@ -97,19 +91,27 @@ class Batch extends Model
         return $this->hasMany(ReplantingRecord::class, 'batch_id', 'batch_id');
     }
 
-    public function inventory(): HasOne
+    /**
+     * Monthly Inventory snapshots for this batch (many rows — the old
+     * one-row-per-batch balance is gone).
+     */
+    public function inventories(): HasMany
     {
-        return $this->hasOne(Inventory::class, 'batch_id', 'batch_id');
+        return $this->hasMany(Inventory::class, 'batch_id', 'batch_id');
     }
 
-    public function stockIns(): HasMany
+    /**
+     * The most recent monthly Inventory snapshot for this batch.
+     */
+    public function latestInventory(): HasOne
     {
-        return $this->hasMany(StockIn::class, 'batch_id', 'batch_id');
+        return $this->hasOne(Inventory::class, 'batch_id', 'batch_id')
+            ->latestOfMany('inventory_date');
     }
 
-    public function stockOuts(): HasMany
+    public function stockOutDetails(): HasMany
     {
-        return $this->hasMany(StockOut::class, 'batch_id', 'batch_id');
+        return $this->hasMany(StockOutDetail::class, 'batch_id', 'batch_id');
     }
 
     public function activityLogs(): HasMany
@@ -117,13 +119,12 @@ class Batch extends Model
         return $this->hasMany(ActivityLog::class, 'batch_id', 'batch_id');
     }
 
-    public function monitoringRecords(): HasMany
-    {
-        return $this->hasMany(BatchMonitoring::class, 'batch_id', 'batch_id');
-    }
-
     /**
      * Total effective mortality recorded against this batch.
+     *
+     * Revised rule (locked business rule 1): mortality is tracked separately
+     * from `viable_count`; the effective quantity is the raw sum of related
+     * Mortality_Record rows.
      */
     public function effectiveMortalityQuantity(): int
     {
@@ -131,41 +132,15 @@ class Batch extends Model
     }
 
     /**
-     * The batch's current **alive plant count**.
+     * Remaining quantity that may still be recorded as mortality.
      *
-     * Single source of truth is the stored `viable_count`, which Mortality
-     * Tracking decrements as plants die (approved change — mortality is the
-     * only operation that updates plant status). Real stored data only (RULE 5/12).
-     */
-    public function alivePlants(): int
-    {
-        return max(0, (int) $this->viable_count);
-    }
-
-    /**
-     * Apply a signed delta to the batch's alive count (stored `viable_count`),
-     * floored at 0.
-     *
-     * Single writer for the alive count (RULE 6/7): Mortality Tracking calls it
-     * with a negative delta when mortality is recorded and a positive delta when
-     * a mortality adjustment is reversed. Callers must run inside a DB
-     * transaction with the batch row locked.
-     */
-    public function applyAliveDelta(int $delta): void
-    {
-        $this->viable_count = max(0, (int) $this->viable_count + $delta);
-        $this->save();
-    }
-
-    /**
-     * Remaining alive plants that may still be recorded as mortality.
-     *
-     * Because `viable_count` is now the current alive count (mortality already
-     * deducted), the remaining capacity is simply the alive count (RULE 6).
+     * `viable_count` is set once at batch establishment and never decremented,
+     * so the cap is `max(0, viable_count - effective mortality)` (locked
+     * business rule 1).
      */
     public function remainingMortalityCapacity(): int
     {
-        return $this->alivePlants();
+        return max(0, (int) $this->viable_count - $this->effectiveMortalityQuantity());
     }
 
     /**
@@ -180,8 +155,8 @@ class Batch extends Model
      * Replanting deficit for this batch.
      *
      * Replanting Deficit = effective mortality - total replanted (floor 0).
-     * ERD/PRD business rule: replanting cannot exceed the mortality it replaces.
-     * This is the single definition shared by the listing and validation (RULE 6).
+     * This is the single definition shared by the listing and validation
+     * (RULE 6).
      */
     public function replantingDeficit(): int
     {
@@ -197,41 +172,14 @@ class Batch extends Model
     }
 
     /**
-     * Batch Monitoring lifecycle helpers (approved ERD revision §9.11).
-     * All math is delegated to the single definition in `BatchMonitoring`
-     * (RULE 6) — these are convenience wrappers for the batch itself.
+     * Total Available quantity KPI: the live available balance summed across
+     * batches. This replaces the old `Inventory::totalActiveQuantity()` now
+     * that the balance lives on `batches.available_count` (RULE 6). Archived
+     * batches are included so dashboard/report figures stay stable (Session AJ).
      */
-    public function monitoringElapsedDays(mixed $reference = null): ?int
+    public static function totalAvailableQuantity(): int
     {
-        return BatchMonitoring::elapsedDays($this->monitoring_start_date, $reference);
-    }
-
-    public function monitoringDay(mixed $reference = null): ?int
-    {
-        return BatchMonitoring::monitoringDay($this->monitoring_start_date, $reference);
-    }
-
-    public function monitoringRemainingDays(mixed $reference = null): ?int
-    {
-        return BatchMonitoring::remainingDays($this->monitoring_start_date, $reference);
-    }
-
-    public function isMonitoringComplete(mixed $reference = null): bool
-    {
-        return BatchMonitoring::lifecycleComplete($this->monitoring_start_date, $reference);
-    }
-
-    public function latestMonitoringRecord(): ?BatchMonitoring
-    {
-        return $this->monitoringRecords()
-            ->orderByDesc('monitoring_date')
-            ->orderByDesc('monitoring_id')
-            ->first();
-    }
-
-    public function monitoringStatus(mixed $reference = null): string
-    {
-        return BatchMonitoring::statusFor($this, $reference);
+        return (int) static::query()->sum('available_count');
     }
 
     /**
@@ -262,8 +210,9 @@ class Batch extends Model
 
     /**
      * Centralized validation rules for Batch master data (RULE 6, FR-16).
-     * Available count is never submitted: it is derived server-side from
-     * viable_count (and the inventory balance) so the invariant holds.
+     * `available_count` is never submitted: it is the live server-side balance.
+     * `scion_variety_id` is nullable (a batch may exist before a variety is
+     * assigned — ERD §3.8).
      *
      * @return array<string, array<int, mixed>>
      */
@@ -271,9 +220,7 @@ class Batch extends Model
     {
         return [
             'batch_code' => ['required', 'string', 'max:255', Rule::unique('batches', 'batch_code')->ignore($ignoreId, 'batch_id')],
-            'variety_id' => ['required', 'integer', Variety::activeExistsRule('variety_id')],
-            'scion_id' => ['required', 'integer', Scion::activeExistsRule('scion_id')],
-            'pot_id' => ['required', 'integer', PotType::activeExistsRule('pot_id')],
+            'scion_variety_id' => ['nullable', 'integer', ScionVariety::activeExistsRule('scion_variety_id')],
             'total_grafted' => ['required', 'integer', 'min:1'],
             'viable_count' => ['required', 'integer', 'min:0', 'lte:total_grafted'],
             'grafted_date' => ['required', 'date', 'before_or_equal:today'],

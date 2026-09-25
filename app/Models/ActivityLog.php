@@ -53,6 +53,8 @@ class ActivityLog extends Model
         'scion_archived' => 'Scion Archived',
         'scion_restored' => 'Scion Restored',
         'scion_stock_received' => 'Scions Received',
+        'scion_variety_archived' => 'Scion Variety Archived',
+        'scion_variety_restored' => 'Scion Variety Restored',
         'pot_type_archived' => 'Pot Type Archived',
         'pot_type_restored' => 'Pot Type Restored',
         'batch_archived' => 'Batch Archived',
@@ -121,6 +123,10 @@ class ActivityLog extends Model
 
     public const TYPE_SCION_STOCK_RECEIVED = 'scion_stock_received';
 
+    public const TYPE_SCION_VARIETY_ARCHIVED = 'scion_variety_archived';
+
+    public const TYPE_SCION_VARIETY_RESTORED = 'scion_variety_restored';
+
     public const TYPE_POT_TYPE_ARCHIVED = 'pot_type_archived';
 
     public const TYPE_POT_TYPE_RESTORED = 'pot_type_restored';
@@ -169,6 +175,8 @@ class ActivityLog extends Model
         'scion_archived' => 'bg-secondary',
         'scion_restored' => 'bg-success',
         'scion_stock_received' => 'bg-info text-dark',
+        'scion_variety_archived' => 'bg-secondary',
+        'scion_variety_restored' => 'bg-success',
         'pot_type_archived' => 'bg-secondary',
         'pot_type_restored' => 'bg-success',
         'batch_archived' => 'bg-secondary',

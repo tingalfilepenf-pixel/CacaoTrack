@@ -6,6 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * Revised ERD entity `Stock_Out` (ERD §3.14).
+ *
+ * Header-only Stock Out / Pull Out transaction: the released quantities live
+ * on its `Stock_Out_Detail` lines (one per batch/scion-variety).
+ */
 class StockOut extends Model
 {
     protected $table = 'stock_outs';
@@ -16,9 +22,7 @@ class StockOut extends Model
 
     protected $fillable = [
         'client_id',
-        'batch_id',
         'user_id',
-        'quantity',
         'total_amount',
         'release_date',
     ];
@@ -36,37 +40,22 @@ class StockOut extends Model
         return $this->belongsTo(Client::class, 'client_id', 'client_id');
     }
 
-    public function batch(): BelongsTo
-    {
-        return $this->belongsTo(Batch::class, 'batch_id', 'batch_id');
-    }
-
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function reversals(): HasMany
+    public function details(): HasMany
     {
-        return $this->hasMany(StockReversal::class, 'stock_out_id', 'stock_out_id');
+        return $this->hasMany(StockOutDetail::class, 'stock_out_id', 'stock_out_id');
     }
 
     /**
-     * Quantity of this stock-out already reversed (RULE 6: single definition
-     * shared by the listing and reversal validation).
+     * Total released quantity across the header's detail lines (RULE 6).
      */
-    public function reversedQuantity(): int
+    public function totalQuantity(): int
     {
-        return (int) $this->reversals()->sum('quantity');
-    }
-
-    /**
-     * Quantity still eligible for reversal.
-     * FR-10: a reversal quantity must not exceed the reversible quantity.
-     */
-    public function reversibleQuantity(): int
-    {
-        return max(0, (int) $this->quantity - $this->reversedQuantity());
+        return (int) $this->details()->sum('quantity');
     }
 
     /**
@@ -76,14 +65,5 @@ class StockOut extends Model
     public function reference(): string
     {
         return 'SO-'.str_pad((string) $this->stock_out_id, 3, '0', STR_PAD_LEFT);
-    }
-
-    /**
-     * Total stock released for a batch (RULE 6: single definition shared by
-     * the listing, inventory logic and analytics).
-     */
-    public static function totalForBatch(int $batchId): int
-    {
-        return (int) static::query()->where('batch_id', $batchId)->sum('quantity');
     }
 }

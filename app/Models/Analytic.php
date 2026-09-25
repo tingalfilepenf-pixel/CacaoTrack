@@ -83,7 +83,7 @@ class Analytic extends Model
             'analysis_type' => ['required', 'string', 'in:'.implode(',', self::TYPES)],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-            'variety_id' => ['nullable', 'integer', 'exists:varieties,variety_id'],
+            'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],
             'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
         ];
     }

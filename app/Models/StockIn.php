@@ -4,8 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use InvalidArgumentException;
 
+/**
+ * Revised ERD entity `Stock_In` (ERD §3.7).
+ *
+ * Records seedlings received through the Stock In process. `quantity` is the
+ * ordered/received quantity and `viable` is the five-day recounted usable
+ * quantity (they need not be equal). There is deliberately **no** `batch_id`:
+ * the viability count happens before a Batch is established.
+ */
 class StockIn extends Model
 {
     protected $table = 'stock_ins';
@@ -16,19 +24,37 @@ class StockIn extends Model
 
     protected $fillable = [
         'supplier_id',
-        'batch_id',
         'user_id',
         'quantity',
-        'scion_quantity',
+        'viable',
+        'origin',
         'date_received',
     ];
 
     protected function casts(): array
     {
         return [
-            'scion_quantity' => 'integer',
+            'quantity' => 'integer',
+            'viable' => 'integer',
             'date_received' => 'date',
         ];
+    }
+
+    /**
+     * `viable` is a recount subset of the same physical shipment, so
+     * `viable > quantity` is an impossible physical state. Enforced at the
+     * model layer (locked business rule 5) because the schema is frozen (no DB
+     * CHECK can be added without a migration) and controllers are out of scope
+     * for this pass. The `rules()` (`lte:quantity`) provide the user-facing
+     * message; this guard is the structural backstop.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $stockIn): void {
+            if ((int) $stockIn->viable > (int) $stockIn->quantity) {
+                throw new InvalidArgumentException('Viable quantity cannot exceed the received quantity.');
+            }
+        });
     }
 
     public function supplier(): BelongsTo
@@ -36,37 +62,9 @@ class StockIn extends Model
         return $this->belongsTo(Supplier::class, 'supplier_id', 'supplier_id');
     }
 
-    public function batch(): BelongsTo
-    {
-        return $this->belongsTo(Batch::class, 'batch_id', 'batch_id');
-    }
-
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
-    }
-
-    public function reversals(): HasMany
-    {
-        return $this->hasMany(StockReversal::class, 'stock_in_id', 'stock_in_id');
-    }
-
-    /**
-     * Quantity of this stock-in already reversed (RULE 6: single definition
-     * shared by the listing and reversal validation).
-     */
-    public function reversedQuantity(): int
-    {
-        return (int) $this->reversals()->sum('quantity');
-    }
-
-    /**
-     * Quantity still eligible for reversal.
-     * FR-10: a reversal quantity must not exceed the reversible quantity.
-     */
-    public function reversibleQuantity(): int
-    {
-        return max(0, (int) $this->quantity - $this->reversedQuantity());
     }
 
     /**
@@ -79,37 +77,18 @@ class StockIn extends Model
     }
 
     /**
-     * Total stock received for a batch (RULE 6: single definition shared by
-     * the listing, inventory logic and analytics).
-     */
-    public static function totalForBatch(int $batchId): int
-    {
-        return (int) static::query()->where('batch_id', $batchId)->sum('quantity');
-    }
-
-    /**
-     * Total scions received for a batch (approved ERD revision §9.9; RULE 6:
-     * single definition shared by the Scion Management cards and reporting).
-     */
-    public static function scionTotalForBatch(int $batchId): int
-    {
-        return (int) static::query()->where('batch_id', $batchId)->sum('scion_quantity');
-    }
-
-    /**
-     * Total scions received across a set of batches (set-based counterpart of
-     * scionTotalForBatch — RULE 6).
+     * Centralized validation rules for a Stock In record (RULE 6).
      *
-     * @param  iterable<int, int|string>  $batchIds
+     * @return array<string, array<int, mixed>>
      */
-    public static function scionTotalForBatches(iterable $batchIds): int
+    public static function rules(): array
     {
-        $ids = collect($batchIds)->map(fn ($id) => (int) $id)->all();
-
-        if ($ids === []) {
-            return 0;
-        }
-
-        return (int) static::query()->whereIn('batch_id', $ids)->sum('scion_quantity');
+        return [
+            'supplier_id' => ['required', 'integer', Supplier::activeExistsRule('supplier_id')],
+            'quantity' => ['required', 'integer', 'min:1'],
+            'viable' => ['required', 'integer', 'min:0', 'lte:quantity'],
+            'origin' => ['required', 'string', 'max:255'],
+            'date_received' => ['required', 'date', 'before_or_equal:today'],
+        ];
     }
 }
