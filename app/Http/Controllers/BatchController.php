@@ -69,7 +69,7 @@ class BatchController extends Controller
             ->orderBy('scion_variety_name')
             ->get();
 
-        return view('inventory.batches.index', [
+        return view('operational.batches.index', [
             'batches' => $batches,
             'filters' => $filters,
             'status' => $tab,

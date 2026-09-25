@@ -49,16 +49,25 @@
 
 <!-- Summary -->
 <div class="row g-3 mb-4">
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm h-100 border-start border-4 border-success">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Total Quantity Received</div>
-                <div class="fs-3 fw-bold text-success">{{ number_format($totalReceived) }} <span class="fs-6 fw-normal text-muted">trees</span></div>
+                <div class="fs-3 fw-bold text-success">{{ number_format($totalReceived) }} <span class="fs-6 fw-normal text-muted">seedlings</span></div>
                 <div class="text-muted small">Sum of the current filters</div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small fw-bold text-uppercase">Total Viable</div>
+                <div class="fs-3 fw-bold">{{ number_format($totalViable) }} <span class="fs-6 fw-normal text-muted">seedlings</span></div>
+                <div class="text-muted small">Usable after the five-day count</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Stock-In Transactions</div>
@@ -67,7 +76,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Suppliers Involved</div>
@@ -82,31 +91,20 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="GET" action="{{ route('inventory.stock-in') }}" class="row g-3 align-items-end">
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <label for="filterSearch" class="form-label text-muted small fw-bold mb-1">Search</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input type="text" class="form-control" id="filterSearch" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Supplier or batch code...">
+                    <input type="text" class="form-control" id="filterSearch" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Supplier or origin...">
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label for="filterSupplier" class="form-label text-muted small fw-bold mb-1">Supplier</label>
                 <select class="form-select form-select-sm" id="filterSupplier" name="supplier_id">
                     <option value="">All Suppliers</option>
                     @foreach ($suppliers as $supplier)
                         <option value="{{ $supplier->supplier_id }}" @selected(($filters['supplier_id'] ?? null) == $supplier->supplier_id)>
                             {{ $supplier->supplier_name }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label for="filterBatch" class="form-label text-muted small fw-bold mb-1">Batch</label>
-                <select class="form-select form-select-sm" id="filterBatch" name="batch_id">
-                    <option value="">All Batches</option>
-                    @foreach ($batches as $batch)
-                        <option value="{{ $batch->batch_id }}" @selected(($filters['batch_id'] ?? null) == $batch->batch_id)>
-                            {{ $batch->batch_code }}
                         </option>
                     @endforeach
                 </select>
@@ -143,8 +141,9 @@
                     <tr>
                         <th class="ps-4">STOCK ID</th>
                         <th>SUPPLIER</th>
-                        <th>BATCH</th>
-                        <th>QUANTITY</th>
+                        <th class="text-end">QUANTITY</th>
+                        <th class="text-end">VIABLE</th>
+                        <th>ORIGIN</th>
                         <th>DATE RECEIVED</th>
                         <th>RECORDED BY</th>
                         <th class="text-end pe-4">ACTION</th>
@@ -158,9 +157,9 @@
                                 'supplier' => $stockIn->supplier?->supplier_name ?? '—',
                                 'contact_number' => $stockIn->supplier?->contact_number ?? '—',
                                 'address' => $stockIn->supplier?->address ?? '—',
-                                'batch_code' => $stockIn->batch?->batch_code ?? '—',
-                                'variety' => $stockIn->batch?->variety?->variety_name ?? '—',
                                 'quantity' => (int) $stockIn->quantity,
+                                'viable' => (int) $stockIn->viable,
+                                'origin' => $stockIn->origin ?: '—',
                                 'date_received' => $formatDate($stockIn->date_received),
                                 'recorded_by' => $stockIn->user?->name ?? '—',
                             ];
@@ -168,11 +167,9 @@
                         <tr>
                             <td class="ps-4 fw-medium text-primary">{{ $stockIn->reference() }}</td>
                             <td>{{ $stockIn->supplier?->supplier_name ?? '—' }}</td>
-                            <td>
-                                <span class="fw-medium">{{ $stockIn->batch?->batch_code ?? '—' }}</span>
-                                <div class="text-muted small">{{ $stockIn->batch?->variety?->variety_name ?? '—' }}</div>
-                            </td>
-                            <td><span class="badge bg-success">{{ number_format((int) $stockIn->quantity) }}</span></td>
+                            <td class="text-end"><span class="badge bg-success">{{ number_format((int) $stockIn->quantity) }}</span></td>
+                            <td class="text-end"><span class="badge bg-primary">{{ number_format((int) $stockIn->viable) }}</span></td>
+                            <td>{{ $stockIn->origin ?: '—' }}</td>
                             <td>{{ $formatDate($stockIn->date_received) }}</td>
                             <td class="text-muted small">{{ $stockIn->user?->name ?? '—' }}</td>
                             <td class="text-end pe-4">
@@ -184,7 +181,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-5">
+                            <td colspan="8" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 No stock-in transactions found for the current filters.
                             </td>
@@ -231,27 +228,34 @@
                         @enderror
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label text-muted small fw-bold" for="stockInBatch">Batch (Target) <span class="text-danger">*</span></label>
-                        <select class="form-select @error('batch_id', 'stockin') is-invalid @enderror" id="stockInBatch" name="batch_id" required>
-                            <option value="" disabled @selected(old('batch_id') === null)>Select Batch</option>
-                            @foreach ($batches as $batch)
-                                <option value="{{ $batch->batch_id }}" @selected(old('batch_id') == $batch->batch_id)>
-                                    {{ $batch->batch_code }} — {{ $batch->variety?->variety_name ?? 'N/A' }}
-                                </option>
-                            @endforeach
-                        </select>
-                        @error('batch_id', 'stockin')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
-
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label text-muted small fw-bold" for="stockInQuantity">Quantity <span class="text-danger">*</span></label>
                             <input type="number" class="form-control @error('quantity', 'stockin') is-invalid @enderror" id="stockInQuantity"
                                 name="quantity" min="1" step="1" required placeholder="e.g. 500" value="{{ old('quantity') }}">
                             @error('quantity', 'stockin')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                            <div class="form-text">The ordered/received quantity.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-muted small fw-bold" for="stockInViable">Viable <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control @error('viable', 'stockin') is-invalid @enderror" id="stockInViable"
+                                name="viable" min="0" step="1" required placeholder="e.g. 460" value="{{ old('viable') }}">
+                            @error('viable', 'stockin')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                            <div class="form-text text-danger d-none" id="viableHint">Viable count cannot exceed the ordered quantity.</div>
+                            <div class="form-text">Usable count after the five-day recount.</div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label text-muted small fw-bold" for="stockInOrigin">Origin <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control @error('origin', 'stockin') is-invalid @enderror" id="stockInOrigin"
+                                name="origin" maxlength="255" required placeholder="e.g. Batangas" value="{{ old('origin') }}">
+                            @error('origin', 'stockin')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
@@ -267,7 +271,8 @@
 
                     <div class="alert alert-light border small mb-0">
                         <i class="bi bi-info-circle me-1"></i>
-                        Recording stock-in increases the batch's inventory balance. This cannot be edited later; use Stock Reversal to correct a transaction.
+                        Stock In records the usable seedlings after the five-day count. It is not linked to a batch — batches are
+                        established from the viable seedlings afterwards.
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -347,16 +352,16 @@
                 </div>
                 <hr>
                 <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Batch:</div>
-                    <div class="col-7" id="detailsBatch">&mdash;</div>
-                </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Variety:</div>
-                    <div class="col-7" id="detailsVariety">&mdash;</div>
-                </div>
-                <div class="row mb-2">
                     <div class="col-5 text-muted small fw-bold">Quantity:</div>
                     <div class="col-7 text-success fw-bold" id="detailsQuantity">&mdash;</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Viable:</div>
+                    <div class="col-7 text-primary fw-bold" id="detailsViable">&mdash;</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Origin:</div>
+                    <div class="col-7" id="detailsOrigin">&mdash;</div>
                 </div>
                 <div class="row mb-2">
                     <div class="col-5 text-muted small fw-bold">Date Received:</div>
@@ -397,6 +402,42 @@
             });
         }
 
+        // Client-side validation layer: viable may never exceed the ordered quantity.
+        const quantityInput = document.getElementById('stockInQuantity');
+        const viableInput = document.getElementById('stockInViable');
+        const viableHint = document.getElementById('viableHint');
+
+        const validateViable = function () {
+            if (!quantityInput || !viableInput || !viableHint) {
+                return true;
+            }
+
+            const quantity = parseInt(quantityInput.value || '0', 10);
+            const viable = parseInt(viableInput.value || '0', 10);
+            const invalid = quantityInput.value !== '' && viableInput.value !== '' && viable > quantity;
+
+            viableInput.setCustomValidity(invalid ? 'Viable count cannot exceed the ordered quantity.' : '');
+            viableInput.classList.toggle('is-invalid', invalid);
+            viableHint.classList.toggle('d-none', !invalid);
+
+            return !invalid;
+        };
+
+        if (quantityInput && viableInput) {
+            quantityInput.addEventListener('input', validateViable);
+            viableInput.addEventListener('input', validateViable);
+        }
+
+        const stockInForm = document.getElementById('stockInForm');
+        if (stockInForm) {
+            stockInForm.addEventListener('submit', function (event) {
+                if (!validateViable()) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            });
+        }
+
         const detailsModal = document.getElementById('stockInDetailsModal');
         if (detailsModal) {
             detailsModal.addEventListener('show.bs.modal', function (event) {
@@ -423,9 +464,9 @@
                 setText('detailsSupplier', details.supplier);
                 setText('detailsContact', details.contact_number);
                 setText('detailsAddress', details.address);
-                setText('detailsBatch', details.batch_code);
-                setText('detailsVariety', details.variety);
                 setText('detailsQuantity', Number(details.quantity || 0).toLocaleString());
+                setText('detailsViable', Number(details.viable || 0).toLocaleString());
+                setText('detailsOrigin', details.origin);
                 setText('detailsDate', details.date_received);
                 setText('detailsRecordedBy', details.recorded_by);
             });

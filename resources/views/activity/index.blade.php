@@ -159,7 +159,7 @@
                                 'type' => $activity->typeLabel(),
                                 'user' => $activity->user?->name ?? '—',
                                 'batch' => $activity->batch?->batch_code ?? 'N/A',
-                                'variety' => $activity->batch?->variety?->variety_name ?? '—',
+                                'scion_variety' => $activity->batch?->scionVariety?->scion_variety_name ?? '—',
                                 'description' => $activity->description,
                                 'activity_date' => $formatDateTime($activity->activity_date),
                             ];
@@ -181,7 +181,7 @@
                             <td>
                                 @if ($activity->batch)
                                     <span class="fw-medium">{{ $activity->batch->batch_code }}</span>
-                                    <div class="text-muted small">{{ $activity->batch->variety?->variety_name ?? '—' }}</div>
+                                    <div class="text-muted small">{{ $activity->batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}</div>
                                 @else
                                     <span class="text-muted">N/A</span>
                                 @endif
@@ -236,7 +236,7 @@
                     <div class="col-7" id="detailsBatch">&mdash;</div>
                 </div>
                 <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Variety:</div>
+                    <div class="col-5 text-muted small fw-bold">Scion Variety:</div>
                     <div class="col-7" id="detailsVariety">&mdash;</div>
                 </div>
                 <div class="row mb-2">
@@ -283,7 +283,7 @@
                 setText('detailsType', details.type);
                 setText('detailsUser', details.user);
                 setText('detailsBatch', details.batch);
-                setText('detailsVariety', details.variety);
+                setText('detailsVariety', details.scion_variety);
                 setText('detailsDate', details.activity_date);
                 setText('detailsDescription', details.description);
             });

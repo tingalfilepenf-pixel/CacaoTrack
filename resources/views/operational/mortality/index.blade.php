@@ -30,9 +30,12 @@
 
 @if ($errors->any())
     <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <strong>Please correct the highlighted fields.</strong>
         <ul class="mb-0 ps-3">
-            @foreach ($errors->all() as $error)
-                <li>{{ $error }}</li>
+            @foreach ($errors->getBags() as $bag)
+                @foreach ($bag->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
             @endforeach
         </ul>
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -80,18 +83,18 @@
                     <option value="">All Batches</option>
                     @foreach ($batches as $batch)
                         <option value="{{ $batch->batch_id }}" @selected(($filters['batch_id'] ?? null) == $batch->batch_id)>
-                            {{ $batch->batch_code }} ({{ $batch->variety?->variety_name ?? '—' }})
+                            {{ $batch->batch_code }} ({{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }})
                         </option>
                     @endforeach
                 </select>
             </div>
             <div class="col-md-3">
-                <label for="filterVariety" class="form-label text-muted small fw-bold mb-1">Variety</label>
-                <select class="form-select form-select-sm" id="filterVariety" name="variety_id">
-                    <option value="">All Varieties</option>
-                    @foreach ($varieties as $variety)
-                        <option value="{{ $variety->variety_id }}" @selected(($filters['variety_id'] ?? null) == $variety->variety_id)>
-                            {{ $variety->variety_name }}
+                <label for="filterScionVariety" class="form-label text-muted small fw-bold mb-1">Scion Variety</label>
+                <select class="form-select form-select-sm" id="filterScionVariety" name="scion_variety_id">
+                    <option value="">All Scion Varieties</option>
+                    @foreach ($scionVarieties as $scionVariety)
+                        <option value="{{ $scionVariety->scion_variety_id }}" @selected(($filters['scion_variety_id'] ?? null) == $scionVariety->scion_variety_id)>
+                            {{ $scionVariety->scion_variety_name }}
                         </option>
                     @endforeach
                 </select>
@@ -122,9 +125,9 @@
                 <thead class="table-light">
                     <tr>
                         <th class="ps-4">BATCH</th>
-                        <th>VARIETY</th>
+                        <th>SCION VARIETY</th>
                         <th>DATE</th>
-                        <th>QUANTITY</th>
+                        <th class="text-end">QUANTITY</th>
                         <th>CAUSE</th>
                         <th>RECORDED BY</th>
                         <th class="text-end pe-4">ACTION</th>
@@ -133,54 +136,25 @@
                 <tbody>
                     @forelse ($records as $record)
                         @php
-                            $effective = $record->effectiveQuantity();
-                            $adjustmentTotal = $effective - (int) $record->quantity;
-                            $adjustments = $record->adjustments;
-                            $adjustmentData = $adjustments->map(fn ($adjustment) => [
-                                'date' => $adjustment->adjusted_at?->format('M j, Y g:i A'),
-                                'quantity' => $adjustment->adjustment_quantity,
-                                'reason' => $adjustment->reason,
-                                'approver' => $adjustment->approver?->name ?? 'Unknown user',
-                            ])->values();
+                            $details = [
+                                'batch_code' => $record->batch?->batch_code ?? '—',
+                                'scion_variety' => $record->batch?->scionVariety?->scion_variety_name ?? 'Not assigned',
+                                'date' => $formatDate($record->recorded_at),
+                                'cause' => $record->cause,
+                                'quantity' => (int) $record->quantity,
+                                'recorded_by' => $record->user?->name ?? 'Unknown user',
+                            ];
                         @endphp
                         <tr>
                             <td class="ps-4 fw-medium">{{ $record->batch?->batch_code ?? '—' }}</td>
-                            <td>{{ $record->batch?->variety?->variety_name ?? '—' }}</td>
+                            <td>{{ $record->batch?->scionVariety?->scion_variety_name ?? 'Not assigned' }}</td>
                             <td>{{ $formatDate($record->recorded_at) }}</td>
-                            <td>
-                                <span class="badge bg-danger">{{ $effective }}</span>
-                                @if ($adjustmentTotal !== 0)
-                                    <div class="text-muted small">
-                                        base {{ $record->quantity }}
-                                        <span class="{{ $adjustmentTotal < 0 ? 'text-success' : 'text-danger' }}">
-                                            ({{ $adjustmentTotal > 0 ? '+' : '' }}{{ $adjustmentTotal }})
-                                        </span>
-                                    </div>
-                                @endif
-                            </td>
+                            <td class="text-end"><span class="badge bg-danger">{{ number_format((int) $record->quantity) }}</span></td>
                             <td>{{ $record->cause }}</td>
                             <td class="text-muted small">{{ $record->user?->name ?? 'Unknown user' }}</td>
                             <td class="text-end pe-4">
-                                <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="modal" data-bs-target="#adjustmentModal"
-                                    data-adjust-url="{{ route('operational.mortality.records.adjust', $record) }}"
-                                    data-batch-code="{{ $record->batch?->batch_code ?? '—' }}"
-                                    data-cause="{{ $record->cause }}"
-                                    data-base-quantity="{{ $record->quantity }}"
-                                    data-effective-quantity="{{ $effective }}"
-                                    title="Adjust Record">
-                                    <i class="bi bi-sliders"></i> Adjust
-                                </button>
                                 <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#detailsModal"
-                                    data-record-id="{{ $record->mortality_id }}"
-                                    data-batch-code="{{ $record->batch?->batch_code ?? '—' }}"
-                                    data-variety="{{ $record->batch?->variety?->variety_name ?? '—' }}"
-                                    data-date="{{ $formatDate($record->recorded_at) }}"
-                                    data-cause="{{ $record->cause }}"
-                                    data-base-quantity="{{ $record->quantity }}"
-                                    data-effective-quantity="{{ $effective }}"
-                                    data-recorded-by="{{ $record->user?->name ?? 'Unknown user' }}"
-                                    data-adjustments="{{ $adjustmentData->toJson() }}"
-                                    title="View Details">
+                                    data-details="{{ json_encode($details) }}" title="View Details">
                                     <i class="bi bi-eye"></i> View
                                 </button>
                             </td>
@@ -213,33 +187,48 @@
                 <h5 class="modal-title">Record Mortality</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="{{ route('operational.mortality.records.store') }}">
+            <form id="recordMortalityForm" method="POST" action="{{ route('operational.mortality.records.store') }}">
                 @csrf
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="recordBatch" class="form-label text-muted small fw-bold">Batch</label>
-                        <select class="form-select" id="recordBatch" name="batch_id" required>
+                        <label for="recordBatch" class="form-label text-muted small fw-bold">Batch <span class="text-danger">*</span></label>
+                        <select class="form-select @error('batch_id', 'mortality') is-invalid @enderror" id="recordBatch" name="batch_id" required>
                             <option value="" disabled @selected(old('batch_id') === null)>Select Batch</option>
                             @foreach ($activeBatches as $batch)
                                 <option value="{{ $batch->batch_id }}" @selected(old('batch_id') == $batch->batch_id)>
-                                    {{ $batch->batch_code }} ({{ $batch->variety?->variety_name ?? '—' }}) — remaining: {{ $batch->remainingMortalityCapacity() }}
+                                    {{ $batch->batch_code }} ({{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}) — remaining: {{ $batch->remainingMortalityCapacity() }}
                                 </option>
                             @endforeach
                         </select>
+                        @error('batch_id', 'mortality')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
                     </div>
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label for="recordQuantity" class="form-label text-muted small fw-bold">Quantity</label>
-                            <input type="number" class="form-control" id="recordQuantity" name="quantity" min="1" value="{{ old('quantity') }}" required>
+                            <label for="recordQuantity" class="form-label text-muted small fw-bold">Quantity <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control @error('quantity', 'mortality') is-invalid @enderror" id="recordQuantity"
+                                name="quantity" min="1" value="{{ old('quantity') }}" required>
+                            @error('quantity', 'mortality')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
-                            <label for="recordDate" class="form-label text-muted small fw-bold">Date</label>
-                            <input type="date" class="form-control" id="recordDate" name="recorded_at" value="{{ old('recorded_at', now()->toDateString()) }}" required>
+                            <label for="recordDate" class="form-label text-muted small fw-bold">Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control @error('recorded_at', 'mortality') is-invalid @enderror" id="recordDate"
+                                name="recorded_at" max="{{ now()->toDateString() }}" value="{{ old('recorded_at', now()->toDateString()) }}" required>
+                            @error('recorded_at', 'mortality')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label for="recordCause" class="form-label text-muted small fw-bold">Cause</label>
-                        <input type="text" class="form-control" id="recordCause" name="cause" list="causeOptions" maxlength="255" value="{{ old('cause') }}" placeholder="Select or type a cause" required>
+                        <label for="recordCause" class="form-label text-muted small fw-bold">Cause <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control @error('cause', 'mortality') is-invalid @enderror" id="recordCause"
+                            name="cause" list="causeOptions" maxlength="255" value="{{ old('cause') }}" placeholder="Select or type a cause" required>
+                        @error('cause', 'mortality')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
                         <datalist id="causeOptions">
                             <option value="Disease"></option>
                             <option value="Pest"></option>
@@ -249,75 +238,13 @@
                         </datalist>
                     </div>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>Mortality cannot exceed the batch's remaining viable quantity.
+                        <i class="bi bi-info-circle me-1"></i>Mortality records are record-only and cannot be edited later. A dead root
+                        stock cannot be regrafted — it is counted as mortality. Mortality cannot exceed the batch's remaining capacity.
                     </p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger">Save</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Mortality Adjustment Modal -->
-<div class="modal fade" id="adjustmentModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content border-warning">
-            <div class="modal-header bg-warning">
-                <h5 class="modal-title">Mortality Adjustment</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form method="POST" id="adjustMortalityForm">
-                @csrf
-                <div class="modal-body">
-                    <div class="alert alert-warning py-2 small">
-                        <i class="bi bi-exclamation-triangle me-1"></i> Adjustments should only be made for correction purposes.
-                    </div>
-
-                    <div class="mb-2 row align-items-center">
-                        <div class="col-sm-5">
-                            <label class="form-label text-muted small fw-bold mb-0">Batch / Cause:</label>
-                        </div>
-                        <div class="col-sm-7 fw-bold" id="adjustBatchCause">&mdash;</div>
-                    </div>
-
-                    <div class="mb-2 row align-items-center">
-                        <div class="col-sm-5">
-                            <label class="form-label text-muted small fw-bold mb-0">Original Quantity:</label>
-                        </div>
-                        <div class="col-sm-7 fw-bold" id="adjustBaseQuantity">&mdash;</div>
-                    </div>
-
-                    <div class="mb-3 row align-items-center">
-                        <div class="col-sm-5">
-                            <label class="form-label text-muted small fw-bold mb-0">Current Effective:</label>
-                        </div>
-                        <div class="col-sm-7 fw-bold" id="adjustEffectiveQuantity">&mdash;</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="adjustQuantity" class="form-label text-muted small fw-bold">Adjustment Quantity</label>
-                        <input type="number" class="form-control" id="adjustQuantity" name="adjustment_quantity" required placeholder="e.g. -5 to reduce">
-                        <div class="form-text">Signed correction: negative to reduce, positive to increase.</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="adjustReason" class="form-label text-muted small fw-bold">Reason for Adjustment</label>
-                        <textarea class="form-control" id="adjustReason" name="reason" rows="2" maxlength="255" required placeholder="Provide a valid reason..."></textarea>
-                    </div>
-
-                    <div class="mb-3 row align-items-center">
-                        <div class="col-sm-5">
-                            <label class="form-label text-muted small fw-bold mb-0">Approved By:</label>
-                        </div>
-                        <div class="col-sm-7 text-dark">{{ Auth::user()?->name ?? 'Authenticated user' }}</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning text-dark">Save Adjustment</button>
+                    <button type="submit" class="btn btn-danger" id="recordMortalitySubmitBtn">Save</button>
                 </div>
             </form>
         </div>
@@ -326,57 +253,36 @@
 
 <!-- Record Details Modal -->
 <div class="modal fade" id="detailsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Mortality Record Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="row g-3 mb-3">
-                    <div class="col-md-4">
-                        <div class="text-muted small fw-bold text-uppercase">Batch</div>
-                        <div id="detailsBatch">&mdash;</div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="text-muted small fw-bold text-uppercase">Variety</div>
-                        <div id="detailsVariety">&mdash;</div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="text-muted small fw-bold text-uppercase">Date</div>
-                        <div id="detailsDate">&mdash;</div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="text-muted small fw-bold text-uppercase">Cause</div>
-                        <div id="detailsCause">&mdash;</div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="text-muted small fw-bold text-uppercase">Recorded By</div>
-                        <div id="detailsRecordedBy">&mdash;</div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="text-muted small fw-bold text-uppercase">Effective Quantity</div>
-                        <div id="detailsEffective">&mdash;</div>
-                    </div>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Batch:</div>
+                    <div class="col-7" id="detailsBatch">&mdash;</div>
                 </div>
-
-                <h6 class="text-muted small fw-bold text-uppercase">Adjustment History</h6>
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Date</th>
-                                <th>Adjustment</th>
-                                <th>Reason</th>
-                                <th>Approved By</th>
-                            </tr>
-                        </thead>
-                        <tbody id="detailsAdjustments">
-                            <tr>
-                                <td colspan="4" class="text-center text-muted py-3">No adjustments recorded.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Scion Variety:</div>
+                    <div class="col-7" id="detailsScionVariety">&mdash;</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Date:</div>
+                    <div class="col-7" id="detailsDate">&mdash;</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Cause:</div>
+                    <div class="col-7" id="detailsCause">&mdash;</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Quantity:</div>
+                    <div class="col-7 text-danger fw-bold" id="detailsQuantity">&mdash;</div>
+                </div>
+                <div class="row">
+                    <div class="col-5 text-muted small fw-bold">Recorded By:</div>
+                    <div class="col-7" id="detailsRecordedBy">&mdash;</div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -390,23 +296,11 @@
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const adjustmentModal = document.getElementById('adjustmentModal');
-        if (adjustmentModal) {
-            adjustmentModal.addEventListener('show.bs.modal', function (event) {
-                const button = event.relatedTarget;
-                if (!button) {
-                    return;
-                }
+        const recordModalEl = document.getElementById('recordMortalityModal');
 
-                document.getElementById('adjustMortalityForm').action = button.getAttribute('data-adjust-url');
-                document.getElementById('adjustBatchCause').textContent =
-                    button.getAttribute('data-batch-code') + ' / ' + button.getAttribute('data-cause');
-                document.getElementById('adjustBaseQuantity').textContent = button.getAttribute('data-base-quantity');
-                document.getElementById('adjustEffectiveQuantity').textContent = button.getAttribute('data-effective-quantity');
-                document.getElementById('adjustQuantity').value = '';
-                document.getElementById('adjustReason').value = '';
-            });
-        }
+        @if ($errors->mortality->any())
+            new bootstrap.Modal(recordModalEl).show();
+        @endif
 
         const detailsModal = document.getElementById('detailsModal');
         if (detailsModal) {
@@ -416,44 +310,35 @@
                     return;
                 }
 
-                document.getElementById('detailsBatch').textContent = button.getAttribute('data-batch-code');
-                document.getElementById('detailsVariety').textContent = button.getAttribute('data-variety');
-                document.getElementById('detailsDate').textContent = button.getAttribute('data-date');
-                document.getElementById('detailsCause').textContent = button.getAttribute('data-cause');
-                document.getElementById('detailsRecordedBy').textContent = button.getAttribute('data-recorded-by');
-                document.getElementById('detailsEffective').textContent =
-                    button.getAttribute('data-effective-quantity') + ' (base ' + button.getAttribute('data-base-quantity') + ')';
-
-                const tbody = document.getElementById('detailsAdjustments');
-                let adjustments = [];
+                let details = {};
                 try {
-                    adjustments = JSON.parse(button.getAttribute('data-adjustments') || '[]');
+                    details = JSON.parse(button.getAttribute('data-details') || '{}');
                 } catch (error) {
-                    adjustments = [];
+                    details = {};
                 }
 
-                if (!adjustments.length) {
-                    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No adjustments recorded.</td></tr>';
-                    return;
-                }
+                const setText = function (id, value) {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.textContent = value == null || value === '' ? '—' : value;
+                    }
+                };
 
-                tbody.innerHTML = adjustments.map(function (adjustment) {
-                    const quantity = Number(adjustment.quantity);
-                    const cls = quantity < 0 ? 'text-success' : 'text-danger';
-                    const label = (quantity > 0 ? '+' : '') + quantity;
-                    const escape = function (value) {
-                        const div = document.createElement('div');
-                        div.textContent = value == null ? '' : value;
-                        return div.innerHTML;
-                    };
+                setText('detailsBatch', details.batch_code);
+                setText('detailsScionVariety', details.scion_variety);
+                setText('detailsDate', details.date);
+                setText('detailsCause', details.cause);
+                setText('detailsQuantity', Number(details.quantity || 0).toLocaleString());
+                setText('detailsRecordedBy', details.recorded_by);
+            });
+        }
 
-                    return '<tr>' +
-                        '<td>' + escape(adjustment.date) + '</td>' +
-                        '<td class="fw-bold ' + cls + '">' + escape(label) + '</td>' +
-                        '<td>' + escape(adjustment.reason) + '</td>' +
-                        '<td>' + escape(adjustment.approver) + '</td>' +
-                        '</tr>';
-                }).join('');
+        const form = document.getElementById('recordMortalityForm');
+        if (form) {
+            form.addEventListener('submit', function () {
+                const btn = document.getElementById('recordMortalitySubmitBtn');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
             });
         }
     });

@@ -47,7 +47,7 @@ class ActivityController extends Controller
                 ->whereDate('activity_date', '<=', $dateTo));
 
         $activities = (clone $base)
-            ->with(['user', 'batch.variety'])
+            ->with(['user', 'batch.scionVariety'])
             ->orderByDesc('activity_date')
             ->orderByDesc('activity_id')
             ->paginate(10)

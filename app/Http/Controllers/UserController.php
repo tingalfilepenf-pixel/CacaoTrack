@@ -227,6 +227,12 @@ class UserController extends Controller
     /**
      * Users are referenced by operational tables with restrictOnDelete —
      * block deletion with a readable message instead of a query exception.
+     *
+     * The revised 15-entity model has no `stock_reversals` or
+     * `mortality_adjustments` tables (removed in P1), so those legacy checks
+     * are gone. Every remaining FK that references a user is covered:
+     * batches/mortality/replanting/stock_ins/stock_outs/analytics/activity_logs
+     * by `user_id`, and task_completes by both `user_id` and `verified_by_id`.
      */
     private function hasOperationalRecords(int $userId): bool
     {
@@ -236,7 +242,6 @@ class UserController extends Controller
             'replanting_records' => 'user_id',
             'stock_ins' => 'user_id',
             'stock_outs' => 'user_id',
-            'stock_reversals' => 'user_id',
             'analytics' => 'user_id',
             'activity_logs' => 'user_id',
             'task_completes' => 'user_id',
@@ -248,7 +253,6 @@ class UserController extends Controller
             }
         }
 
-        return DB::table('mortality_adjustments')->where('approved_by_id', $userId)->exists()
-            || DB::table('task_completes')->where('verified_by_id', $userId)->exists();
+        return DB::table('task_completes')->where('verified_by_id', $userId)->exists();
     }
 }

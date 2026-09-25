@@ -4,7 +4,8 @@
     // Access restrictions (ERD §2.1/§9.7) live on the signed-in user
     // (`users.permissions`). The sidebar renders only the areas the user is
     // allowed to use; the same restrictions are enforced server-side by the
-    // `permission` middleware (FR-02).
+    // `permission` middleware (FR-02). Hiding a link here is a convenience
+    // only — it is never the security boundary.
     $canRecordOperations = $currentUser?->hasPermission('record_operations') ?? false;
     $canManageInventory = $currentUser?->hasPermission('manage_inventory') ?? false;
     $canManageStock = $currentUser?->hasPermission('manage_stock') ?? false;
@@ -15,10 +16,6 @@
     $managementOpen = request()->routeIs([
         'inventory.suppliers',
         'inventory.clients',
-        'inventory.varieties',
-        'inventory.scions',
-        'inventory.pot-types',
-        'inventory.batches',
     ]);
     $tabularOpen = request()->routeIs([
         'analytics.stock-ledger',
@@ -43,24 +40,32 @@
         </a>
 
         <!-- Operational -->
-        @if ($canRecordOperations)
+        @if ($canRecordOperations || $canManageInventory)
             <h6 class="nav-title">Operational</h6>
-            <a href="{{ route('operational.checklist') }}" class="nav-link {{ request()->routeIs('operational.checklist') ? 'active' : '' }}">
-                <i class="bi bi-check-square"></i>
-                <span>Daily Checklist</span>
-            </a>
-            <a href="{{ route('operational.mortality') }}" class="nav-link {{ request()->routeIs('operational.mortality') ? 'active' : '' }}">
-                <i class="bi bi-heart-pulse"></i>
-                <span>Mortality Tracking</span>
-            </a>
-            <a href="{{ route('operational.replanting') }}" class="nav-link {{ request()->routeIs('operational.replanting') ? 'active' : '' }}">
-                <i class="bi bi-arrow-repeat"></i>
-                <span>Replanting</span>
-            </a>
-            <a href="{{ route('operational.batch-monitoring') }}" class="nav-link {{ request()->routeIs('operational.batch-monitoring') ? 'active' : '' }}">
-                <i class="bi bi-clipboard2-pulse"></i>
-                <span>Batch Monitoring</span>
-            </a>
+            @if ($canRecordOperations)
+                <a href="{{ route('operational.checklist') }}" class="nav-link {{ request()->routeIs('operational.checklist') ? 'active' : '' }}">
+                    <i class="bi bi-check-square"></i>
+                    <span>Daily Checklist</span>
+                </a>
+                <a href="{{ route('operational.mortality') }}" class="nav-link {{ request()->routeIs('operational.mortality') ? 'active' : '' }}">
+                    <i class="bi bi-heart-pulse"></i>
+                    <span>Mortality Tracking</span>
+                </a>
+                <a href="{{ route('operational.replanting') }}" class="nav-link {{ request()->routeIs('operational.replanting') ? 'active' : '' }}">
+                    <i class="bi bi-arrow-repeat"></i>
+                    <span>Replanting</span>
+                </a>
+                <a href="{{ route('operational.batches') }}" class="nav-link {{ request()->routeIs('operational.batches') ? 'active' : '' }}">
+                    <i class="bi bi-boxes"></i>
+                    <span>Batches</span>
+                </a>
+            @endif
+            @if ($canManageInventory)
+                <a href="{{ route('operational.scion-varieties') }}" class="nav-link {{ request()->routeIs('operational.scion-varieties') ? 'active' : '' }}">
+                    <i class="bi bi-tags"></i>
+                    <span>Scion Variety</span>
+                </a>
+            @endif
         @endif
 
         <!-- Inventory -->
@@ -70,23 +75,19 @@
                 <i class="bi bi-box-seam"></i>
                 <span>Inventory</span>
             </a>
-        @endif
-        @if ($canManageStock)
-            <a href="{{ route('inventory.stock-in') }}" class="nav-link {{ request()->routeIs('inventory.stock-in') ? 'active' : '' }}">
-                <i class="bi bi-box-arrow-in-right"></i>
-                <span>Stock In</span>
-            </a>
-            <a href="{{ route('inventory.stock-out') }}" class="nav-link {{ request()->routeIs('inventory.stock-out') ? 'active' : '' }}">
-                <i class="bi bi-box-arrow-right"></i>
-                <span>Stock Out</span>
-            </a>
-            <a href="{{ route('inventory.stock-reversal') }}" class="nav-link {{ request()->routeIs('inventory.stock-reversal') ? 'active' : '' }}">
-                <i class="bi bi-arrow-return-left"></i>
-                <span>Stock Reversal</span>
-            </a>
+            @if ($canManageStock)
+                <a href="{{ route('inventory.stock-in') }}" class="nav-link {{ request()->routeIs('inventory.stock-in') ? 'active' : '' }}">
+                    <i class="bi bi-box-arrow-in-right"></i>
+                    <span>Stock In</span>
+                </a>
+                <a href="{{ route('inventory.stock-out') }}" class="nav-link {{ request()->routeIs('inventory.stock-out') ? 'active' : '' }}">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Stock Out</span>
+                </a>
+            @endif
         @endif
 
-        <!-- Inventory Management Dropdown -->
+        <!-- Management -->
         @if ($canManageInventory)
             <a class="nav-link {{ $managementOpen ? '' : 'collapsed' }}" data-bs-toggle="collapse" href="#inventoryManageCollapse" role="button" aria-expanded="{{ $managementOpen ? 'true' : 'false' }}" aria-controls="inventoryManageCollapse">
                 <i class="bi bi-folder2-open"></i>
@@ -97,10 +98,6 @@
                 <div class="nav flex-column ms-3" style="font-size: 0.9rem;">
                     <a href="{{ route('inventory.suppliers') }}" class="nav-link py-1 {{ request()->routeIs('inventory.suppliers') ? 'text-white' : '' }}"><i class="bi bi-truck me-2"></i>Supplier</a>
                     <a href="{{ route('inventory.clients') }}" class="nav-link py-1 {{ request()->routeIs('inventory.clients') ? 'text-white' : '' }}"><i class="bi bi-people me-2"></i>Client</a>
-                    <a href="{{ route('inventory.varieties') }}" class="nav-link py-1 {{ request()->routeIs('inventory.varieties') ? 'text-white' : '' }}"><i class="bi bi-tag me-2"></i>Variety</a>
-                    <a href="{{ route('inventory.scions') }}" class="nav-link py-1 {{ request()->routeIs('inventory.scions') ? 'text-white' : '' }}"><i class="bi bi-scissors me-2"></i>Scion</a>
-                    <a href="{{ route('inventory.pot-types') }}" class="nav-link py-1 {{ request()->routeIs('inventory.pot-types') ? 'text-white' : '' }}"><i class="bi bi-bucket me-2"></i>Pot Type</a>
-                    <a href="{{ route('inventory.batches') }}" class="nav-link py-1 {{ request()->routeIs('inventory.batches') ? 'text-white' : '' }}"><i class="bi bi-boxes me-2"></i>Batch</a>
                 </div>
             </div>
         @endif
@@ -122,7 +119,7 @@
             <div class="collapse {{ $tabularOpen ? 'show' : '' }}" id="tabularCollapse">
                 <div class="nav flex-column ms-3" style="font-size: 0.9rem;">
                     <a href="{{ route('analytics.stock-ledger') }}" class="nav-link py-1 {{ request()->routeIs('analytics.stock-ledger') ? 'text-white' : '' }}"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Stock Ledger</a>
-                    <a href="{{ route('analytics.mortality-matrix') }}" class="nav-link py-1 {{ request()->routeIs('analytics.mortality-matrix') ? 'text-white' : '' }}"><i class="bi bi-grid-3x3 me-2"></i>Root-Cause Matrix</a>
+                    <a href="{{ route('analytics.mortality-matrix') }}" class="nav-link py-1 {{ request()->routeIs('analytics.mortality-matrix') ? 'text-white' : '' }}"><i class="bi bi-grid-3x3 me-2"></i>Root Cause Matrix</a>
                 </div>
             </div>
 

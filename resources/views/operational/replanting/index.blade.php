@@ -80,7 +80,7 @@
                     <option value="">All Batches</option>
                     @foreach ($summaries as $summary)
                         <option value="{{ $summary['batch']->batch_id }}" @selected(($filters['batch_id'] ?? null) == $summary['batch']->batch_id)>
-                            {{ $summary['batch']->batch_code }} ({{ $summary['batch']->variety?->variety_name ?? '—' }})
+                            {{ $summary['batch']->batch_code }} ({{ $summary['batch']->scionVariety?->scion_variety_name ?? '—' }})
                         </option>
                     @endforeach
                 </select>
@@ -106,7 +106,7 @@
                 <thead class="table-light">
                     <tr>
                         <th class="ps-4">BATCH</th>
-                        <th>VARIETY</th>
+                        <th>SCION VARIETY</th>
                         <th>TOTAL MORTALITY</th>
                         <th>REPLANTED</th>
                         <th>REMAINING (DEFICIT)</th>
@@ -128,7 +128,7 @@
                         @endphp
                         <tr>
                             <td class="ps-4 fw-medium">{{ $batch->batch_code }}</td>
-                            <td>{{ $batch->variety?->variety_name ?? '—' }}</td>
+                            <td>{{ $batch->scionVariety?->scion_variety_name ?? '—' }}</td>
                             <td>{{ number_format($summary['effective_mortality']) }}</td>
                             <td><span class="text-success fw-bold">{{ number_format($summary['total_replanted']) }}</span></td>
                             <td>
@@ -178,7 +178,7 @@
                             <option value="" disabled @selected(old('batch_id') === null)>Select Batch</option>
                             @foreach ($replantableBatches as $summary)
                                 <option value="{{ $summary['batch']->batch_id }}" @selected(old('batch_id') == $summary['batch']->batch_id)>
-                                    {{ $summary['batch']->batch_code }} ({{ $summary['batch']->variety?->variety_name ?? '—' }}) — deficit: {{ $summary['deficit'] }}
+                                    {{ $summary['batch']->batch_code }} ({{ $summary['batch']->scionVariety?->scion_variety_name ?? '—' }}) — deficit: {{ $summary['deficit'] }}
                                 </option>
                             @endforeach
                         </select>

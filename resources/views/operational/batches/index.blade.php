@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Batch Management')
+@section('title', 'Batches')
 @section('page_title', 'Batches')
 
 @section('page_actions')
@@ -40,12 +40,12 @@
 
 <ul class="nav nav-pills mb-3">
     <li class="nav-item">
-        <a class="nav-link {{ $status === 'archived' ? '' : 'active' }}" href="{{ route('inventory.batches', collect($filters)->except('tab')->filter()->all()) }}">
+        <a class="nav-link {{ $status === 'archived' ? '' : 'active' }}" href="{{ route('operational.batches', collect($filters)->except('tab')->filter()->all()) }}">
             <i class="bi bi-list-ul me-1"></i> Active
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link {{ $status === 'archived' ? 'active' : '' }}" href="{{ route('inventory.batches', array_merge(collect($filters)->except('tab')->filter()->all(), ['tab' => 'archived'])) }}">
+        <a class="nav-link {{ $status === 'archived' ? 'active' : '' }}" href="{{ route('operational.batches', array_merge(collect($filters)->except('tab')->filter()->all(), ['tab' => 'archived'])) }}">
             <i class="bi bi-archive me-1"></i> Archived
             @if ($archivedCount > 0)
                 <span class="badge bg-secondary ms-1">{{ $archivedCount }}</span>
@@ -97,9 +97,9 @@
 <!-- Filters -->
 <div class="card mb-4">
     <div class="card-body py-3">
-        <form method="GET" action="{{ route('inventory.batches') }}" class="row g-3 align-items-end">
+        <form method="GET" action="{{ route('operational.batches') }}" class="row g-3 align-items-end">
             <input type="hidden" name="tab" value="{{ $status }}">
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <label for="filterSearch" class="form-label text-muted small fw-bold mb-1">Search</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -107,29 +107,20 @@
                 </div>
             </div>
             <div class="col-md-3">
-                <label for="filterVariety" class="form-label text-muted small fw-bold mb-1">Variety</label>
-                <select class="form-select form-select-sm" id="filterVariety" name="variety_id">
-                    <option value="">All varieties</option>
-                    @foreach ($varieties as $variety)
-                        <option value="{{ $variety->variety_id }}" @selected((string) ($filters['variety_id'] ?? '') === (string) $variety->variety_id)>{{ $variety->variety_name }}</option>
+                <label for="filterScionVariety" class="form-label text-muted small fw-bold mb-1">Scion Variety</label>
+                <select class="form-select form-select-sm" id="filterScionVariety" name="scion_variety_id">
+                    <option value="">All scion varieties</option>
+                    @foreach ($scionVarieties as $scionVariety)
+                        <option value="{{ $scionVariety->scion_variety_id }}" @selected((string) ($filters['scion_variety_id'] ?? '') === (string) $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
                     @endforeach
                 </select>
             </div>
-            <div class="col-md-2">
-                <label for="filterScion" class="form-label text-muted small fw-bold mb-1">Scion</label>
-                <select class="form-select form-select-sm" id="filterScion" name="scion_id">
-                    <option value="">All scions</option>
-                    @foreach ($scions as $scion)
-                        <option value="{{ $scion->scion_id }}" @selected((string) ($filters['scion_id'] ?? '') === (string) $scion->scion_id)>{{ $scion->scion_name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label for="filterStatus" class="form-label text-muted small fw-bold mb-1">Status</label>
                 <select class="form-select form-select-sm" id="filterStatus" name="status">
                     <option value="">All statuses</option>
-                    @foreach (\App\Models\Batch::STATUSES as $status)
-                        <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ ucfirst($status) }}</option>
+                    @foreach (\App\Models\Batch::STATUSES as $batchStatus)
+                        <option value="{{ $batchStatus }}" @selected(($filters['status'] ?? '') === $batchStatus)>{{ ucfirst($batchStatus) }}</option>
                     @endforeach
                 </select>
             </div>
@@ -137,7 +128,7 @@
                 <button type="submit" class="btn btn-sm btn-outline-secondary flex-fill" title="Filter">
                     <i class="bi bi-funnel"></i>
                 </button>
-                <a href="{{ route('inventory.batches') }}" class="btn btn-sm btn-outline-secondary" title="Reset filters">
+                <a href="{{ route('operational.batches') }}" class="btn btn-sm btn-outline-secondary" title="Reset filters">
                     <i class="bi bi-arrow-counterclockwise"></i>
                 </a>
             </div>
@@ -162,9 +153,7 @@
                 <thead class="table-light">
                     <tr>
                         <th class="ps-4">BATCH CODE</th>
-                        <th>VARIETY</th>
-                        <th>SCION</th>
-                        <th>POT TYPE</th>
+                        <th>SCION VARIETY</th>
                         <th>GRAFTED</th>
                         <th class="text-end">TOTAL</th>
                         <th class="text-end">VIABLE</th>
@@ -177,20 +166,22 @@
                     @forelse ($batches as $batch)
                         @php
                             $used = $batch->hasOperationalRecords();
+                            $latestInventory = $batch->latestInventory;
                             $details = [
                                 'batch_code' => $batch->batch_code,
-                                'variety' => $batch->variety?->variety_name,
-                                'scion' => $batch->scion?->scion_name,
-                                'pot_type' => $batch->potType?->pot_name,
+                                'scion_variety' => $batch->scionVariety?->scion_variety_name,
                                 'grafted_date' => $batch->grafted_date?->format('M d, Y'),
+                                'created_by' => $batch->user?->name,
                                 'created_at' => $batch->created_at?->format('M d, Y H:i'),
                                 'total_grafted' => (int) $batch->total_grafted,
                                 'viable_count' => (int) $batch->viable_count,
                                 'available_count' => (int) $batch->available_count,
-                                'inventory_quantity' => $batch->inventory ? (int) $batch->inventory->current_quantity : null,
+                                'status' => $batch->status,
                                 'mortality' => (int) $batch->mortality_records_count,
                                 'replanting' => (int) $batch->replanting_records_count,
-                                'status' => $batch->status,
+                                'inventory_date' => $latestInventory?->inventory_date?->format('M d, Y'),
+                                'inventory_status' => $latestInventory?->status,
+                                'stock_outs' => $batch->stockOutDetails()->count(),
                                 'used' => $used,
                             ];
                         @endphp
@@ -201,13 +192,11 @@
                                     <div class="text-muted small fw-normal">Archived {{ $batch->archived_at->format('M j, Y g:i A') }}</div>
                                 @endif
                             </td>
-                            <td>{{ $batch->variety?->variety_name ?? '—' }}</td>
-                            <td>{{ $batch->scion?->scion_name ?? '—' }}</td>
-                            <td class="text-muted">{{ $batch->potType?->pot_name ?? '—' }}</td>
+                            <td>{{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}</td>
                             <td class="text-muted">{{ $batch->grafted_date?->format('M d, Y') ?? '—' }}</td>
                             <td class="text-end">{{ number_format($batch->total_grafted) }}</td>
                             <td class="text-end">{{ number_format($batch->viable_count) }}</td>
-                            <td class="text-end">{{ number_format($batch->available_count) }}</td>
+                            <td class="text-end fw-bold text-success">{{ number_format($batch->available_count) }}</td>
                             <td>
                                 @if ($batch->status === \App\Models\Batch::STATUS_ACTIVE)
                                     <span class="badge bg-success">Active</span>
@@ -223,9 +212,7 @@
                                 <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="modal" data-bs-target="#editBatchModal"
                                     data-batch-id="{{ $batch->batch_id }}"
                                     data-batch-code="{{ $batch->batch_code }}"
-                                    data-variety-id="{{ $batch->variety_id }}"
-                                    data-scion-id="{{ $batch->scion_id }}"
-                                    data-pot-id="{{ $batch->pot_id }}"
+                                    data-scion-variety-id="{{ $batch->scion_variety_id }}"
                                     data-total-grafted="{{ $batch->total_grafted }}"
                                     data-viable-count="{{ $batch->viable_count }}"
                                     data-grafted-date="{{ $batch->grafted_date?->format('Y-m-d') }}"
@@ -234,7 +221,7 @@
                                     <i class="bi bi-pencil"></i>
                                 </button>
                                 @if ($status === 'archived')
-                                    <form method="POST" action="{{ route('inventory.batches.restore', $batch) }}" class="d-inline">
+                                    <form method="POST" action="{{ route('operational.batches.restore', $batch) }}" class="d-inline">
                                         @csrf
                                         <button type="submit" class="btn btn-sm btn-outline-success" title="Restore">
                                             <i class="bi bi-arrow-counterclockwise"></i>
@@ -251,7 +238,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="10" class="text-center text-muted py-5">
+                            <td colspan="8" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 @if ($status === 'archived')
                                     No archived batches. Archived batches appear here and can be restored.
@@ -281,7 +268,7 @@
                 <h5 class="modal-title">Add Batch</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="addBatchForm" method="POST" action="{{ route('inventory.batches.manage.store') }}">
+            <form id="addBatchForm" method="POST" action="{{ route('operational.batches.manage.store') }}">
                 @csrf
                 <div class="modal-body">
                     <div class="row g-3">
@@ -294,38 +281,14 @@
                             @enderror
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="addVariety">Variety <span class="text-danger">*</span></label>
-                            <select class="form-select @error('variety_id', 'batch') is-invalid @enderror" id="addVariety" name="variety_id" required>
-                                <option value="">Select a variety</option>
-                                @foreach ($varieties as $variety)
-                                    <option value="{{ $variety->variety_id }}" @selected((string) old('variety_id') === (string) $variety->variety_id) @disabled($variety->isArchived())>{{ $variety->variety_name }}@if ($variety->isArchived()) (archived)@endif</option>
+                            <label class="form-label text-muted small fw-bold" for="addScionVariety">Scion Variety <span class="text-muted fw-normal">(optional)</span></label>
+                            <select class="form-select @error('scion_variety_id', 'batch') is-invalid @enderror" id="addScionVariety" name="scion_variety_id">
+                                <option value="">Not yet assigned</option>
+                                @foreach ($scionVarieties as $scionVariety)
+                                    <option value="{{ $scionVariety->scion_variety_id }}" @selected((string) old('scion_variety_id') === (string) $scionVariety->scion_variety_id) @disabled($scionVariety->isArchived())>{{ $scionVariety->scion_variety_name }}@if ($scionVariety->isArchived()) (archived)@endif</option>
                                 @endforeach
                             </select>
-                            @error('variety_id', 'batch')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="addScion">Scion <span class="text-danger">*</span></label>
-                            <select class="form-select @error('scion_id', 'batch') is-invalid @enderror" id="addScion" name="scion_id" required>
-                                <option value="">Select a scion</option>
-                                @foreach ($scions as $scion)
-                                    <option value="{{ $scion->scion_id }}" @selected((string) old('scion_id') === (string) $scion->scion_id) @disabled($scion->isArchived())>{{ $scion->scion_name }}@if ($scion->isArchived()) (archived)@endif</option>
-                                @endforeach
-                            </select>
-                            @error('scion_id', 'batch')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="addPotType">Pot Type <span class="text-danger">*</span></label>
-                            <select class="form-select @error('pot_id', 'batch') is-invalid @enderror" id="addPotType" name="pot_id" required>
-                                <option value="">Select a pot type</option>
-                                @foreach ($potTypes as $potType)
-                                    <option value="{{ $potType->pot_id }}" @selected((string) old('pot_id') === (string) $potType->pot_id) @disabled($potType->isArchived())>{{ $potType->pot_name }}@if ($potType->isArchived()) (archived)@endif</option>
-                                @endforeach
-                            </select>
-                            @error('pot_id', 'batch')
+                            @error('scion_variety_id', 'batch')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
@@ -340,8 +303,8 @@
                         <div class="col-md-6">
                             <label class="form-label text-muted small fw-bold" for="addStatus">Status <span class="text-danger">*</span></label>
                             <select class="form-select @error('status', 'batch') is-invalid @enderror" id="addStatus" name="status" required>
-                                @foreach (\App\Models\Batch::STATUSES as $status)
-                                    <option value="{{ $status }}" @selected(old('status', \App\Models\Batch::STATUS_ACTIVE) === $status)>{{ ucfirst($status) }}</option>
+                                @foreach (\App\Models\Batch::STATUSES as $batchStatus)
+                                    <option value="{{ $batchStatus }}" @selected(old('status', \App\Models\Batch::STATUS_ACTIVE) === $batchStatus)>{{ ucfirst($batchStatus) }}</option>
                                 @endforeach
                             </select>
                             @error('status', 'batch')
@@ -384,7 +347,7 @@
                 <h5 class="modal-title">Edit Batch</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="editBatchForm" method="POST" action="{{ route('inventory.batches.update', ['batch' => '__ID__']) }}" data-action-template="{{ route('inventory.batches.update', ['batch' => '__ID__']) }}">
+            <form id="editBatchForm" method="POST" action="{{ route('operational.batches.update', ['batch' => '__ID__']) }}" data-action-template="{{ route('operational.batches.update', ['batch' => '__ID__']) }}">
                 @csrf
                 @method('PUT')
                 <div class="modal-body">
@@ -402,35 +365,14 @@
                             @enderror
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="editVariety">Variety <span class="text-danger">*</span></label>
-                            <select class="form-select @error('variety_id', 'batch') is-invalid @enderror" id="editVariety" name="variety_id" required>
-                                @foreach ($varieties as $variety)
-                                    <option value="{{ $variety->variety_id }}" @selected((string) old('variety_id') === (string) $variety->variety_id)>{{ $variety->variety_name }}</option>
+                            <label class="form-label text-muted small fw-bold" for="editScionVariety">Scion Variety <span class="text-muted fw-normal">(optional)</span></label>
+                            <select class="form-select @error('scion_variety_id', 'batch') is-invalid @enderror" id="editScionVariety" name="scion_variety_id">
+                                <option value="">Not yet assigned</option>
+                                @foreach ($scionVarieties as $scionVariety)
+                                    <option value="{{ $scionVariety->scion_variety_id }}" @selected((string) old('scion_variety_id') === (string) $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}@if ($scionVariety->isArchived()) (archived)@endif</option>
                                 @endforeach
                             </select>
-                            @error('variety_id', 'batch')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="editScion">Scion <span class="text-danger">*</span></label>
-                            <select class="form-select @error('scion_id', 'batch') is-invalid @enderror" id="editScion" name="scion_id" required>
-                                @foreach ($scions as $scion)
-                                    <option value="{{ $scion->scion_id }}" @selected((string) old('scion_id') === (string) $scion->scion_id)>{{ $scion->scion_name }}</option>
-                                @endforeach
-                            </select>
-                            @error('scion_id', 'batch')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="editPotType">Pot Type <span class="text-danger">*</span></label>
-                            <select class="form-select @error('pot_id', 'batch') is-invalid @enderror" id="editPotType" name="pot_id" required>
-                                @foreach ($potTypes as $potType)
-                                    <option value="{{ $potType->pot_id }}" @selected((string) old('pot_id') === (string) $potType->pot_id)>{{ $potType->pot_name }}</option>
-                                @endforeach
-                            </select>
-                            @error('pot_id', 'batch')
+                            @error('scion_variety_id', 'batch')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
@@ -445,8 +387,8 @@
                         <div class="col-md-6">
                             <label class="form-label text-muted small fw-bold" for="editStatus">Status <span class="text-danger">*</span></label>
                             <select class="form-select @error('status', 'batch') is-invalid @enderror" id="editStatus" name="status" required>
-                                @foreach (\App\Models\Batch::STATUSES as $status)
-                                    <option value="{{ $status }}" @selected(old('status') === $status)>{{ ucfirst($status) }}</option>
+                                @foreach (\App\Models\Batch::STATUSES as $batchStatus)
+                                    <option value="{{ $batchStatus }}" @selected(old('status') === $batchStatus)>{{ ucfirst($batchStatus) }}</option>
                                 @endforeach
                             </select>
                             @error('status', 'batch')
@@ -489,7 +431,7 @@
                 <h5 class="modal-title">Archive Batch</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="archiveBatchForm" method="POST" action="{{ route('inventory.batches.archive', ['batch' => '__ID__']) }}" data-action-template="{{ route('inventory.batches.archive', ['batch' => '__ID__']) }}">
+            <form id="archiveBatchForm" method="POST" action="{{ route('operational.batches.archive', ['batch' => '__ID__']) }}" data-action-template="{{ route('operational.batches.archive', ['batch' => '__ID__']) }}">
                 @csrf
                 <div class="modal-body">
                     <p class="mb-2">Archive <strong id="archiveBatchCode">&mdash;</strong>?</p>
@@ -510,62 +452,91 @@
 
 <!-- Batch Details Modal -->
 <div class="modal fade" id="batchDetailsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-light">
                 <h5 class="modal-title">Batch Details: <span id="detailsBatchCode">&mdash;</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Variety:</div>
-                    <div class="col-7" id="detailsVariety">&mdash;</div>
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card bg-light border-0 h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted small text-uppercase mb-3">Summary</h6>
+                                <div class="row mb-2">
+                                    <div class="col-6 text-muted small fw-bold">Total Grafted:</div>
+                                    <div class="col-6" id="detailsTotal">&mdash;</div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-6 text-muted small fw-bold">Viable:</div>
+                                    <div class="col-6" id="detailsViable">&mdash;</div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-6 text-muted small fw-bold">Available:</div>
+                                    <div class="col-6 text-success fw-bold" id="detailsAvailable">&mdash;</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-6 text-muted small fw-bold">Status:</div>
+                                    <div class="col-6" id="detailsStatus">&mdash;</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card bg-light border-0 h-100">
+                            <div class="card-body">
+                                <h6 class="text-muted small text-uppercase mb-3">Batch Information</h6>
+                                <div class="row mb-2">
+                                    <div class="col-6 text-muted small fw-bold">Scion Variety:</div>
+                                    <div class="col-6" id="detailsScionVariety">&mdash;</div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-6 text-muted small fw-bold">Grafted Date:</div>
+                                    <div class="col-6" id="detailsGraftedDate">&mdash;</div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-6 text-muted small fw-bold">Created By:</div>
+                                    <div class="col-6" id="detailsCreatedBy">&mdash;</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-6 text-muted small fw-bold">Created At:</div>
+                                    <div class="col-6" id="detailsCreatedAt">&mdash;</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Scion:</div>
-                    <div class="col-7" id="detailsScion">&mdash;</div>
-                </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Pot Type:</div>
-                    <div class="col-7" id="detailsPotType">&mdash;</div>
-                </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Grafted Date:</div>
-                    <div class="col-7" id="detailsGraftedDate">&mdash;</div>
-                </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Created At:</div>
-                    <div class="col-7" id="detailsCreatedAt">&mdash;</div>
-                </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Status:</div>
-                    <div class="col-7" id="detailsStatus">&mdash;</div>
-                </div>
-                <hr>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Total Grafted:</div>
-                    <div class="col-7" id="detailsTotal">&mdash;</div>
-                </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Viable Count:</div>
-                    <div class="col-7" id="detailsViable">&mdash;</div>
-                </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Available Count:</div>
-                    <div class="col-7" id="detailsAvailable">&mdash;</div>
-                </div>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Current Inventory:</div>
-                    <div class="col-7" id="detailsInventory">&mdash;</div>
-                </div>
-                <hr>
-                <div class="row mb-2">
-                    <div class="col-5 text-muted small fw-bold">Mortality Records:</div>
-                    <div class="col-7" id="detailsMortality">&mdash;</div>
-                </div>
-                <div class="row">
-                    <div class="col-5 text-muted small fw-bold">Replanting Records:</div>
-                    <div class="col-7" id="detailsReplanting">&mdash;</div>
+                <h6 class="text-muted small text-uppercase mb-3">Related Operations</h6>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="text-muted small fw-bold">Mortality</div>
+                            <div class="fs-5 fw-bold text-danger" id="detailsMortality">&mdash;</div>
+                            <div class="text-muted small">recorded entries</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="text-muted small fw-bold">Replanting</div>
+                            <div class="fs-5 fw-bold text-warning" id="detailsReplanting">&mdash;</div>
+                            <div class="text-muted small">recorded entries</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="text-muted small fw-bold">Inventory</div>
+                            <div class="fs-5 fw-bold" id="detailsInventoryDate">&mdash;</div>
+                            <div class="text-muted small">latest snapshot (<span id="detailsInventoryStatus">&mdash;</span>)</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="text-muted small fw-bold">Stock Out</div>
+                            <div class="fs-5 fw-bold text-secondary" id="detailsStockOuts">&mdash;</div>
+                            <div class="text-muted small">detail lines</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -612,9 +583,7 @@
                 const used = button.getAttribute('data-used') === '1';
                 applyAction(document.getElementById('editBatchForm'), button.getAttribute('data-batch-id'));
                 document.getElementById('editBatchCode').value = button.getAttribute('data-batch-code') || '';
-                document.getElementById('editVariety').value = button.getAttribute('data-variety-id') || '';
-                document.getElementById('editScion').value = button.getAttribute('data-scion-id') || '';
-                document.getElementById('editPotType').value = button.getAttribute('data-pot-id') || '';
+                document.getElementById('editScionVariety').value = button.getAttribute('data-scion-variety-id') || '';
                 document.getElementById('editGraftedDate').value = button.getAttribute('data-grafted-date') || '';
                 document.getElementById('editStatus').value = button.getAttribute('data-status') || 'active';
 
@@ -655,18 +624,19 @@
                 }
 
                 setText('detailsBatchCode', details.batch_code);
-                setText('detailsVariety', details.variety);
-                setText('detailsScion', details.scion);
-                setText('detailsPotType', details.pot_type);
+                setText('detailsScionVariety', details.scion_variety);
                 setText('detailsGraftedDate', details.grafted_date);
+                setText('detailsCreatedBy', details.created_by);
                 setText('detailsCreatedAt', details.created_at);
                 setText('detailsStatus', details.status ? details.status.charAt(0).toUpperCase() + details.status.slice(1) : '');
                 setText('detailsTotal', Number(details.total_grafted || 0).toLocaleString());
                 setText('detailsViable', Number(details.viable_count || 0).toLocaleString());
                 setText('detailsAvailable', Number(details.available_count || 0).toLocaleString());
-                setText('detailsInventory', details.inventory_quantity == null ? '—' : Number(details.inventory_quantity).toLocaleString());
                 setText('detailsMortality', Number(details.mortality || 0).toLocaleString());
                 setText('detailsReplanting', Number(details.replanting || 0).toLocaleString());
+                setText('detailsInventoryDate', details.inventory_date);
+                setText('detailsInventoryStatus', details.inventory_status ? details.inventory_status.charAt(0).toUpperCase() + details.inventory_status.slice(1) : '—');
+                setText('detailsStockOuts', Number(details.stock_outs || 0).toLocaleString());
             });
         }
 

@@ -1,21 +1,26 @@
 # Session Handoff — CacaoTrack
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after the latest session (**Session BN — Phase 3 (Controllers & routes) of the revised-PRD/ERD
-refactor was IMPLEMENTED** on branch `master`, committed as checkpoint **`3d3f9f9`**):
-`BatchMonitoringController`, `VarietyController`, `PotTypeController`, `StockReversalController` and
-`ScionController` were **deleted**; `ScionVarietyController` was **added** (full CRUD at
-`/operational/scion-varieties`, archive-not-delete); `Batch`/`StockIn`/`StockOut`/`Inventory`/
-`Mortality`/`Replanting` controllers were **reworked** onto the P2 models; Form Requests were added
-for every transactional store/update (plus a session-based `DuplicateSubmissionGuard`); and
-`routes/web.php` was rewritten (Batches moved to `/operational/batches`, `Mortality@adjust` and the
-removed modules' routes deleted). **No migration, model, view, seeder or test file was touched.**
-Verification: `php -l` clean, `vendor\bin\pint --test` passed, `route:list` boots with **66 routes**
-and the new permission gates. See the Session BN entry in §2/§5/§6. The refactor is now
-**mid-P3–P6**: the DB (P1), the models (P2) and the controllers/routes (P3) all match the revised
-15-entity PRD/ERD, but the **views/sidebar (P4), `AnalyticsMetrics`/PDF/CSV (P5) and seeders/tests
-(P6) still target the OLD model**, and the sidebar still references deleted route names, so the app
-500s and the feature suite fails until P4–P6 land. Before that, Session BM implemented Phase 2
+project after the latest session (**Session BO — Phase 4 (Views & sidebar) of the revised-PRD/ERD
+refactor was IMPLEMENTED**): the **sidebar was repointed to the real P3 route names** and every
+dead entry (Batch Monitoring, Variety, Scion, Pot Type, Stock Reversal) was removed;
+**`resources/views/operational/scion-varieties/index.blade.php` was added** (CRUD); and the
+**Batches, Stock In, Stock Out, Inventory and Mortality views were reworked** onto the revised
+model (plus the Replanting/Activity History `variety` refs). A runtime smoke test of every
+authenticated page in scope returns **200**; `php artisan view:cache` is clean and Pint passes.
+**No migration, model, seeder or test file was touched.** Controller changes: the approved
+one-line `BatchController@index` view path (`inventory.batches.index` →
+`operational.batches.index`), plus the two P4 follow-up fixes in `ActivityController@index`
+(`batch.variety` → `batch.scionVariety`) and `UserController::hasOperationalRecords()` (removed the
+dropped `stock_reversals`/`mortality_adjustments` checks). See the Session BO entry in §2/§5/§6. The
+refactor is now **mid-P4–P6**: the DB (P1), models (P2), controllers/routes (P3) **and
+views/sidebar (P4)** match the revised 15-entity PRD/ERD, but **`AnalyticsMetrics`/PDF/CSV (P5) and
+the seeders/tests (P6)** still target the OLD model, so `/` (Dashboard) still 500s and the feature
+suite still fails until P5–P6 land. Before that, Session BN implemented Phase 3
+(Controllers & routes) — the removed controllers deleted, `ScionVarietyController` added, Form
+Requests added for every transactional store/update, and `routes/web.php` rewritten (Batches moved
+to `/operational/batches`; checkpoint `3d3f9f9`, 66 routes; **no migration/model/view/seeder/test
+file touched**; see the Session BN entry in §2/§5/§6). Before that, Session BM implemented Phase 2
 (Models) — the six removed old models + `App\Support\ScionMetrics` were deleted, `ScionVariety` +
 `StockOutDetail` were added, and `Batch`/`StockIn`/`StockOut`/`Inventory`/`MortalityRecord` were
 reworked to the P1 schema with the locked model-layer business rules (see the Session BM entry in
@@ -423,14 +428,29 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ NEXT: revised-PRD/ERD refactor — P0/P1/P2/P3 DONE; implement P4 (Views/sidebar) next.**
+- **▶ NEXT: revised-PRD/ERD refactor — P0/P1/P2/P3/P4 DONE; implement P5 (Analytics/reports) next.**
   `db_capstone` has the revised **15-entity** schema (P1: 23 tables incl. framework; eight reversible
-  migrations `2026_09_25_000001..000008`), `app/Models` matches it (**P2 — Session BM**), and
-  `app/Http/Controllers` + `routes/web.php` now match it (**P3 — Session BN, checkpoint `3d3f9f9`**;
-  66 routes). **The views/sidebar, `AnalyticsMetrics`/PDF/CSV and seeders/tests still target the OLD
-  model** — the sidebar references deleted route names, so every page 500s and the feature suite
-  fails until P4–P6 land (expected). Pre-P1 backup:
+  migrations `2026_09_25_000001..000008`), `app/Models` matches it (**P2 — Session BM**),
+  `app/Http/Controllers` + `routes/web.php` match it (**P3 — Session BN, checkpoint `3d3f9f9`**;
+  66 routes), and the **views/sidebar match it** (**P4 — Session BO**; sidebar repointed, dead
+  modules removed, scion-varieties view added, Batches/Stock In/Stock Out/Inventory/Mortality
+  reworked; runtime smoke test 200s). **`AnalyticsMetrics`/PDF/CSV and the seeders/tests still target
+  the OLD model** — `/` (Dashboard) still 500s and the feature suite fails until P5–P6 land
+  (expected; the `/activity` and user delete-guard flags were fixed in Session BO). Pre-P1 backup:
   `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`.
+- **P4 (DONE — Session BO; see the Session BO entry in §2/§5/§6):** repointed
+  `resources/views/layouts/sidebar.blade.php` to the real P3 routes and deleted the Batch Monitoring /
+  Variety / Scion / Pot Type / Stock Reversal entries; added
+  `resources/views/operational/scion-varieties/index.blade.php`; reworked
+  `operational/batches/index.blade.php` (moved from `inventory/batches/`), `inventory/stock-in`,
+  `inventory/stock-out` (header + `details[]` multi-line form), `inventory/index` ("Record Monthly
+  Inventory" + monthly snapshots) and `operational/mortality` (adjustment UI removed); fixed the
+  `->variety` refs in Replanting and Activity History; deleted the removed view folders. **No
+  migration/model/seeder/test file touched; three controller edits:** the approved one-line
+  `BatchController@index` view path, plus the two flag fixes — `ActivityController@index` now uses
+  `batch.scionVariety` (`/activity` returns 200), and `UserController::hasOperationalRecords()` no
+  longer queries the dropped `stock_reversals`/`mortality_adjustments` tables. **Remaining flag:**
+  `/` (Dashboard) 500s (`AnalyticsMetrics` OLD — P5).
 - **P3 (DONE — Session BN, checkpoint `3d3f9f9`; see the Session BN entry in §2/§5/§6):** deleted
   `BatchMonitoringController` / `VarietyController` / `PotTypeController` / `StockReversalController` /
   `ScionController` + `MortalityController@adjust`; added `ScionVarietyController` (CRUD at
@@ -573,7 +593,7 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
   "could not find driver". Tests were run against a dedicated MySQL DB instead (see §5).
 - `.npmrc` has `ignore-scripts=true`.
 
-## 2. Session log (oldest → newest; detailed entries end with Session BH, followed by the refactor entries BI (P0), BJ (P1), BK (P2 plan), BL (P3 plan) and BM (P2 implemented))
+## 2. Session log (oldest → newest; detailed entries end with Session BH, followed by the refactor entries BI (P0), BJ (P1), BK (P2 plan), BL (P3 plan), BM (P2 implemented), BN (P3 implemented) and BO (P4 views/sidebar implemented))
 
 ### Session A — Daily Checklist (previous session)
 The Operational → **Daily Checklist** page (`/operational/checklist`) was converted from a static
@@ -3360,6 +3380,10 @@ Live `db_capstone` counts read this session: users 5, `varieties` 8, `scions` 1,
 4. Stock Out availability = per detail line (batch + scion_variety) vs `batch.available_count`.
 5. Revised ERD wins over PRD prose — **no** `mortality.plant_condition`, **no** `replanting.scion_variety_id`.
 6. Replace the existing PRD/ERD docs with the revised content; update `AGENTS.md`.
+7. Monthly `inventories` rows are written by an explicit **Record Monthly Inventory** action — not
+   auto-derived at query time (ERD §3.12).
+8. `stock_out_details.unit` is a **fixed list**: `seedlings` / `pieces` / `bags` — not free text
+   (PRD §2.8/§11).
 
 **Data-migration notes / accepted loss:** 1 `mortality_adjustments` row (−5 → effective mortality
 becomes raw) and 1 `stock_reversals` row are retired per ERD; 8 existing `stock_ins` get `viable`
@@ -3383,9 +3407,7 @@ backfilled from `quantity`; `batches.available_count` backfilled from `inventori
 - **P6 Tests/docs/verify:** rewrite affected tests; run MySQL suite + Pint + `view:cache` +
   `migrate:status` + live spot-checks; update handoff/`AGENTS.md`.
 
-**Two remaining decisions before Phase 1:** (a) are monthly `inventories` rows auto-derived/
-snapshotted at query time, or written by an explicit "Record Monthly Inventory" action? (b) is the
-`stock_out_details.unit` free text or a fixed list?
+**No open items remain — the plan is fully locked; Phase 1 (backup + docs) is the next action.**
 
 ### Session BI — Phase 0 (safety + docs) of the revised-PRD/ERD refactor (DONE, docs-only)
 
@@ -3737,7 +3759,94 @@ suite was run** (deferred to P6 — the views/seeders/tests are still the OLD mo
 6. `ScionController` was deleted as the planned rename although it was not in the explicit delete
    list.
 
+### Session BO — Phase 4 (Views & sidebar) of the revised-PRD/ERD refactor (IMPLEMENTED)
+
+Implemented **P4 (Views/sidebar)** against the P3 routes and P2 models. **No migration, model,
+seeder or test file was touched.** Controller changes: the approved **one-line**
+`BatchController@index` view path (`inventory.batches.index` → `operational.batches.index`), plus
+the two P4 follow-up flag fixes below (`ActivityController@index` and `UserController`).
+`routes/web.php` was not touched.
+
+**Sidebar** (`resources/views/layouts/sidebar.blade.php`): repointed to the real P3 route names and
+removed every dead entry — **Batch Monitoring, Variety, Scion, Pot Type and Stock Reversal are gone**.
+Operational = Daily Checklist / Mortality / Replanting / **Batches** (`operational.batches`, gated on
+`record_operations`) / **Scion Variety** (`operational.scion-varieties`, gated on `manage_inventory`);
+Inventory = Inventory / Stock In / Stock Out; Management = Supplier / Client; Analytics + Historical
+unchanged; Account unchanged. Visibility checks are UX-only (`$user->hasPermission(...)`) — the routes
+stay server-side protected.
+
+**Added view:** `resources/views/operational/scion-varieties/index.blade.php` — full CRUD list
+(search, pagination, Active/Archived tabs, Add/Edit/Archive/Restore, empty state, summary cards),
+following the Supplier/Client management pattern. Routes
+`operational.scion-varieties(.manage.store/.update/.archive/.restore)`, error bag `scion_variety`,
+fields `scion_variety_name` + `description`.
+
+**Reworked views:**
+- **Batches** moved to `resources/views/operational/batches/index.blade.php` (old `inventory/batches/`
+  deleted): dropped Variety/Scion/Pot Type/Monitoring fields; single nullable Scion Variety; detail
+  modal = Summary (Total Grafted/Viable/Available/Status), Batch Information (Scion Variety/Grafted
+  Date/Created By), Related Operations (Mortality/Replanting/Inventory/Stock Out); routes
+  `operational.batches*`.
+- **Stock In** (`inventory/stock-in/index.blade.php`): Supplier/Quantity/Viable/Origin/Date Received
+  only (no batch); JS blocks `Viable > Quantity` with the exact message `Viable count cannot exceed
+  the ordered quantity.` (the server-side rule stays authoritative); the list shows Quantity, Viable
+  and Origin.
+- **Stock Out** (`inventory/stock-out/index.blade.php`): header (Client/Release Date) + repeatable
+  `details[]` lines (Batch, Quantity, Unit fixed dropdown `seedlings`/`pieces`/`bags`, optional Unit
+  Price, auto Amount). Scion Variety is displayed read-only from the selected batch and **never
+  submitted**; per-line + per-batch availability warnings use `Quantity exceeds available inventory
+  for [batch code].`; a `confirm()` guards submission; the listing groups by header with an expandable
+  detail row. Lines are repopulated from `old('details')` with per-field server errors on failure.
+- **Inventory** (`inventory/index.blade.php`): page action is now **"+ Record Monthly Inventory"**
+  (`inventory.snapshots.store`); the listing is **monthly snapshots** (many rows per batch) with Total
+  Grafted/Viable/Re-graft/Mortality/Status/Last Update; the duplicate-month message surfaces from the
+  `inventory` error bag. (The old client-side "Export Inventory" CSV button was dropped — CSV/PDF is
+  P5.)
+- **Mortality** (`operational/mortality/index.blade.php`): the **adjustment button/modal/history was
+  removed** (Mortality_Adjustments is gone); record-only; filter fixed to `scion_variety_id`.
+- **Replanting** (`operational/replanting/index.blade.php`): `->variety` → `->scionVariety` (3 refs) +
+  header label.
+- **Activity History** (`activity/index.blade.php`): `->variety` → `->scionVariety` (2 refs) + modal
+  label. **NB:** the page still 500s at the controller (see flags below).
+
+**Deleted view folders:** `operational/batch-monitoring/`, `inventory/varieties/`,
+`inventory/pot-types/`, `inventory/scions/`, `inventory/stock-reversal/`, and `inventory/batches/`
+(moved to `operational/`).
+
+**Verification:** `php artisan view:cache` clean; `vendor\bin\pint --test` passed on the changed
+controller. A runtime smoke test (logged in as Administrator, request dispatched through the HTTP
+kernel) returned **200** for `operational.checklist`, `operational.mortality`,
+`operational.replanting`, `operational.batches`, `operational.scion-varieties`, `inventory.index`,
+`inventory.stock-in`, `inventory.stock-out`, `inventory.suppliers`, `inventory.clients`,
+`users.index` and `profile.index`. A scan confirmed **every `route('...')` used in Blade resolves**
+to a real route. **No migration was run; `db_capstone` unchanged.**
+
+**P4 follow-up fixes (CLOSED — these trace to FR-17/§12 and the data-integrity/error-handling
+rules, not P5, so they were fixed before starting P5):**
+1. **`/activity` 500 — FIXED.** `ActivityController@index` eager-loaded the removed relation
+   `->with(['user', 'batch.variety'])`; it now uses `->with(['user', 'batch.scionVariety'])`.
+   Verified: `/activity` returns **200**.
+2. **User delete guard — FIXED.** `UserController::hasOperationalRecords()` still queried the dropped
+   tables `stock_reversals` / `mortality_adjustments`, so `destroy()` threw a query exception instead
+   of returning the readable block message. Those checks are removed; every remaining user FK is
+   covered (batches/mortality/replanting/stock_ins/stock_outs/analytics/activity_logs by `user_id`;
+   task_completes by `user_id` and `verified_by_id`). Verified via reflection: returns `false` for a
+   no-record id and `true` for a user with history, with no query exception.
+3. `welcome.blade.php` orphan — has a dead `route('register')` but is not rendered by any route
+   (benign; left in place).
+
+**Remaining flags (genuinely P5 / optional):**
+- `/` (Dashboard) still **500s** — `App\Support\AnalyticsMetrics` is still the OLD model
+  (`App\Models\Variety`, `with('adjustments')`, `with(['adjustments','batch.variety'])`,
+  `inventories.current_quantity`). That is **P5** by scope.
+- `BatchController@index` does not eager-load the creator or the Stock-Out count, so the Batches
+  detail modal reads `$batch->user` and `$batch->stockOutDetails()->count()` (2 extra queries/row);
+  `->with('user')->withCount('stockOutDetails')` would remove them (optional perf, out of scope).
+
 ## 3. Current database state (`db_capstone`)
+
+**No schema and no data change in Session BO** (Phase 4 was the view/sidebar layer only — the one
+controller edit was a view-path string; no migration was run and `db_capstone` was not modified).
 
 **Schema + data changed in Session BJ (P1 — the revised model is now live in the DB):** eight
 reversible migrations `2026_09_25_000001..000008` applied (pre-P1 backup
@@ -4144,6 +4253,20 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
       `Batch_Monitoring` is retained for history but is never written.
 
 ## 5. Verification status
+- **Session BO (P4 Views/sidebar implemented): no test suite run** (deferred to P6 — the seeders/tests
+  are still the OLD model). **`php artisan view:cache` clean** on all views; **`vendor\bin\pint
+  --test` passed** on the changed controllers; a runtime smoke test (Administrator, request
+  dispatched through the HTTP kernel) returned **200** for every P4 page in scope
+  (`operational.checklist`, `operational.mortality`, `operational.replanting`, `operational.batches`,
+  `operational.scion-varieties`, `inventory.index`, `inventory.stock-in`, `inventory.stock-out`,
+  `inventory.suppliers`, `inventory.clients`, `activity.index`, `users.index`, `profile.index`); every
+  `route('...')` used in Blade resolves. **No migration was run and `db_capstone` is unchanged.**
+  **P4 follow-up flags CLOSED:** `/activity` now returns 200 (`ActivityController@index` uses
+  `batch.scionVariety`); the `UserController` delete guard no longer queries the dropped
+  `stock_reversals`/`mortality_adjustments` tables (reflection-verified). **Remaining:** `/`
+  (Dashboard) still 500s (`AnalyticsMetrics` is OLD model — P5). **No migration, model, seeder or
+  test file touched; three controller edits: the approved one-line `BatchController@index` view path
+  plus the two flag fixes above.**
 - **Session BN (P3 Controllers/routes implemented): no test suite run** — checkpoint `3d3f9f9`
   reworks the controller/route layer onto the P2 models. The views/sidebar/seeders/tests/
   `AnalyticsMetrics` are still the OLD model, so the feature suite is expected to fail until P6
@@ -4347,13 +4470,16 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
-- **▶ NEXT — Revised PRD/ERD refactor: P0 + P1 + P2 + P3 DONE; implement P4 (Views/sidebar) next.**
+- **▶ NEXT — Revised PRD/ERD refactor: P0 + P1 + P2 + P3 + P4 DONE; implement P5 (Analytics/reports) next.**
   The revised **15-entity** `docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` are canonical, and
-  **`db_capstone` has the revised schema** (P1), `app/Models` matches it (P2 — Session BM), and
-  `app/Http/Controllers` + `routes/web.php` now match it (**P3 — Session BN, checkpoint `3d3f9f9`**;
-  66 routes). **The views/sidebar, `AnalyticsMetrics`/PDF/CSV and seeders/tests are still the OLD
-  model** — the sidebar references deleted routes, so every page 500s and the feature suite fails
-  until P4–P6 land (expected). Pre-P1 backup:
+  **`db_capstone` has the revised schema** (P1), `app/Models` matches it (P2 — Session BM),
+  `app/Http/Controllers` + `routes/web.php` match it (**P3 — Session BN, checkpoint `3d3f9f9`**;
+  66 routes), and the **views/sidebar match it** (**P4 — Session BO**; sidebar repointed, the dead
+  modules removed, the scion-varieties CRUD view added, and Batches/Stock In/Stock Out/Inventory/
+  Mortality reworked; runtime smoke test 200s). **`AnalyticsMetrics`/PDF/CSV (P5) and the
+  seeders/tests (P6) are still the OLD model** — `/` (Dashboard) still 500s and the feature suite
+  still fails until P5–P6 land (expected). (The `/activity` and user delete-guard flags were fixed
+  in Session BO — see above.) Pre-P1 backup:
   `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`. **P2 delivered:** added
   `ScionVariety`/`StockOutDetail`; reworked `Batch`/`StockIn`/`StockOut`/`Inventory`/`MortalityRecord`
   (replanting unchanged); deleted `BatchMonitoring`/`Variety`/`PotType`/`Scion`/`MortalityAdjustment`/
@@ -4376,8 +4502,10 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   model edit out of scope); (3) snapshot permission = `manage_inventory`; (4) view paths still old —
   P4 must repoint the sidebar/views and create
   `resources/views/operational/scion-varieties/index.blade.php`.
-  **P4 (NEXT)** views/sidebar; **P5** analytics/reports (Gap = `viable_count −
-  available_count`); **P6** tests/docs/verify. **All open decisions are RESOLVED:** P1-era: (a)
+  **P4 (DONE — Session BO)** views/sidebar implemented (sidebar repointed to the P3 routes; dead
+  modules removed; `operational/scion-varieties` CRUD view added; Batches/Stock In/Stock Out/
+  Inventory/Mortality reworked; runtime smoke test returns 200s — see the Session BO entry in §2);
+  **P5 (NEXT)** analytics/reports (Gap = `viable_count − available_count`); **P6** tests/docs/verify. **All open decisions are RESOLVED:** P1-era: (a)
   monthly `inventories` rows are written by an explicit **"Record Monthly Inventory"** action (stored
   snapshots), not auto-derived; (b) `stock_out_details.unit` is a **fixed list**
   `seedlings`/`pieces`/`bags`; (c) `stock_ins.origin` is NOT NULL with legacy `''`. **P2-era (Session
