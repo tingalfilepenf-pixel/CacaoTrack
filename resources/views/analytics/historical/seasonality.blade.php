@@ -7,7 +7,7 @@
 <form method="POST" action="{{ route('analytics.reports.store') }}" class="d-inline">
     @csrf
     <input type="hidden" name="analysis_type" value="{{ \App\Models\Analytic::TYPE_SEASONALITY }}">
-    <input type="hidden" name="variety_id" value="{{ $filters['variety_id'] ?? '' }}">
+    <input type="hidden" name="scion_variety_id" value="{{ $filters['scion_variety_id'] ?? '' }}">
     <input type="hidden" name="batch_id" value="{{ $filters['batch_id'] ?? '' }}">
     <button type="submit" class="btn btn-success">
         <i class="bi bi-file-earmark-arrow-down"></i> Generate Report
@@ -26,7 +26,7 @@
 <div class="card mb-4">
     <div class="card-body">
         <p class="text-muted mb-3">
-            This heatmap displays effective mortality across cacao varieties over the months of the selected year.
+            This heatmap displays effective mortality across Scion Varieties over the months of the selected year.
             Darker colors indicate higher mortality.
         </p>
         <form class="row g-3" method="GET" action="{{ route('analytics.historical.seasonality') }}">
@@ -41,11 +41,11 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label text-muted small fw-bold">Variety</label>
-                <select name="variety_id" class="form-select">
-                    <option value="">All Varieties</option>
-                    @foreach ($varieties as $variety)
-                        <option value="{{ $variety->variety_id }}" @selected(($filters['variety_id'] ?? null) == $variety->variety_id)>{{ $variety->variety_name }}</option>
+                <label class="form-label text-muted small fw-bold">Scion Variety</label>
+                <select name="scion_variety_id" class="form-select">
+                    <option value="">All Scion Varieties</option>
+                    @foreach ($scionVarieties as $scionVariety)
+                        <option value="{{ $scionVariety->scion_variety_id }}" @selected(($filters['scion_variety_id'] ?? null) == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
                     @endforeach
                 </select>
             </div>

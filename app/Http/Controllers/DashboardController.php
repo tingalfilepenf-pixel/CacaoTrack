@@ -22,7 +22,7 @@ class DashboardController extends Controller
             'crudeMortalityRate' => AnalyticsMetrics::crudeMortalityRate(),
             'totalReplantingDeficit' => AnalyticsMetrics::totalReplantingDeficit(),
             'mortalityTrend' => AnalyticsMetrics::mortalityTrend(6),
-            'inventoryByVariety' => AnalyticsMetrics::inventoryByVariety(),
+            'inventoryByScionVariety' => AnalyticsMetrics::inventoryByScionVariety(),
             'survivalVsMortality' => AnalyticsMetrics::survivalVsMortality(),
             'recentActivities' => ActivityLog::with(['user', 'batch'])
                 ->orderByDesc('activity_date')

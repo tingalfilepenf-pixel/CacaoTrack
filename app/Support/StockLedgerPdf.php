@@ -7,34 +7,37 @@ use FPDF;
 /**
  * Printable "Cacao Tree Stock Ledger" PDF (FPDF, landscape).
  *
- * This is a tabular deliverable (PRD §13.1): every value is passed in by the
- * controller from real normalized operational data (RULE 5/12). It never
- * invents a row, a total or a status, and it needs no report table — the
- * ledger is generated live from batches, inventory, mortality and replanting.
+ * Part C: the ledger is a MONTHLY GRID grouped by month with dynamic
+ * per-Scion-Variety columns, matching the client's real manual ledger:
+ *
+ *   | Date | Description | Seedlings | Grafted (per variety) | Mortality
+ *   | (per variety) | Re Graft (per variety) | Ready to Plant (per variety)
+ *   | Pullout (per variety) |
+ *
+ * Every value is passed in by the controller from the centralized
+ * AnalyticsMetrics::stockLedgerGrid() (RULE 5/6/12). It never invents a row or
+ * a total and needs no report table.
+ *
+ * NOTE: "Ready to Plant" is mapped to the batch's live `available_count`
+ * (flagged as an unconfirmed interpretation — see AnalyticsMetrics).
+ *
  * Non Latin-1 characters are transliterated so the core FPDF fonts render.
  */
 class StockLedgerPdf extends FPDF
 {
-    /** @var array<string,int|float> Column widths in millimetres (sum = TABLE_WIDTH). */
-    private const COLUMNS = [
-        'num' => 8,
-        'batch' => 26,
-        'variety' => 32,
-        'scion' => 32,
-        'grafted' => 24,
-        'viable' => 24,
-        'available' => 26,
-        'mortality' => 26,
-        'replanting' => 26,
-        'date' => 30,
-        'status' => 19,
-    ];
-
     private const TABLE_WIDTH = 273.0;
 
-    private const LINE_HEIGHT = 4.4;
+    private const DATE_W = 17.0;
 
-    private const ROW_PADDING = 1.6;
+    private const DESC_W = 40.0;
+
+    private const SEEDLINGS_W = 20.0;
+
+    private const SECTION_W = 39.2;
+
+    private const HEADER_H = 10.6;
+
+    private const ROW_H = 5.4;
 
     /** Brand palette (restrained agricultural green + neutral greys). */
     private const BRAND = [30, 61, 43];
@@ -49,24 +52,44 @@ class StockLedgerPdf extends FPDF
 
     private const MUTED = [108, 117, 125];
 
+    private const DANGER = [176, 42, 55];
+
+    private const WARNING = [176, 84, 10];
+
+    private string $currentMonthLabel = '';
+
+    private int $varietyCount = 1;
+
+    private float $colW = self::SECTION_W;
+
+    private float $fontSize = 6.5;
+
     /**
-     * @param  list<array{batch_code:string, variety:string|null, scion:string|null, grafted:int, viable:int, available:int, mortality:int, replanting:int, grafted_date:string|null, status:string}>  $rows
-     * @param  array{batches:int, grafted:int, viable:int, available:int, mortality:int, replanting:int}  $totals
+     * @param  array<int,array{id:int,name:string}>  $varieties
+     * @param  array<int,array{key:string,label:string,rows:array<int,array<string,mixed>>,totals:array<string,mixed>}>  $months
+     * @param  array<string,mixed>  $grandTotals
+     * @param  array<string,int>  $summary
      */
     public function __construct(
-        private readonly string $periodLabel,
+        private readonly string $filterLabel,
         private readonly string $generatedBy,
         private readonly string $generatedAt,
-        private readonly array $rows,
-        private readonly array $totals,
+        private readonly array $varieties,
+        private readonly array $months,
+        private readonly array $grandTotals,
+        private readonly array $summary,
     ) {
         parent::__construct('L', 'mm', 'A4');
 
-        $this->SetTitle('Cacao Tree Stock Ledger - '.$periodLabel);
+        $this->varietyCount = max(1, count($this->varieties));
+        $this->colW = self::SECTION_W / $this->varietyCount;
+        $this->fontSize = $this->colW < 7.0 ? 5.5 : 6.5;
+
+        $this->SetTitle('Cacao Tree Stock Ledger - '.$filterLabel);
         $this->SetAuthor('CacaoTrack');
         $this->SetCreator('CacaoTrack');
         $this->SetMargins(12, 14, 12);
-        $this->SetAutoPageBreak(true, 18);
+        $this->SetAutoPageBreak(false);
         $this->SetCompression(false);
         $this->AliasNbPages();
     }
@@ -106,26 +129,13 @@ class StockLedgerPdf extends FPDF
         $this->SetFont('Helvetica', 'B', 12);
         $this->SetTextColor(...self::TEXT);
         $this->Cell(150, 6, $this->txt('Cacao Tree Stock Ledger'), 0, 0, 'L');
-        $this->SetFont('Helvetica', 'B', 10);
+        $this->SetFont('Helvetica', 'B', 9.5);
         $this->SetTextColor(...self::BRAND);
-        $this->Cell(123, 6, $this->txt($this->periodLabel), 0, 1, 'R');
+        $this->Cell(123, 6, $this->txt($this->filterLabel), 0, 1, 'R');
 
-        $summaryY = $this->GetY() + 1.5;
-        $this->SetFillColor(...self::BRAND_LIGHT);
-        $this->Rect(12, $summaryY, self::TABLE_WIDTH, 8, 'F');
-        $this->SetFont('Helvetica', '', 8.5);
-        $this->SetTextColor(...self::TEXT);
-        $this->SetXY(15, $summaryY + 1.8);
-        $this->Cell(44.5, 4.4, $this->txt(sprintf('Batches: %d', $this->totals['batches'])), 0, 0, 'L');
-        $this->Cell(44.5, 4.4, $this->txt(sprintf('Grafted: %d', $this->totals['grafted'])), 0, 0, 'L');
-        $this->Cell(44.5, 4.4, $this->txt(sprintf('Viable: %d', $this->totals['viable'])), 0, 0, 'L');
-        $this->Cell(44.5, 4.4, $this->txt(sprintf('Available: %d', $this->totals['available'])), 0, 0, 'L');
-        $this->Cell(44.5, 4.4, $this->txt(sprintf('Mortality: %d', $this->totals['mortality'])), 0, 0, 'L');
-        $this->Cell(44.5, 4.4, $this->txt(sprintf('Replanted: %d', $this->totals['replanting'])), 0, 1, 'L');
-
-        $this->SetY($summaryY + 9.5);
+        $this->drawSummaryStrip();
+        $this->SetY($this->GetY() + 2.0);
         $this->SetX(12);
-        $this->drawTableHeader();
     }
 
     public function footer(): void
@@ -138,16 +148,16 @@ class StockLedgerPdf extends FPDF
         $this->SetFont('Helvetica', 'I', 8);
         $this->SetTextColor(...self::MUTED);
         $this->SetX(12);
-        $this->Cell(200, 5, $this->txt('CacaoTrack - Cacao Tree Stock Ledger'), 0, 0, 'L');
+        $this->Cell(200, 5, $this->txt('CacaoTrack - Cacao Tree Stock Ledger (monthly grid)'), 0, 0, 'L');
         $this->Cell(73, 5, $this->txt('Page '.$this->PageNo().' of {nb}'), 0, 0, 'R');
     }
 
     /**
-     * Draw every ledger row. Real data only (RULE 5/12).
+     * Draw every month's grid. Real data only (RULE 5/12).
      */
     public function renderBody(): void
     {
-        if ($this->rows === []) {
+        if ($this->months === []) {
             $this->SetFont('Helvetica', 'I', 10);
             $this->SetTextColor(...self::MUTED);
             $this->SetFillColor(...self::BRAND_LIGHT);
@@ -156,9 +166,42 @@ class StockLedgerPdf extends FPDF
             return;
         }
 
-        foreach ($this->rows as $index => $row) {
-            $this->drawRow($index + 1, $row);
+        foreach ($this->months as $month) {
+            $this->drawMonthHeader((string) $month['label']);
+
+            foreach ($month['rows'] as $index => $row) {
+                $this->drawEventRow($row, $index + 1);
+            }
+
+            $this->drawTotalsRow('TOTAL — '.$month['label'], $month['totals'], false);
         }
+
+        $this->drawTotalsRow('GRAND TOTAL', $this->grandTotals, true);
+    }
+
+    private function drawSummaryStrip(): void
+    {
+        $y = $this->GetY() + 1.5;
+        $this->SetFillColor(...self::BRAND_LIGHT);
+        $this->Rect(12, $y, self::TABLE_WIDTH, 8, 'F');
+        $this->SetFont('Helvetica', '', 8.5);
+        $this->SetTextColor(...self::TEXT);
+        $this->SetXY(15, $y + 1.8);
+
+        $cells = [
+            'Seedlings: %d' => $this->summary['seedlings'] ?? 0,
+            'Grafted: %d' => $this->summary['grafted'] ?? 0,
+            'Mortality: %d' => $this->summary['mortality'] ?? 0,
+            'Re Graft: %d' => $this->summary['regraft'] ?? 0,
+            'Ready to Plant: %d' => $this->summary['ready_to_plant'] ?? 0,
+            'Pullout: %d' => $this->summary['pullout'] ?? 0,
+        ];
+
+        foreach ($cells as $label => $value) {
+            $this->Cell(45.5, 4.4, $this->txt(sprintf($label, $value)), 0, 0, 'L');
+        }
+
+        $this->SetY($y + 8);
     }
 
     private function drawContinuationHeader(): void
@@ -167,168 +210,257 @@ class StockLedgerPdf extends FPDF
         $this->SetX(12);
         $this->SetFont('Helvetica', 'B', 10);
         $this->SetTextColor(...self::BRAND);
-        $this->Cell(0, 6, $this->txt('Cacao Tree Stock Ledger (continued) - '.$this->periodLabel), 0, 1, 'L');
+        $this->Cell(0, 6, $this->txt('Cacao Tree Stock Ledger (continued) - '.$this->filterLabel), 0, 1, 'L');
 
         $this->SetDrawColor(...self::BORDER);
         $this->SetLineWidth(0.3);
         $this->Line(12, $this->GetY() + 0.5, 285, $this->GetY() + 0.5);
         $this->SetY($this->GetY() + 2.5);
         $this->SetX(12);
-        $this->drawTableHeader();
-    }
 
-    private function drawTableHeader(): void
-    {
-        $headers = [
-            'num' => '#',
-            'batch' => 'Batch',
-            'variety' => 'Variety',
-            'scion' => 'Scion',
-            'grafted' => 'Grafted',
-            'viable' => 'Viable',
-            'available' => 'Available',
-            'mortality' => 'Mortality',
-            'replanting' => 'Replanting',
-            'date' => 'Grafted Date',
-            'status' => 'Status',
-        ];
-
-        $this->SetFont('Helvetica', 'B', 8.5);
-        $this->SetFillColor(...self::BRAND);
-        $this->SetTextColor(255, 255, 255);
-        $this->SetDrawColor(...self::BRAND);
-        $this->SetLineWidth(0.2);
-
-        foreach ($headers as $key => $label) {
-            $align = in_array($key, ['grafted', 'viable', 'available', 'mortality', 'replanting'], true) ? 'R' : 'C';
-            $this->Cell(self::COLUMNS[$key], 7, $this->txt($label), 1, 0, $align, true);
+        if ($this->currentMonthLabel !== '') {
+            $this->SetFont('Helvetica', 'B', 8.5);
+            $this->SetTextColor(...self::BRAND);
+            $this->Cell(self::TABLE_WIDTH, 5, $this->txt($this->currentMonthLabel.' (continued)'), 0, 1, 'L');
+            $this->SetX(12);
         }
 
-        $this->Ln();
+        $this->drawGridHeader();
     }
 
-    /**
-     * @param  array{batch_code:string, variety:string|null, scion:string|null, grafted:int, viable:int, available:int, mortality:int, replanting:int, grafted_date:string|null, status:string}  $row
-     */
-    private function drawRow(int $number, array $row): void
+    private function drawMonthHeader(string $label): void
     {
-        $batchText = $this->txt($row['batch_code']);
-        $varietyText = $this->txt($row['variety'] ?? '-');
-        $scionText = $this->txt($row['scion'] ?? '-');
+        $this->currentMonthLabel = $label;
 
-        $contentLines = max(
-            $this->linesFor($batchText, self::COLUMNS['batch'], 'B', 9),
-            $this->linesFor($varietyText, self::COLUMNS['variety'], '', 8.5),
-            $this->linesFor($scionText, self::COLUMNS['scion'], '', 8.5),
-            1,
-        );
-        $height = $contentLines * self::LINE_HEIGHT + (self::ROW_PADDING * 2);
-
-        if ($this->GetY() + $height > $this->PageBreakTrigger) {
+        if ($this->GetY() + self::HEADER_H + 12 > $this->PageBreakTrigger) {
             $this->AddPage($this->CurOrientation);
         }
 
+        $this->SetFillColor(...self::BRAND);
+        $this->Rect(12, $this->GetY(), self::TABLE_WIDTH, 6.2, 'F');
+        $this->SetXY(14, $this->GetY() + 0.8);
+        $this->SetFont('Helvetica', 'B', 9);
+        $this->SetTextColor(255, 255, 255);
+        $this->Cell(self::TABLE_WIDTH - 4, 4.6, $this->txt($label), 0, 1, 'L');
+        $this->SetX(12);
+
+        $this->drawGridHeader();
+    }
+
+    private function drawGridHeader(): void
+    {
+        $x = 12.0;
+        $y = $this->GetY();
+
+        $this->SetDrawColor(...self::BORDER);
+        $this->SetLineWidth(0.2);
+        $this->SetFillColor(...self::BRAND);
+        $this->SetTextColor(255, 255, 255);
+
+        // Spanning header (row 1).
+        $this->SetFont('Helvetica', 'B', self::ROW_H >= 6 ? 7 : 6.5);
+        $this->SetXY($x, $y);
+        $this->Cell(self::DATE_W, self::HEADER_H, $this->txt('Date'), 1, 0, 'C', true);
+        $this->Cell(self::DESC_W, self::HEADER_H, $this->txt('Description'), 1, 0, 'C', true);
+        $this->Cell(self::SEEDLINGS_W, self::HEADER_H, $this->txt('Seedlings'), 1, 0, 'C', true);
+
+        foreach ($this->sections() as $label) {
+            $this->Cell(self::SECTION_W, self::HEADER_H / 2, $this->txt($label), 1, 0, 'C', true);
+        }
+
+        // Per-variety header (row 2).
+        $this->SetFont('Helvetica', 'B', $this->fontSize);
+        $this->SetXY($x + self::DATE_W + self::DESC_W + self::SEEDLINGS_W, $y + self::HEADER_H / 2);
+
+        foreach ($this->sections() as $label) {
+            if ($this->varieties === []) {
+                $this->Cell(self::SECTION_W, self::HEADER_H / 2, '', 1, 0, 'C', true);
+
+                continue;
+            }
+
+            foreach ($this->varieties as $variety) {
+                $this->Cell($this->colW, self::HEADER_H / 2, $this->txt($this->shorten((string) $variety['name'])), 1, 0, 'C', true);
+            }
+        }
+
+        $this->SetXY($x, $y + self::HEADER_H);
+        $this->SetTextColor(...self::TEXT);
+        $this->SetDrawColor(...self::BORDER);
+    }
+
+    /**
+     * @param  array<string,mixed>  $row
+     */
+    private function drawEventRow(array $row, int $number): void
+    {
+        $description = (string) $row['description'];
+        $lines = max(1, $this->nbLines(self::DESC_W - 2, $description));
+        $height = max(self::ROW_H, ($lines * 3.6) + 1.6);
+
+        $this->ensureRowSpace($height);
+
         $x = $this->GetX();
         $y = $this->GetY();
-        $contentTop = $y + self::ROW_PADDING;
+        $fill = $number % 2 === 0;
 
-        if ($number % 2 === 0) {
+        if ($fill) {
             $this->SetFillColor(...self::ZEBRA);
             $this->Rect($x, $y, self::TABLE_WIDTH, $height, 'F');
         }
 
-        $this->SetDrawColor(...self::BORDER);
-        $this->SetLineWidth(0.2);
-        $cursor = $x;
-        foreach (self::COLUMNS as $width) {
-            $this->Rect($cursor, $y, $width, $height, 'D');
-            $cursor += $width;
+        $this->SetFont('Helvetica', '', 6.5);
+        $this->SetTextColor(...self::TEXT);
+
+        $this->vCenter($this->shortDate((string) $row['date']), $x, $y, self::DATE_W, $height, 'C', self::TEXT, $fill);
+
+        $this->Rect($x + self::DATE_W, $y, self::DESC_W, $height, 'D');
+        $this->SetXY($x + self::DATE_W + 1, $y + 0.8);
+        $this->MultiCell(self::DESC_W - 2, 3.6, $this->txt($description), 0, 'L');
+
+        $seedlings = (int) $row['seedlings'];
+        $this->vCenter($seedlings > 0 ? number_format($seedlings) : '', $x + self::DATE_W + self::DESC_W, $y, self::SEEDLINGS_W, $height, 'R', self::TEXT, $fill);
+
+        $sectionX = $x + self::DATE_W + self::DESC_W + self::SEEDLINGS_W;
+
+        foreach ($this->dimensions() as $dimension) {
+            if ($this->varieties === []) {
+                $this->drawCellBorder($sectionX, $y, self::SECTION_W, $height, $fill);
+                $sectionX += self::SECTION_W;
+
+                continue;
+            }
+
+            foreach ($this->varieties as $variety) {
+                $value = (int) ($row[$dimension][$variety['id']] ?? 0);
+                $color = match ($dimension) {
+                    'mortality' => self::DANGER,
+                    'regraft' => self::WARNING,
+                    default => self::TEXT,
+                };
+                $this->vCenter($value > 0 ? number_format($value) : '', $sectionX, $y, $this->colW, $height, 'R', $color, $fill);
+                $sectionX += $this->colW;
+            }
         }
-
-        $this->vCenter((string) $number, $x, $y, self::COLUMNS['num'], $height, 'C', self::TEXT, 'B', 9);
-
-        $batchX = $x + self::COLUMNS['num'];
-        $this->SetXY($batchX, $contentTop);
-        $this->SetFont('Helvetica', 'B', 9);
-        $this->SetTextColor(...self::TEXT);
-        $this->MultiCell(self::COLUMNS['batch'], self::LINE_HEIGHT, $batchText, 0, 'L');
-
-        $varietyX = $batchX + self::COLUMNS['batch'];
-        $this->SetXY($varietyX, $contentTop);
-        $this->SetFont('Helvetica', '', 8.5);
-        $this->SetTextColor(...self::TEXT);
-        $this->MultiCell(self::COLUMNS['variety'], self::LINE_HEIGHT, $varietyText, 0, 'L');
-
-        $scionX = $varietyX + self::COLUMNS['variety'];
-        $this->SetXY($scionX, $contentTop);
-        $this->SetFont('Helvetica', '', 8.5);
-        $this->SetTextColor(...self::TEXT);
-        $this->MultiCell(self::COLUMNS['scion'], self::LINE_HEIGHT, $scionText, 0, 'L');
-
-        $graftedX = $scionX + self::COLUMNS['scion'];
-        $this->vCenter(number_format($row['grafted']), $graftedX, $y, self::COLUMNS['grafted'], $height, 'R', self::TEXT, '', 8.5);
-
-        $viableX = $graftedX + self::COLUMNS['grafted'];
-        $this->vCenter(number_format($row['viable']), $viableX, $y, self::COLUMNS['viable'], $height, 'R', self::TEXT, '', 8.5);
-
-        $availableX = $viableX + self::COLUMNS['viable'];
-        $this->vCenter(number_format($row['available']), $availableX, $y, self::COLUMNS['available'], $height, 'R', self::TEXT, '', 8.5);
-
-        $mortalityX = $availableX + self::COLUMNS['available'];
-        $this->vCenter(number_format($row['mortality']), $mortalityX, $y, self::COLUMNS['mortality'], $height, 'R', [176, 42, 55], '', 8.5);
-
-        $replantingX = $mortalityX + self::COLUMNS['mortality'];
-        $this->vCenter(number_format($row['replanting']), $replantingX, $y, self::COLUMNS['replanting'], $height, 'R', [176, 84, 10], '', 8.5);
-
-        $dateX = $replantingX + self::COLUMNS['replanting'];
-        $this->vCenter($row['grafted_date'] ?? '-', $dateX, $y, self::COLUMNS['date'], $height, 'C', self::TEXT, '', 8.5);
-
-        $statusX = $dateX + self::COLUMNS['date'];
-        $this->vCenter($this->txt($row['status']), $statusX, $y, self::COLUMNS['status'], $height, 'C', $this->statusColor($row['status']), 'B', 8.5);
 
         $this->SetXY($x, $y + $height);
     }
 
     /**
-     * @param  array{0:int,1:int,2:int}  $color
+     * @param  array<string,mixed>  $totals
      */
-    private function vCenter(string $text, float $x, float $y, float $width, float $height, string $align, array $color, string $style = '', float $size = 8.5): void
+    private function drawTotalsRow(string $label, array $totals, bool $grand): void
     {
-        $this->SetFont('Helvetica', $style, $size);
-        $this->SetTextColor(...$color);
-        $this->SetXY($x, $y + (($height - self::LINE_HEIGHT) / 2));
-        $this->Cell($width, self::LINE_HEIGHT, $this->txt($text), 0, 0, $align);
+        $height = $grand ? 6.4 : 5.8;
+        $this->ensureRowSpace($height);
+
+        $x = $this->GetX();
+        $y = $this->GetY();
+
+        $this->SetFillColor(...self::BRAND_LIGHT);
+        $this->Rect($x, $y, self::TABLE_WIDTH, $height, 'F');
+        $this->SetDrawColor(...self::BORDER);
+        $this->SetLineWidth(0.2);
+
+        $this->SetFont('Helvetica', 'B', 6.5);
+        $this->SetTextColor(...self::TEXT);
+        $this->SetXY($x + 1, $y + (($height - 4) / 2));
+        $this->Cell(self::DATE_W + self::DESC_W - 1, 4, $this->txt($label), 0, 0, 'L');
+
+        $this->vCenter(number_format((int) ($totals['seedlings'] ?? 0)), $x + self::DATE_W + self::DESC_W, $y, self::SEEDLINGS_W, $height, 'R', self::TEXT, true);
+
+        $sectionX = $x + self::DATE_W + self::DESC_W + self::SEEDLINGS_W;
+
+        foreach ($this->dimensions() as $dimension) {
+            if ($this->varieties === []) {
+                $this->drawCellBorder($sectionX, $y, self::SECTION_W, $height, true);
+                $sectionX += self::SECTION_W;
+
+                continue;
+            }
+
+            foreach ($this->varieties as $variety) {
+                $value = (int) ($totals[$dimension][$variety['id']] ?? 0);
+                $color = match ($dimension) {
+                    'mortality' => self::DANGER,
+                    'regraft' => self::WARNING,
+                    default => self::BRAND,
+                };
+                $this->vCenter($value > 0 ? number_format($value) : '0', $sectionX, $y, $this->colW, $height, 'R', $color, true, 'B', $grand ? 7 : 6.5);
+                $sectionX += $this->colW;
+            }
+        }
+
+        $this->SetXY($x, $y + $height);
+    }
+
+    private function drawCellBorder(float $x, float $y, float $width, float $height, bool $fill): void
+    {
+        $this->Rect($x, $y, $width, $height, $fill ? 'DF' : 'D');
     }
 
     /**
-     * @return array{0:int,1:int,2:int}
+     * @return array<int,string>
      */
-    private function statusColor(string $status): array
+    private function sections(): array
     {
-        return match (strtolower($status)) {
-            'active' => [21, 115, 71],
-            'depleted' => [176, 84, 10],
-            default => [108, 117, 125],
-        };
+        return ['Grafted', 'Mortality', 'Re Graft', 'Ready to Plant', 'Pullout'];
     }
 
-    private function linesFor(string $text, float $width, string $style = '', float $size = 8.5): int
+    /**
+     * @return array<int,string>
+     */
+    private function dimensions(): array
     {
-        $this->SetFont('Helvetica', $style, $size);
+        return ['grafted', 'mortality', 'regraft', 'ready', 'pullout'];
+    }
 
-        return $this->nbLines($width, $text);
+    private function ensureRowSpace(float $height): void
+    {
+        if ($this->GetY() + $height <= $this->PageBreakTrigger) {
+            return;
+        }
+
+        $this->AddPage($this->CurOrientation);
+        $this->SetX(12);
+        $this->drawGridHeader();
+    }
+
+    /**
+     * @param  array{0:int,1:int,2:int}  $color
+     */
+    private function vCenter(string $text, float $x, float $y, float $width, float $height, string $align, array $color, bool $fill, string $style = '', ?float $size = null): void
+    {
+        $this->SetFont('Helvetica', $style, $size ?? $this->fontSize);
+        $this->SetTextColor(...$color);
+        $this->SetFillColor(...($fill ? self::ZEBRA : [255, 255, 255]));
+        $this->SetDrawColor(...self::BORDER);
+        $this->SetXY($x, $y + (($height - 4) / 2));
+        $this->Cell($width, 4, $text, 1, 0, $align, true);
+    }
+
+    private function shortDate(string $isoDate): string
+    {
+        $timestamp = strtotime($isoDate);
+
+        return $timestamp ? date('M d', $timestamp) : $isoDate;
+    }
+
+    private function shorten(string $text): string
+    {
+        return strlen($text) > 14 ? substr($text, 0, 13).'…' : $text;
     }
 
     private function nbLines(float $width, string $text): int
     {
+        $this->SetFont('Helvetica', '', 6.5);
+
         $text = str_replace("\r", '', $text);
         $paragraphs = explode("\n", $text);
         $max = 1;
 
         foreach ($paragraphs as $paragraph) {
             if ($paragraph === '') {
-                $max = max($max, 1);
-
                 continue;
             }
 

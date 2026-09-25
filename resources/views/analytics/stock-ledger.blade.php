@@ -3,14 +3,26 @@
 @section('title', 'Cacao Tree Stock Ledger')
 @section('page_title', 'Cacao Tree Stock Ledger')
 
+@php
+    $sections = [
+        'grafted' => 'Grafted',
+        'mortality' => 'Mortality',
+        'regraft' => 'Re Graft',
+        'ready' => 'Ready to Plant',
+        'pullout' => 'Pullout',
+    ];
+    $varietyColumns = $grid['varieties'];
+    $varietyCount = max(1, count($varietyColumns));
+@endphp
+
 @section('page_actions')
-<div class="d-flex gap-2">
+<div class="d-flex flex-wrap gap-2 justify-content-end">
     <button class="btn btn-outline-success" type="button" id="exportLedger">
         <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
     </button>
     <form method="GET" action="{{ route('analytics.stock-ledger.export') }}" target="_blank" class="d-inline">
         <input type="hidden" name="batch_id" value="{{ $filters['batch_id'] ?? '' }}">
-        <input type="hidden" name="variety_id" value="{{ $filters['variety_id'] ?? '' }}">
+        <input type="hidden" name="scion_variety_id" value="{{ $filters['scion_variety_id'] ?? '' }}">
         <input type="hidden" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
         <input type="hidden" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
         <button type="submit" class="btn btn-outline-secondary">
@@ -21,7 +33,7 @@
         @csrf
         <input type="hidden" name="analysis_type" value="{{ \App\Models\Analytic::TYPE_STOCK_LEDGER }}">
         <input type="hidden" name="batch_id" value="{{ $filters['batch_id'] ?? '' }}">
-        <input type="hidden" name="variety_id" value="{{ $filters['variety_id'] ?? '' }}">
+        <input type="hidden" name="scion_variety_id" value="{{ $filters['scion_variety_id'] ?? '' }}">
         <input type="hidden" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
         <input type="hidden" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
         <button type="submit" class="btn btn-success">
@@ -61,20 +73,20 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label text-muted small fw-bold">Variety</label>
-                <select name="variety_id" class="form-select">
-                    <option value="">All Varieties</option>
-                    @foreach ($varieties as $variety)
-                        <option value="{{ $variety->variety_id }}" @selected(($filters['variety_id'] ?? null) == $variety->variety_id)>{{ $variety->variety_name }}</option>
+                <label class="form-label text-muted small fw-bold">Scion Variety</label>
+                <select name="scion_variety_id" class="form-select">
+                    <option value="">All Scion Varieties</option>
+                    @foreach ($scionVarieties as $scionVariety)
+                        <option value="{{ $scionVariety->scion_variety_id }}" @selected(($filters['scion_variety_id'] ?? null) == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
                     @endforeach
                 </select>
             </div>
             <div class="col-md-2">
-                <label class="form-label text-muted small fw-bold">Grafted From</label>
+                <label class="form-label text-muted small fw-bold">Date From</label>
                 <input type="date" name="date_from" class="form-control" value="{{ $filters['date_from'] ?? '' }}">
             </div>
             <div class="col-md-2">
-                <label class="form-label text-muted small fw-bold">Grafted To</label>
+                <label class="form-label text-muted small fw-bold">Date To</label>
                 <input type="date" name="date_to" class="form-control" value="{{ $filters['date_to'] ?? '' }}">
             </div>
             <div class="col-md-2 d-flex align-items-end gap-2">
@@ -85,64 +97,141 @@
         @error('date_to')
             <div class="text-danger small mt-2">{{ $message }}</div>
         @enderror
+        <small class="text-muted d-block mt-2">
+            Monthly grid grouped by month, with dynamic per-Scion-Variety columns. Seedlings = Stock In quantity;
+            Grafted = batch total grafted; Mortality / Re Graft / Ready to Plant / Pullout, per scion variety.
+            <span class="fst-italic">Ready to Plant currently maps to each batch's live available count (pending client confirmation).</span>
+        </small>
     </div>
 </div>
 
-<div class="card">
-    <div class="card-body p-0">
-        @if ($ledger->isEmpty())
+@if (! $grid['hasData'])
+    <div class="card">
+        <div class="card-body">
             <p class="text-muted text-center my-5">No data available for the selected period.</p>
-        @else
+        </div>
+    </div>
+@else
+    @foreach ($grid['months'] as $month)
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold text-primary">{{ $month['label'] }}</h6>
+                <span class="text-muted small">{{ count($month['rows']) }} entr{{ count($month['rows']) === 1 ? 'y' : 'ies' }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 align-middle ledger-month-table">
+                        <thead class="table-light">
+                            <tr class="text-center">
+                                <th rowspan="2" class="align-middle">Date</th>
+                                <th rowspan="2" class="align-middle">Description</th>
+                                <th rowspan="2" class="align-middle text-end">Seedlings</th>
+                                @foreach ($sections as $sectionLabel)
+                                    <th colspan="{{ $varietyCount }}" class="text-center">{{ $sectionLabel }}</th>
+                                @endforeach
+                            </tr>
+                            <tr class="text-center">
+                                @foreach ($sections as $sectionKey => $sectionLabel)
+                                    @if (empty($varietyColumns))
+                                        <th class="text-end">—</th>
+                                    @else
+                                        @foreach ($varietyColumns as $variety)
+                                            <th class="text-end small">{{ $variety['name'] }}</th>
+                                        @endforeach
+                                    @endif
+                                @endforeach
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($month['rows'] as $row)
+                                <tr>
+                                    <td class="text-nowrap">{{ \Illuminate\Support\Carbon::parse($row['date'])->format('M d') }}</td>
+                                    <td>{{ $row['description'] }}</td>
+                                    <td class="text-end">{{ $row['seedlings'] > 0 ? number_format($row['seedlings']) : '—' }}</td>
+                                    @foreach ($sections as $sectionKey => $sectionLabel)
+                                        @if (empty($varietyColumns))
+                                            <td class="text-end">—</td>
+                                        @else
+                                            @foreach ($varietyColumns as $variety)
+                                                @php $value = (int) ($row[$sectionKey][$variety['id']] ?? 0); @endphp
+                                                <td class="text-end {{ $sectionKey === 'mortality' && $value > 0 ? 'text-danger' : ($sectionKey === 'regraft' && $value > 0 ? 'text-warning' : '') }}">
+                                                    {{ $value > 0 ? number_format($value) : '—' }}
+                                                </td>
+                                            @endforeach
+                                        @endif
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot class="table-secondary fw-bold">
+                            <tr>
+                                <td colspan="2" class="text-start">TOTAL — {{ $month['label'] }}</td>
+                                <td class="text-end">{{ number_format($month['totals']['seedlings']) }}</td>
+                                @foreach ($sections as $sectionKey => $sectionLabel)
+                                    @if (empty($varietyColumns))
+                                        <td class="text-end">0</td>
+                                    @else
+                                        @foreach ($varietyColumns as $variety)
+                                            <td class="text-end">{{ number_format((int) ($month['totals'][$sectionKey][$variety['id']] ?? 0)) }}</td>
+                                        @endforeach
+                                    @endif
+                                @endforeach
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    @endforeach
+
+    <div class="card mb-4 border-success">
+        <div class="card-header bg-white">
+            <h6 class="mb-0 fw-bold text-success">Grand Total (all months)</h6>
+        </div>
+        <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover table-bordered mb-0 align-middle" id="ledgerTable">
+                <table class="table table-sm table-bordered mb-0 align-middle ledger-month-table">
                     <thead class="table-light">
-                        <tr>
-                            <th>ID</th>
-                            <th>Batch</th>
-                            <th>Variety</th>
-                            <th>Scion</th>
-                            <th class="text-end">Grafted</th>
-                            <th class="text-end">Viable</th>
-                            <th class="text-end">Available</th>
-                            <th class="text-end">Mortality</th>
-                            <th class="text-end">Replanting</th>
-                            <th>Grafted Date</th>
-                            <th>Status</th>
+                        <tr class="text-center">
+                            <th rowspan="2" class="align-middle">Date</th>
+                            <th rowspan="2" class="align-middle">Description</th>
+                            <th rowspan="2" class="align-middle text-end">Seedlings</th>
+                            @foreach ($sections as $sectionLabel)
+                                <th colspan="{{ $varietyCount }}" class="text-center">{{ $sectionLabel }}</th>
+                            @endforeach
+                        </tr>
+                        <tr class="text-center">
+                            @foreach ($sections as $sectionKey => $sectionLabel)
+                                @if (empty($varietyColumns))
+                                    <th class="text-end">—</th>
+                                @else
+                                    @foreach ($varietyColumns as $variety)
+                                        <th class="text-end small">{{ $variety['name'] }}</th>
+                                    @endforeach
+                                @endif
+                            @endforeach
                         </tr>
                     </thead>
-                    <tbody>
-                        @foreach ($ledger as $batch)
-                            @php
-                                $available = $batch->inventory?->current_quantity ?? $batch->available_count;
-                                $status = $batch->inventory?->derivedStatus() ?? $batch->status;
-                            @endphp
-                            <tr>
-                                <td>{{ $batch->batch_id }}</td>
-                                <td class="fw-bold">{{ $batch->batch_code }}</td>
-                                <td>{{ $batch->variety?->variety_name ?? '—' }}</td>
-                                <td>{{ $batch->scion?->scion_name ?? '—' }}</td>
-                                <td class="text-end">{{ number_format($batch->total_grafted) }}</td>
-                                <td class="text-end">{{ number_format($batch->viable_count) }}</td>
-                                <td class="text-end">{{ number_format($available) }}</td>
-                                <td class="text-end text-danger">{{ number_format($batch->effectiveMortalityQuantity()) }}</td>
-                                <td class="text-end text-warning">{{ number_format($batch->totalReplanted()) }}</td>
-                                <td>{{ $batch->grafted_date?->format('M d, Y') }}</td>
-                                <td>
-                                    <span class="badge {{ $status === 'active' ? 'bg-success' : 'bg-secondary' }}">
-                                        {{ ucfirst($status) }}
-                                    </span>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
+                    <tfoot class="table-success fw-bold">
+                        <tr>
+                            <td colspan="2" class="text-start">GRAND TOTAL</td>
+                            <td class="text-end">{{ number_format($grid['grandTotals']['seedlings']) }}</td>
+                            @foreach ($sections as $sectionKey => $sectionLabel)
+                                @if (empty($varietyColumns))
+                                    <td class="text-end">0</td>
+                                @else
+                                    @foreach ($varietyColumns as $variety)
+                                        <td class="text-end">{{ number_format((int) ($grid['grandTotals'][$sectionKey][$variety['id']] ?? 0)) }}</td>
+                                    @endforeach
+                                @endif
+                            @endforeach
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
-            <div class="p-3">
-                {{ $ledger->links('pagination::bootstrap-5') }}
-            </div>
-        @endif
+        </div>
     </div>
-</div>
+@endif
 
 @include('analytics.partials.generated-reports', [
     'reports' => $reports,
@@ -153,14 +242,21 @@
 @push('scripts')
 <script>
 document.getElementById('exportLedger')?.addEventListener('click', function () {
-    const table = document.getElementById('ledgerTable');
-    if (!table) return;
+    const tables = document.querySelectorAll('.ledger-month-table');
+    if (!tables.length) return;
 
-    const rows = Array.from(table.querySelectorAll('tr')).map((tr) =>
-        Array.from(tr.querySelectorAll('th, td')).map((cell) => '"' + cell.innerText.trim().replace(/"/g, '""') + '"').join(',')
-    );
+    const lines = [];
+    tables.forEach(function (table) {
+        Array.from(table.querySelectorAll('tr')).forEach(function (tr) {
+            const cells = Array.from(tr.querySelectorAll('th, td')).map(function (cell) {
+                return '"' + cell.innerText.trim().replace(/"/g, '""') + '"';
+            });
+            lines.push(cells.join(','));
+        });
+        lines.push('');
+    });
 
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = 'cacao-stock-ledger.csv';

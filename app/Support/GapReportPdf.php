@@ -7,11 +7,11 @@ use FPDF;
 /**
  * Printable "Gap Report" PDF (FPDF, landscape).
  *
- * Historical deliverable (PRD §14.3): per batch, expected = `viable_count`,
- * actual = `inventories.current_quantity`, gap = max(0, expected − actual).
- * Every value is passed in by the controller from the centralized
- * AnalyticsMetrics::gapReport() (RULE 5/6/12). The report is generated live —
- * no report table is involved (PRD §9, ERD §9.4).
+ * Historical deliverable (PRD §9.5): per batch, expected = `viable_count`,
+ * actual = `available_count`, pulled out = summed Stock_Out_Detail quantity, and
+ * gap = max(0, expected − actual − pulled out). Every value is passed in by the
+ * controller from the centralized AnalyticsMetrics::gapReport() (RULE 5/6/12).
+ * The report is generated live — no report table is involved (PRD §9, ERD §9.4).
  *
  * Non Latin-1 characters are transliterated so the core FPDF fonts render.
  */
@@ -25,11 +25,12 @@ class GapReportPdf extends FPDF
 
     /** @var array<string,float> Column widths in millimetres (sum = TABLE_WIDTH). */
     private const COLUMNS = [
-        'batch' => 50.0,
-        'variety' => 83.0,
-        'expected' => 46.0,
-        'actual' => 46.0,
-        'gap' => 48.0,
+        'batch' => 44.0,
+        'variety' => 62.0,
+        'expected' => 41.0,
+        'actual' => 41.0,
+        'pulled_out' => 44.0,
+        'gap' => 41.0,
     ];
 
     /** Brand palette (shared with the other report PDFs). */
@@ -48,8 +49,8 @@ class GapReportPdf extends FPDF
     private const DANGER = [176, 42, 55];
 
     /**
-     * @param  list<array{batch:string, variety:string, expected:int, actual:int, gap:int}>  $rows
-     * @param  array{expected:int, actual:int, gap:int}  $totals
+     * @param  list<array{batch:string, variety:string, expected:int, actual:int, pulled_out:int, gap:int}>  $rows
+     * @param  array{expected:int, actual:int, pulled_out:int, gap:int}  $totals
      */
     public function __construct(
         private readonly string $filterLabel,
@@ -114,9 +115,10 @@ class GapReportPdf extends FPDF
         $this->SetFont('Helvetica', '', 9);
         $this->SetTextColor(...self::TEXT);
         $this->SetXY(15, $summaryY + 1.8);
-        $this->Cell(91, 4.4, $this->txt(sprintf('Expected inventory: %d', $this->totals['expected'])), 0, 0, 'L');
-        $this->Cell(91, 4.4, $this->txt(sprintf('Actual inventory: %d', $this->totals['actual'])), 0, 0, 'L');
-        $this->Cell(91, 4.4, $this->txt(sprintf('Total gap: %d', $this->totals['gap'])), 0, 1, 'L');
+        $this->Cell(68, 4.4, $this->txt(sprintf('Expected: %d', $this->totals['expected'])), 0, 0, 'L');
+        $this->Cell(68, 4.4, $this->txt(sprintf('Available: %d', $this->totals['actual'])), 0, 0, 'L');
+        $this->Cell(68, 4.4, $this->txt(sprintf('Pulled out: %d', $this->totals['pulled_out'])), 0, 0, 'L');
+        $this->Cell(69, 4.4, $this->txt(sprintf('Total gap: %d', $this->totals['gap'])), 0, 1, 'L');
 
         $this->SetY($summaryY + 9.5);
         $this->SetX(12);
@@ -178,9 +180,10 @@ class GapReportPdf extends FPDF
     {
         $headers = [
             'batch' => 'Batch',
-            'variety' => 'Variety',
+            'variety' => 'Scion Variety',
             'expected' => 'Expected',
-            'actual' => 'Actual',
+            'actual' => 'Available',
+            'pulled_out' => 'Pulled Out',
             'gap' => 'Gap',
         ];
 
@@ -191,7 +194,7 @@ class GapReportPdf extends FPDF
         $this->SetLineWidth(0.2);
 
         foreach ($headers as $key => $label) {
-            $align = in_array($key, ['expected', 'actual', 'gap'], true) ? 'R' : 'L';
+            $align = in_array($key, ['expected', 'actual', 'pulled_out', 'gap'], true) ? 'R' : 'L';
             $this->Cell(self::COLUMNS[$key], 7, $this->txt($label), 1, 0, $align, true);
         }
 
@@ -253,7 +256,10 @@ class GapReportPdf extends FPDF
         $actualX = $expectedX + self::COLUMNS['expected'];
         $this->vCenter(number_format($row['actual']), $actualX, $y, self::COLUMNS['actual'], $height, 'R', self::TEXT, '', 8.5);
 
-        $gapX = $actualX + self::COLUMNS['actual'];
+        $pulledX = $actualX + self::COLUMNS['actual'];
+        $this->vCenter(number_format($row['pulled_out']), $pulledX, $y, self::COLUMNS['pulled_out'], $height, 'R', self::TEXT, '', 8.5);
+
+        $gapX = $pulledX + self::COLUMNS['pulled_out'];
         $gapColor = $row['gap'] > 0 ? self::DANGER : self::BRAND;
         $this->vCenter(number_format($row['gap']), $gapX, $y, self::COLUMNS['gap'], $height, 'R', $gapColor, 'B', 8.5);
 
@@ -291,7 +297,10 @@ class GapReportPdf extends FPDF
         $actualX = $expectedX + self::COLUMNS['expected'];
         $this->vCenter(number_format($this->totals['actual']), $actualX, $y, self::COLUMNS['actual'], $height, 'R', self::TEXT, 'B', 8.5);
 
-        $gapX = $actualX + self::COLUMNS['actual'];
+        $pulledX = $actualX + self::COLUMNS['actual'];
+        $this->vCenter(number_format($this->totals['pulled_out']), $pulledX, $y, self::COLUMNS['pulled_out'], $height, 'R', self::TEXT, 'B', 8.5);
+
+        $gapX = $pulledX + self::COLUMNS['pulled_out'];
         $this->vCenter(number_format($this->totals['gap']), $gapX, $y, self::COLUMNS['gap'], $height, 'R', self::DANGER, 'B', 9.5);
 
         $this->SetXY($x, $y + $height);

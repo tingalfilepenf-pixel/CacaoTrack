@@ -4,9 +4,11 @@ namespace App\Support;
 
 use App\Models\Analytic;
 use App\Models\Batch;
-use App\Models\Inventory;
 use App\Models\MortalityRecord;
-use App\Models\Variety;
+use App\Models\RegraftRecord;
+use App\Models\ScionVariety;
+use App\Models\StockIn;
+use App\Models\StockOutDetail;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -19,14 +21,14 @@ use Illuminate\Support\Facades\DB;
  * Every dashboard/report/chart value must trace back to actual database rows
  * through one of these definitions (RULE 12). Formulas that already exist on
  * the models are reused rather than re-implemented:
- *  - Total Active Inventory  -> Inventory::totalActiveQuantity()
+ *  - Total Active Inventory  -> Batch::totalAvailableQuantity()
  *  - Replanting Deficit      -> Batch::replantingDeficit()
  *  - Effective mortality     -> MortalityRecord::effectiveQuantity()
  *
- * Definitions (approved):
- *  - Crude Mortality Rate = effective mortality / total grafted * 100,
- *    for the filtered batches; the date range filters the mortality numerator.
- *  - Gap = max(0, Batch.Viable_Count - Inventory.Current_Quantity).
+ * Definitions (approved, revised 15-entity model):
+ *  - Crude Mortality Rate = effective mortality / total grafted * 100, for the
+ *    filtered batches; the date range filters the mortality numerator.
+ *  - Gap = max(0, Batch.Viable_Count - Batch.Available_Count - Stock_Out qty).
  *  - Age = reference date - Batch.Grafted_Date, counted in inventory quantity
  *    buckets 0-30 / 31-60 / 61-90 / 91+ days.
  */
@@ -35,11 +37,11 @@ class AnalyticsMetrics
     /**
      * Restrict a batch query to the selected population.
      */
-    protected static function batchQuery(?int $batchId = null, ?int $varietyId = null): Builder
+    protected static function batchQuery(?int $batchId = null, ?int $scionVarietyId = null): Builder
     {
         return Batch::query()
             ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
-            ->when($varietyId, fn (Builder $q) => $q->where('variety_id', $varietyId));
+            ->when($scionVarietyId, fn (Builder $q) => $q->where('scion_variety_id', $scionVarietyId));
     }
 
     /**
@@ -47,36 +49,41 @@ class AnalyticsMetrics
      */
     protected static function mortalityQuery(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?string $from = null,
         ?string $to = null,
     ): Builder {
         return MortalityRecord::query()
             ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
-            ->when($varietyId, fn (Builder $q) => $q->whereHas('batch', fn (Builder $b) => $b->where('variety_id', $varietyId)))
+            ->when($scionVarietyId, fn (Builder $q) => $q->whereHas('batch', fn (Builder $b) => $b->where('scion_variety_id', $scionVarietyId)))
             ->when($from, fn (Builder $q) => $q->whereDate('recorded_at', '>=', $from))
             ->when($to, fn (Builder $q) => $q->whereDate('recorded_at', '<=', $to));
     }
 
     /**
-     * Effective mortality quantity (records + signed adjustments) for the
-     * filtered population and period.
+     * Effective mortality quantity (raw recorded quantity — adjustments were
+     * removed with the revised model) for the filtered population and period.
      */
     public static function effectiveMortality(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?string $from = null,
         ?string $to = null,
     ): int {
-        return (int) self::mortalityQuery($batchId, $varietyId, $from, $to)
-            ->with('adjustments')
+        return (int) self::mortalityQuery($batchId, $scionVarietyId, $from, $to)
             ->get()
             ->sum(fn (MortalityRecord $record) => $record->effectiveQuantity());
     }
 
+    /**
+     * Total Active Inventory (the dashboard "Current Inventory" KPI, PRD §10):
+     * the live available balance summed across ALL batches (archived included —
+     * the deliberate existing design decision). Replaces the removed
+     * `Inventory::totalActiveQuantity()`.
+     */
     public static function totalActiveInventory(): int
     {
-        return Inventory::totalActiveQuantity();
+        return Batch::totalAvailableQuantity();
     }
 
     public static function totalReplantingDeficit(): int
@@ -87,29 +94,30 @@ class AnalyticsMetrics
     }
 
     /**
-     * Crude Mortality Rate numerator/denominator (PRD §12.2).
+     * Crude Mortality Rate numerator/denominator (PRD §10 Dashboard / §11 Data
+     * Consistency).
      *
      * @return array{numerator:int,denominator:int}
      */
     public static function mortalityRateComponents(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?string $from = null,
         ?string $to = null,
     ): array {
         return [
-            'numerator' => self::effectiveMortality($batchId, $varietyId, $from, $to),
-            'denominator' => (int) self::batchQuery($batchId, $varietyId)->sum('total_grafted'),
+            'numerator' => self::effectiveMortality($batchId, $scionVarietyId, $from, $to),
+            'denominator' => (int) self::batchQuery($batchId, $scionVarietyId)->sum('total_grafted'),
         ];
     }
 
     public static function crudeMortalityRate(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?string $from = null,
         ?string $to = null,
     ): float {
-        $parts = self::mortalityRateComponents($batchId, $varietyId, $from, $to);
+        $parts = self::mortalityRateComponents($batchId, $scionVarietyId, $from, $to);
 
         if ($parts['denominator'] <= 0) {
             return 0.0;
@@ -129,7 +137,6 @@ class AnalyticsMetrics
         $start = $end->copy()->startOfMonth()->subMonths($months - 1);
 
         $sumByMonth = self::mortalityQuery(null, null, $start->toDateString(), $end->toDateString())
-            ->with('adjustments')
             ->get()
             ->groupBy(fn (MortalityRecord $record) => $record->recorded_at->format('Y-m'))
             ->map(fn (Collection $records) => (int) $records->sum(fn (MortalityRecord $r) => $r->effectiveQuantity()));
@@ -147,18 +154,17 @@ class AnalyticsMetrics
     }
 
     /**
-     * Active inventory grouped by variety.
+     * Live available inventory grouped by Scion Variety (PRD §11 "Available").
      *
      * @return array{labels:array<int,string>,values:array<int,int>}
      */
-    public static function inventoryByVariety(): array
+    public static function inventoryByScionVariety(): array
     {
-        $rows = DB::table('inventories')
-            ->join('batches', 'batches.batch_id', '=', 'inventories.batch_id')
-            ->join('varieties', 'varieties.variety_id', '=', 'batches.variety_id')
-            ->groupBy('varieties.variety_name')
-            ->orderBy('varieties.variety_name')
-            ->selectRaw('varieties.variety_name as name, COALESCE(SUM(inventories.current_quantity), 0) as value')
+        $rows = DB::table('batches')
+            ->leftJoin('scion_varieties', 'scion_varieties.scion_variety_id', '=', 'batches.scion_variety_id')
+            ->groupBy('scion_varieties.scion_variety_name')
+            ->orderBy('scion_varieties.scion_variety_name')
+            ->selectRaw("COALESCE(scion_varieties.scion_variety_name, 'Unassigned') as name, COALESCE(SUM(batches.available_count), 0) as value")
             ->get();
 
         return [
@@ -185,60 +191,56 @@ class AnalyticsMetrics
     /**
      * Surviving vs mortality split based on viable counts.
      *
+     * `viable_count` is set once at batch establishment and is never decremented
+     * by mortality (revised rule), so surviving = viable - recorded mortality
+     * (floored at 0) and the two slices sum to the original viable population
+     * (RULE 6).
+     *
      * @return array{surviving:int,mortality:int,totalViable:int}
      */
     public static function survivalVsMortality(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?string $from = null,
         ?string $to = null,
     ): array {
-        // `batch.viable_count` is now the current alive count: Mortality Tracking
-        // already deducts recorded deaths from it (approved change — mortality is
-        // the only operation that updates plant status). Surviving is therefore
-        // the stored viable count; `totalViable` reconstructs the original viable
-        // population (surviving + recorded mortality) so the two slices still sum
-        // to the starting population (RULE 6).
-        $viable = (int) self::batchQuery($batchId, $varietyId)->sum('viable_count');
-        $mortality = self::effectiveMortality($batchId, $varietyId, $from, $to);
-        $surviving = max(0, $viable);
+        $viable = (int) self::batchQuery($batchId, $scionVarietyId)->sum('viable_count');
+        $mortality = self::effectiveMortality($batchId, $scionVarietyId, $from, $to);
 
         return [
-            'surviving' => $surviving,
+            'surviving' => max(0, $viable - $mortality),
             'mortality' => $mortality,
-            'totalViable' => $surviving + $mortality,
+            'totalViable' => $viable,
         ];
     }
 
     /**
      * Mortality root-cause matrix: variety rows by cause columns.
      *
-     * Each cell is the **effective** mortality (raw `Quantity` + signed
-     * `Adjustment_Quantity`) for that variety/cause, via the same
-     * `MortalityRecord::effectiveQuantity()` the Mortality module uses
-     * (RULE 6). The raw and adjustment components are returned alongside the
-     * effective values so the Raw -> Adjustments -> Effective chain is
-     * traceable on the page (PRD §13.2 / §25, RULE 12).
+     * Each cell is the effective mortality (the raw recorded `Quantity`, since
+     * adjustments were removed with the revised model) for that scion variety
+     * and cause, via the same `MortalityRecord::effectiveQuantity()` the
+     * Mortality module uses (RULE 6). Dimensions: cause, batch, scion variety,
+     * quantity and time period (PRD §9.4).
      *
-     * @return array{varieties:array<int,string>,causes:array<int,string>,rows:array<int,array{variety:string,cells:array<string,int>,rawCells:array<string,int>,adjustmentCells:array<string,int>,total:int,rawTotal:int,adjustmentTotal:int}>,totalsByCause:array<string,int>,rawTotalsByCause:array<string,int>,adjustmentTotalsByCause:array<string,int>,rawTotal:int,adjustmentTotal:int,grandTotal:int}
+     * @return array{varieties:array<int,string>,causes:array<int,string>,rows:array<int,array{variety:string,cells:array<string,int>,total:int}>,totalsByCause:array<string,int>,grandTotal:int}
      */
     public static function mortalityMatrix(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?string $from = null,
         ?string $to = null,
     ): array {
-        $records = self::mortalityQuery($batchId, $varietyId, $from, $to)
-            ->with(['adjustments', 'batch.variety'])
+        $records = self::mortalityQuery($batchId, $scionVarietyId, $from, $to)
+            ->with('batch.scionVariety')
             ->get();
 
         $byVariety = [];
         $causeSet = [];
 
         foreach ($records as $record) {
-            $varietyName = $record->batch?->variety?->variety_name ?? 'Unassigned';
+            $varietyName = $record->batch?->scionVariety?->scion_variety_name ?? 'Unassigned';
             $cause = $record->cause ?: 'Unspecified';
-            $raw = (int) $record->quantity;
             $effective = $record->effectiveQuantity();
 
             $causeSet[$cause] = true;
@@ -247,16 +249,12 @@ class AnalyticsMetrics
                 $byVariety[$varietyName] = [
                     'variety' => $varietyName,
                     'cells' => [],
-                    'rawCells' => [],
                     'total' => 0,
-                    'rawTotal' => 0,
                 ];
             }
 
             $byVariety[$varietyName]['cells'][$cause] = ($byVariety[$varietyName]['cells'][$cause] ?? 0) + $effective;
-            $byVariety[$varietyName]['rawCells'][$cause] = ($byVariety[$varietyName]['rawCells'][$cause] ?? 0) + $raw;
             $byVariety[$varietyName]['total'] += $effective;
-            $byVariety[$varietyName]['rawTotal'] += $raw;
         }
 
         ksort($byVariety);
@@ -267,38 +265,20 @@ class AnalyticsMetrics
         $rows = array_values($byVariety);
 
         $totalsByCause = [];
-        $rawTotalsByCause = [];
-        $adjustmentTotalsByCause = [];
 
-        foreach ($rows as $index => $row) {
-            $rows[$index]['adjustmentTotal'] = $row['total'] - $row['rawTotal'];
-            $rows[$index]['adjustmentCells'] = [];
-
+        foreach ($rows as $row) {
             foreach ($causes as $cause) {
                 $effective = $row['cells'][$cause] ?? 0;
-                $raw = $row['rawCells'][$cause] ?? 0;
-
-                $rows[$index]['adjustmentCells'][$cause] = $effective - $raw;
-
                 $totalsByCause[$cause] = ($totalsByCause[$cause] ?? 0) + $effective;
-                $rawTotalsByCause[$cause] = ($rawTotalsByCause[$cause] ?? 0) + $raw;
-                $adjustmentTotalsByCause[$cause] = ($adjustmentTotalsByCause[$cause] ?? 0) + ($effective - $raw);
             }
         }
-
-        $rawTotal = (int) collect($rows)->sum('rawTotal');
-        $grandTotal = (int) collect($rows)->sum('total');
 
         return [
             'varieties' => array_keys($byVariety),
             'causes' => $causes,
             'rows' => $rows,
             'totalsByCause' => $totalsByCause,
-            'rawTotalsByCause' => $rawTotalsByCause,
-            'adjustmentTotalsByCause' => $adjustmentTotalsByCause,
-            'rawTotal' => $rawTotal,
-            'adjustmentTotal' => $grandTotal - $rawTotal,
-            'grandTotal' => $grandTotal,
+            'grandTotal' => (int) collect($rows)->sum('total'),
         ];
     }
 
@@ -319,34 +299,34 @@ class AnalyticsMetrics
     }
 
     /**
-     * Monthly mortality by variety for a calendar year (heatmap source).
+     * Monthly mortality by Scion Variety for a calendar year (heatmap source).
      *
      * @return array{years:array<int,int>,selectedYear:int,months:array<int,string>,varieties:array<int,string>,data:array<int,array<int,int>>,max:int,total:int}
      */
     public static function seasonality(
         ?int $year = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?int $batchId = null,
     ): array {
         $years = self::mortalityYears();
         $selectedYear = $year ?? ($years[0] ?? (int) now()->year);
 
-        $varieties = Variety::query()
-            ->when($varietyId, fn (Builder $q) => $q->where('variety_id', $varietyId))
-            ->orderBy('variety_name')
-            ->pluck('variety_name')
+        $varieties = ScionVariety::query()
+            ->when($scionVarietyId, fn (Builder $q) => $q->where('scion_variety_id', $scionVarietyId))
+            ->orderBy('scion_variety_name')
+            ->pluck('scion_variety_name')
             ->all();
 
-        $records = self::mortalityQuery($batchId, $varietyId)
+        $records = self::mortalityQuery($batchId, $scionVarietyId)
             ->whereYear('recorded_at', $selectedYear)
-            ->with(['adjustments', 'batch.variety'])
+            ->with('batch.scionVariety')
             ->get();
 
         $data = [];
         $max = 0;
 
         foreach ($records as $record) {
-            $varietyName = $record->batch?->variety?->variety_name;
+            $varietyName = $record->batch?->scionVariety?->scion_variety_name;
             $varietyIndex = array_search($varietyName, $varieties, true);
 
             if ($varietyIndex === false) {
@@ -382,11 +362,14 @@ class AnalyticsMetrics
     /**
      * Inventory quantity grouped by batch age bucket.
      *
+     * Uses the live `batches.available_count` balance (the batch's current
+     * available inventory), bucketed by the age derived from `grafted_date`.
+     *
      * @return array{labels:array<int,string>,values:array<int,int>,total:int}
      */
     public static function ageProfile(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         CarbonInterface|string|null $asOf = null,
     ): array {
         $buckets = [
@@ -399,7 +382,7 @@ class AnalyticsMetrics
         $reference = ($asOf ? Carbon::parse($asOf) : now())->startOfDay();
         $totals = array_fill_keys(array_keys($buckets), 0);
 
-        $batches = self::batchQuery($batchId, $varietyId)->with('inventory')->get();
+        $batches = self::batchQuery($batchId, $scionVarietyId)->get();
 
         foreach ($batches as $batch) {
             if (! $batch->grafted_date) {
@@ -407,7 +390,7 @@ class AnalyticsMetrics
             }
 
             $age = (int) $batch->grafted_date->copy()->startOfDay()->diffInDays($reference);
-            $quantity = (int) ($batch->inventory?->current_quantity ?? 0);
+            $quantity = (int) $batch->available_count;
 
             foreach ($buckets as $label => [$min, $max]) {
                 if ($age >= $min && ($max === null || $age <= $max)) {
@@ -425,27 +408,40 @@ class AnalyticsMetrics
     }
 
     /**
-     * Gap report: expected viable vs actual inventory per batch.
+     * Gap report: expected viable vs actual available per batch.
      *
-     * @return array{rows:array<int,array{batch:string,variety:string,expected:int,actual:int,gap:int}>,totalExpected:int,totalActual:int,totalGap:int}
+     * Locked P5 formula: gap = max(0, viable_count - available_count -
+     * total_stock_out_for_batch). Replanting is deliberately excluded from the
+     * netting. `total_stock_out_for_batch` is the summed Stock_Out_Detail
+     * quantity for the batch.
+     *
+     * @return array{rows:array<int,array{batch:string,variety:string,expected:int,actual:int,pulled_out:int,gap:int}>,totalExpected:int,totalActual:int,totalPulledOut:int,totalGap:int}
      */
-    public static function gapReport(?int $batchId = null, ?int $varietyId = null): array
+    public static function gapReport(?int $batchId = null, ?int $scionVarietyId = null): array
     {
-        $batches = self::batchQuery($batchId, $varietyId)
-            ->with(['inventory', 'variety'])
+        $batches = self::batchQuery($batchId, $scionVarietyId)
+            ->with('scionVariety')
             ->orderBy('batch_code')
             ->get();
 
-        $rows = $batches->map(function (Batch $batch) {
+        $stockOutByBatch = StockOutDetail::query()
+            ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
+            ->selectRaw('batch_id, COALESCE(SUM(quantity), 0) as total')
+            ->groupBy('batch_id')
+            ->pluck('total', 'batch_id');
+
+        $rows = $batches->map(function (Batch $batch) use ($stockOutByBatch) {
             $expected = (int) $batch->viable_count;
-            $actual = (int) ($batch->inventory?->current_quantity ?? 0);
+            $actual = (int) $batch->available_count;
+            $pulledOut = (int) ($stockOutByBatch[$batch->batch_id] ?? 0);
 
             return [
                 'batch' => $batch->batch_code,
-                'variety' => $batch->variety?->variety_name ?? '—',
+                'variety' => $batch->scionVariety?->scion_variety_name ?? '—',
                 'expected' => $expected,
                 'actual' => $actual,
-                'gap' => max(0, $expected - $actual),
+                'pulled_out' => $pulledOut,
+                'gap' => max(0, $expected - $actual - $pulledOut),
             ];
         })->all();
 
@@ -453,67 +449,328 @@ class AnalyticsMetrics
             'rows' => $rows,
             'totalExpected' => (int) collect($rows)->sum('expected'),
             'totalActual' => (int) collect($rows)->sum('actual'),
+            'totalPulledOut' => (int) collect($rows)->sum('pulled_out'),
             'totalGap' => (int) collect($rows)->sum('gap'),
         ];
     }
 
     /**
-     * Stock ledger query (per-batch summary); the controller paginates it.
-     */
-    public static function stockLedgerQuery(
-        ?int $batchId = null,
-        ?int $varietyId = null,
-        ?string $from = null,
-        ?string $to = null,
-    ): Builder {
-        return self::batchQuery($batchId, $varietyId)
-            ->with(['variety', 'scion', 'potType', 'inventory'])
-            ->when($from, fn (Builder $q) => $q->whereDate('grafted_date', '>=', $from))
-            ->when($to, fn (Builder $q) => $q->whereDate('grafted_date', '<=', $to))
-            ->orderBy('batch_code');
-    }
-
-    /**
-     * Totals for the Cacao Tree Stock Ledger (PRD §13.1) — the same figures the
-     * printable ledger renders in its totals strip, centralized so the on-screen
-     * ledger, the PDF and a generated report snapshot never diverge (RULE 6/25).
+     * Cacao Tree Stock Ledger as a MONTHLY GRID grouped by month, with dynamic
+     * per-Scion-Variety columns (matches the client's real manual ledger, not
+     * just PRD §9.3's looser column list).
      *
-     * @return array{batches:int,grafted:int,viable:int,available:int,mortality:int,replanting:int}
+     * Each month holds dated event rows and a per-month TOTAL; a flat grand
+     * total is returned alongside. Columns: Seedlings, Grafted, Mortality,
+     * Re Graft, Ready to Plant and Pullout — the last five broken out per Scion
+     * Variety.
+     *
+     * NOTE (flagged, unconfirmed): "Ready to Plant" is mapped to the batch's
+     * live `available_count`, aligned to the batch's `grafted_date` event row.
+     * This is a best-guess interpretation pending confirmation of the client's
+     * actual definition.
+     *
+     * @return array{varieties:array<int,array{id:int,name:string}>,months:array<int,array{key:string,label:string,rows:array<int,array<string,mixed>>,totals:array<string,mixed>}>,grandTotals:array<string,mixed>,summary:array<string,int>,hasData:bool}
      */
-    public static function stockLedgerSummary(
+    public static function stockLedgerGrid(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?string $from = null,
         ?string $to = null,
     ): array {
-        $batches = self::stockLedgerQuery($batchId, $varietyId, $from, $to)->get();
+        $referenced = [];
+        $events = [];
+
+        // Grafted + Ready to Plant: one event row per batch (by grafted_date).
+        $batches = self::batchQuery($batchId, $scionVarietyId)
+            ->when($from, fn (Builder $q) => $q->whereDate('grafted_date', '>=', $from))
+            ->when($to, fn (Builder $q) => $q->whereDate('grafted_date', '<=', $to))
+            ->orderBy('grafted_date')
+            ->get();
+
+        foreach ($batches as $batch) {
+            if (! $batch->grafted_date) {
+                continue;
+            }
+
+            $varietyId = $batch->scion_variety_id ? (int) $batch->scion_variety_id : null;
+
+            if ($varietyId !== null) {
+                $referenced[$varietyId] = true;
+            }
+
+            $events[] = [
+                'date' => $batch->grafted_date->toDateString(),
+                'description' => 'Batch '.$batch->batch_code.' — established / grafted',
+                'seedlings' => 0,
+                'grafted' => $varietyId !== null ? [$varietyId => (int) $batch->total_grafted] : [],
+                'mortality' => [],
+                'regraft' => [],
+                'ready' => $varietyId !== null ? [$varietyId => (int) $batch->available_count] : [],
+                'pullout' => [],
+            ];
+        }
+
+        // Seedlings: Stock In (variety-agnostic; only when no batch narrowing).
+        if ($batchId === null) {
+            $stockIns = StockIn::query()
+                ->when($from, fn (Builder $q) => $q->whereDate('date_received', '>=', $from))
+                ->when($to, fn (Builder $q) => $q->whereDate('date_received', '<=', $to))
+                ->with('supplier')
+                ->orderBy('date_received')
+                ->get();
+
+            foreach ($stockIns as $stockIn) {
+                $origin = $stockIn->origin ? ' ('.$stockIn->origin.')' : '';
+
+                $events[] = [
+                    'date' => $stockIn->date_received->toDateString(),
+                    'description' => 'Stock In — '.($stockIn->supplier?->supplier_name ?? 'Supplier').$origin,
+                    'seedlings' => (int) $stockIn->quantity,
+                    'grafted' => [],
+                    'mortality' => [],
+                    'regraft' => [],
+                    'ready' => [],
+                    'pullout' => [],
+                ];
+            }
+        }
+
+        // Mortality per Scion Variety.
+        $mortalityRecords = self::mortalityQuery($batchId, $scionVarietyId, $from, $to)
+            ->with('batch')
+            ->get();
+
+        foreach ($mortalityRecords as $record) {
+            if (! $record->recorded_at) {
+                continue;
+            }
+
+            $varietyId = $record->batch?->scion_variety_id ? (int) $record->batch->scion_variety_id : null;
+
+            if ($varietyId !== null) {
+                $referenced[$varietyId] = true;
+            }
+
+            $events[] = [
+                'date' => $record->recorded_at->toDateString(),
+                'description' => 'Mortality — '.($record->cause ?: 'Unspecified').' ('.($record->batch?->batch_code ?? '—').')',
+                'seedlings' => 0,
+                'grafted' => [],
+                'mortality' => $varietyId !== null ? [$varietyId => (int) $record->quantity] : [],
+                'regraft' => [],
+                'ready' => [],
+                'pullout' => [],
+            ];
+        }
+
+        // Re Graft per Scion Variety (P5 Regraft_Record).
+        $regraftRecords = RegraftRecord::query()
+            ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
+            ->when($from, fn (Builder $q) => $q->whereDate('regraft_date', '>=', $from))
+            ->when($to, fn (Builder $q) => $q->whereDate('regraft_date', '<=', $to))
+            ->when($scionVarietyId, fn (Builder $q) => $q->whereHas('batch', fn (Builder $b) => $b->where('scion_variety_id', $scionVarietyId)))
+            ->with('batch')
+            ->orderBy('regraft_date')
+            ->get();
+
+        foreach ($regraftRecords as $record) {
+            $varietyId = $record->batch?->scion_variety_id ? (int) $record->batch->scion_variety_id : null;
+
+            if ($varietyId !== null) {
+                $referenced[$varietyId] = true;
+            }
+
+            $events[] = [
+                'date' => $record->regraft_date->toDateString(),
+                'description' => 'Re Graft ('.($record->batch?->batch_code ?? '—').')'.($record->remark ? ' — '.$record->remark : ''),
+                'seedlings' => 0,
+                'grafted' => [],
+                'mortality' => [],
+                'regraft' => $varietyId !== null ? [$varietyId => (int) $record->quantity] : [],
+                'ready' => [],
+                'pullout' => [],
+            ];
+        }
+
+        // Pull Out per Scion Variety (Stock_Out_Detail by release_date).
+        $details = StockOutDetail::query()
+            ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
+            ->when($scionVarietyId, fn (Builder $q) => $q->where('scion_variety_id', $scionVarietyId))
+            ->whereHas('stockOut', function (Builder $query) use ($from, $to): void {
+                $query->when($from, fn (Builder $q) => $q->whereDate('release_date', '>=', $from))
+                    ->when($to, fn (Builder $q) => $q->whereDate('release_date', '<=', $to));
+            })
+            ->with(['stockOut.client', 'batch'])
+            ->get();
+
+        foreach ($details as $detail) {
+            $releaseDate = $detail->stockOut?->release_date;
+
+            if (! $releaseDate) {
+                continue;
+            }
+
+            $varietyId = $detail->scion_variety_id ? (int) $detail->scion_variety_id : null;
+
+            if ($varietyId !== null) {
+                $referenced[$varietyId] = true;
+            }
+
+            $events[] = [
+                'date' => $releaseDate->toDateString(),
+                'description' => 'Pull Out — '.($detail->stockOut?->client?->client_name ?? 'Client')
+                    .' ('.($detail->batch?->batch_code ?? '—').')',
+                'seedlings' => 0,
+                'grafted' => [],
+                'mortality' => [],
+                'regraft' => [],
+                'ready' => [],
+                'pullout' => $varietyId !== null ? [$varietyId => (int) $detail->quantity] : [],
+            ];
+        }
+
+        $varieties = self::ledgerVarietyColumns($referenced, $scionVarietyId);
+
+        usort($events, fn (array $a, array $b) => strcmp($a['date'], $b['date']));
+
+        $months = [];
+        $grandTotals = self::emptyLedgerTotals();
+
+        foreach ($events as $event) {
+            $key = substr($event['date'], 0, 7);
+
+            $months[$key] ??= [
+                'key' => $key,
+                'label' => Carbon::parse($event['date'].'-01')->format('F Y'),
+                'rows' => [],
+                'totals' => self::emptyLedgerTotals(),
+            ];
+
+            $months[$key]['rows'][] = $event;
+            self::accumulateLedgerTotals($months[$key]['totals'], $event);
+            self::accumulateLedgerTotals($grandTotals, $event);
+        }
+
+        ksort($months);
+
+        $summary = [
+            'seedlings' => $grandTotals['seedlings'],
+            'grafted' => array_sum($grandTotals['grafted']),
+            'mortality' => array_sum($grandTotals['mortality']),
+            'regraft' => array_sum($grandTotals['regraft']),
+            'ready_to_plant' => array_sum($grandTotals['ready']),
+            'pullout' => array_sum($grandTotals['pullout']),
+        ];
 
         return [
-            'batches' => $batches->count(),
-            'grafted' => (int) $batches->sum('total_grafted'),
-            'viable' => (int) $batches->sum('viable_count'),
-            'available' => (int) $batches->sum(fn (Batch $batch) => $batch->inventory?->current_quantity ?? $batch->available_count),
-            'mortality' => (int) $batches->sum(fn (Batch $batch) => $batch->effectiveMortalityQuantity()),
-            'replanting' => (int) $batches->sum(fn (Batch $batch) => $batch->totalReplanted()),
+            'varieties' => $varieties,
+            'months' => array_values($months),
+            'grandTotals' => $grandTotals,
+            'summary' => $summary,
+            'hasData' => $events !== [],
         ];
     }
 
     /**
+     * Resolve the ordered Scion Variety column list for the stock ledger grid:
+     * all active varieties plus any variety referenced by an event (so no data
+     * silently disappears from the grid).
+     *
+     * @param  array<int,bool>  $referenced
+     * @return array<int,array{id:int,name:string}>
+     */
+    protected static function ledgerVarietyColumns(array $referenced, ?int $onlyVarietyId = null): array
+    {
+        $names = ScionVariety::query()->pluck('scion_variety_name', 'scion_variety_id');
+
+        foreach (array_keys($referenced) as $id) {
+            if (! $names->has($id)) {
+                $name = ScionVariety::query()->whereKey($id)->value('scion_variety_name');
+                $names[$id] = $name ?? 'Unassigned';
+            }
+        }
+
+        $columns = $names
+            ->map(fn ($name, $id) => ['id' => (int) $id, 'name' => (string) $name])
+            ->values();
+
+        if ($onlyVarietyId !== null) {
+            $columns = $columns->filter(fn (array $column) => $column['id'] === (int) $onlyVarietyId)->values();
+        }
+
+        return $columns
+            ->sortBy(fn (array $column) => $column['name'])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{seedlings:int,grafted:array<int,int>,mortality:array<int,int>,regraft:array<int,int>,ready:array<int,int>,pullout:array<int,int>}
+     */
+    protected static function emptyLedgerTotals(): array
+    {
+        return [
+            'seedlings' => 0,
+            'grafted' => [],
+            'mortality' => [],
+            'regraft' => [],
+            'ready' => [],
+            'pullout' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $totals
+     * @param  array<string,mixed>  $event
+     */
+    protected static function accumulateLedgerTotals(array &$totals, array $event): void
+    {
+        $totals['seedlings'] += (int) $event['seedlings'];
+
+        foreach (['grafted', 'mortality', 'regraft', 'ready', 'pullout'] as $dimension) {
+            foreach ((array) $event[$dimension] as $varietyId => $quantity) {
+                $totals[$dimension][(int) $varietyId] = ($totals[$dimension][(int) $varietyId] ?? 0) + (int) $quantity;
+            }
+        }
+    }
+
+    /**
+     * Totals for the Cacao Tree Stock Ledger — the same figures the printable
+     * ledger renders in its totals strip, centralized so the on-screen grid,
+     * the PDF and a generated report snapshot never diverge (RULE 6).
+     *
+     * @return array{batches:int,seedlings:int,grafted:int,mortality:int,regraft:int,ready_to_plant:int,pullout:int}
+     */
+    public static function stockLedgerSummary(
+        ?int $batchId = null,
+        ?int $scionVarietyId = null,
+        ?string $from = null,
+        ?string $to = null,
+    ): array {
+        $grid = self::stockLedgerGrid($batchId, $scionVarietyId, $from, $to);
+
+        return array_merge(
+            ['batches' => self::batchQuery($batchId, $scionVarietyId)->count()],
+            $grid['summary'],
+        );
+    }
+
+    /**
      * Snapshot of the Mortality Root-Cause Matrix persisted with a generated
-     * report (PRD §13.2). It carries the per-cause totals **and** the
+     * report (PRD §9.4). It carries the per-cause totals **and** the
      * per-variety cells plus the exact filters applied, so a later view can be
      * compared against it (RULE 12 traceability). Stored in the ERD `Analytics`
      * report history (ERD §9.4) — no new table/column.
      *
-     * @return array{causes:array<int,string>,totalsByCause:array<string,int>,grandTotal:int,cellsByVariety:array<string,array<string,int>>,filters:array{batch_id:?int,variety_id:?int,date_from:?string,date_to:?string}}
+     * @return array{causes:array<int,string>,totalsByCause:array<string,int>,grandTotal:int,cellsByVariety:array<string,array<string,int>>,filters:array{batch_id:?int,scion_variety_id:?int,date_from:?string,date_to:?string}}
      */
     public static function mortalityMatrixSummary(
         ?int $batchId = null,
-        ?int $varietyId = null,
+        ?int $scionVarietyId = null,
         ?string $from = null,
         ?string $to = null,
     ): array {
-        $matrix = self::mortalityMatrix($batchId, $varietyId, $from, $to);
+        $matrix = self::mortalityMatrix($batchId, $scionVarietyId, $from, $to);
 
         return [
             'causes' => $matrix['causes'],
@@ -524,7 +781,7 @@ class AnalyticsMetrics
                 ->all(),
             'filters' => [
                 'batch_id' => $batchId,
-                'variety_id' => $varietyId,
+                'scion_variety_id' => $scionVarietyId,
                 'date_from' => $from,
                 'date_to' => $to,
             ],
@@ -534,7 +791,7 @@ class AnalyticsMetrics
     /**
      * Compare the current Mortality Root-Cause Matrix against a previously
      * saved snapshot and report every place effective mortality has increased
-     * (by any amount) — per cause and per variety×cause cell (PRD §13.2).
+     * (by any amount) — per cause and per variety×cause cell (PRD §9.4).
      *
      * The comparison is one centralized definition (RULE 6); the page alert and
      * cell/cause highlighting both read this result.
@@ -596,30 +853,30 @@ class AnalyticsMetrics
     /**
      * Compact summary persisted with a generated report (RULE 12 traceability).
      *
-     * @param  array{date_from?:?string,date_to?:?string,variety_id?:?int,batch_id?:?int}  $filters
+     * @param  array{date_from?:?string,date_to?:?string,scion_variety_id?:?int,batch_id?:?int,variety_id?:?int}  $filters
      * @return array<string,mixed>
      */
     public static function summaryFor(string $type, array $filters = []): array
     {
         $batchId = $filters['batch_id'] ?? null;
-        $varietyId = $filters['variety_id'] ?? null;
+        $scionVarietyId = $filters['scion_variety_id'] ?? ($filters['variety_id'] ?? null);
         $from = $filters['date_from'] ?? null;
         $to = $filters['date_to'] ?? null;
 
         return match ($type) {
             Analytic::TYPE_OPERATIONAL => [
                 'total_active_inventory' => self::totalActiveInventory(),
-                'crude_mortality_rate' => self::crudeMortalityRate($batchId, $varietyId, $from, $to),
+                'crude_mortality_rate' => self::crudeMortalityRate($batchId, $scionVarietyId, $from, $to),
                 'total_replanting_deficit' => self::totalReplantingDeficit(),
             ],
-            Analytic::TYPE_STOCK_LEDGER => self::stockLedgerSummary($batchId, $varietyId, $from, $to),
-            Analytic::TYPE_MORTALITY_MATRIX => self::mortalityMatrixSummary($batchId, $varietyId, $from, $to),
-            Analytic::TYPE_SEASONALITY => collect(self::seasonality(null, $varietyId, $batchId))
+            Analytic::TYPE_STOCK_LEDGER => self::stockLedgerSummary($batchId, $scionVarietyId, $from, $to),
+            Analytic::TYPE_MORTALITY_MATRIX => self::mortalityMatrixSummary($batchId, $scionVarietyId, $from, $to),
+            Analytic::TYPE_SEASONALITY => collect(self::seasonality(null, $scionVarietyId, $batchId))
                 ->only(['selectedYear', 'max', 'total'])
                 ->all(),
-            Analytic::TYPE_AGE_PROFILE => self::ageProfile($batchId, $varietyId),
-            Analytic::TYPE_GAP_REPORT => collect(self::gapReport($batchId, $varietyId))
-                ->only(['totalExpected', 'totalActual', 'totalGap'])
+            Analytic::TYPE_AGE_PROFILE => self::ageProfile($batchId, $scionVarietyId),
+            Analytic::TYPE_GAP_REPORT => collect(self::gapReport($batchId, $scionVarietyId))
+                ->only(['totalExpected', 'totalActual', 'totalPulledOut', 'totalGap'])
                 ->all(),
             default => [],
         };

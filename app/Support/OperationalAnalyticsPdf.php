@@ -140,8 +140,8 @@ class OperationalAnalyticsPdf extends FPDF
         );
 
         $this->sectionTable(
-            'Inventory by Variety',
-            'Variety',
+            'Inventory by Scion Variety',
+            'Scion Variety',
             $this->zip($this->inventoryByVariety['labels'], $this->inventoryByVariety['values']),
             'Inventory',
         );

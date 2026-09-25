@@ -14,7 +14,7 @@
     <form method="POST" action="{{ route('analytics.reports.store') }}" class="d-inline">
         @csrf
         <input type="hidden" name="analysis_type" value="{{ \App\Models\Analytic::TYPE_GAP_REPORT }}">
-        <input type="hidden" name="variety_id" value="{{ $filters['variety_id'] ?? '' }}">
+        <input type="hidden" name="scion_variety_id" value="{{ $filters['scion_variety_id'] ?? '' }}">
         <input type="hidden" name="batch_id" value="{{ $filters['batch_id'] ?? '' }}">
         <button type="submit" class="btn btn-success">
             <i class="bi bi-file-earmark-arrow-down"></i> Generate Report
@@ -41,11 +41,11 @@
     <div class="card-body">
         <form class="row g-3" method="GET" action="{{ route('analytics.historical.gap-report') }}">
             <div class="col-md-4">
-                <label class="form-label text-muted small fw-bold">Variety</label>
-                <select name="variety_id" class="form-select">
-                    <option value="">All Varieties</option>
-                    @foreach ($varieties as $variety)
-                        <option value="{{ $variety->variety_id }}" @selected(($filters['variety_id'] ?? null) == $variety->variety_id)>{{ $variety->variety_name }}</option>
+                <label class="form-label text-muted small fw-bold">Scion Variety</label>
+                <select name="scion_variety_id" class="form-select">
+                    <option value="">All Scion Varieties</option>
+                    @foreach ($scionVarieties as $scionVariety)
+                        <option value="{{ $scionVariety->scion_variety_id }}" @selected(($filters['scion_variety_id'] ?? null) == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
                     @endforeach
                 </select>
             </div>
@@ -63,7 +63,10 @@
                 <a href="{{ route('analytics.historical.gap-report') }}" class="btn btn-outline-secondary">Reset</a>
             </div>
         </form>
-        <small class="text-muted d-block mt-2">Expected = batch viable count; Actual = current inventory balance; Gap = expected − actual (never negative).</small>
+        <small class="text-muted d-block mt-2">
+            Expected = batch viable count; Available = live available balance; Pulled Out = stock-out quantity for the batch;
+            Gap = expected − available − pulled out (never negative). Replanting is deliberately excluded from the netting.
+        </small>
     </div>
 </div>
 
@@ -83,14 +86,20 @@
             <div class="card-body bg-light text-center">
                 <div class="d-flex justify-content-center align-items-center flex-column flex-md-row gap-3">
                     <div class="p-3 bg-white border rounded">
-                        <span class="text-muted d-block small">Expected Inventory</span>
+                        <span class="text-muted d-block small">Expected</span>
                         <strong class="fs-5">{{ number_format($gap['totalExpected']) }}</strong>
                     </div>
-                    <i class="bi bi-arrow-right d-none d-md-block fs-3 text-muted"></i>
+                    <i class="bi bi-dash d-none d-md-block fs-3 text-muted"></i>
                     <i class="bi bi-arrow-down d-md-none fs-3 text-muted"></i>
                     <div class="p-3 bg-white border rounded border-warning">
-                        <span class="text-muted d-block small">Actual Inventory</span>
+                        <span class="text-muted d-block small">Available</span>
                         <strong class="fs-5 text-warning">{{ number_format($gap['totalActual']) }}</strong>
+                    </div>
+                    <i class="bi bi-dash d-none d-md-block fs-3 text-muted"></i>
+                    <i class="bi bi-arrow-down d-md-none fs-3 text-muted"></i>
+                    <div class="p-3 bg-white border rounded border-secondary">
+                        <span class="text-muted d-block small">Pulled Out</span>
+                        <strong class="fs-5 text-secondary">{{ number_format($gap['totalPulledOut']) }}</strong>
                     </div>
                     <i class="bi bi-arrow-right d-none d-md-block fs-3 text-muted"></i>
                     <i class="bi bi-arrow-down d-md-none fs-3 text-muted"></i>
@@ -117,9 +126,10 @@
                     <thead class="table-light">
                         <tr>
                             <th>Batch</th>
-                            <th>Variety</th>
+                            <th>Scion Variety</th>
                             <th class="text-end">Expected</th>
-                            <th class="text-end">Actual</th>
+                            <th class="text-end">Available</th>
+                            <th class="text-end">Pulled Out</th>
                             <th class="text-end">Gap</th>
                         </tr>
                     </thead>
@@ -130,6 +140,7 @@
                                 <td>{{ $row['variety'] }}</td>
                                 <td class="text-end">{{ number_format($row['expected']) }}</td>
                                 <td class="text-end">{{ number_format($row['actual']) }}</td>
+                                <td class="text-end">{{ number_format($row['pulled_out']) }}</td>
                                 <td class="text-end text-danger fw-bold">{{ number_format($row['gap']) }}</td>
                             </tr>
                         @endforeach
@@ -139,6 +150,7 @@
                             <td colspan="2">Total</td>
                             <td class="text-end">{{ number_format($gap['totalExpected']) }}</td>
                             <td class="text-end">{{ number_format($gap['totalActual']) }}</td>
+                            <td class="text-end">{{ number_format($gap['totalPulledOut']) }}</td>
                             <td class="text-end text-danger fs-5">{{ number_format($gap['totalGap']) }}</td>
                         </tr>
                     </tfoot>
@@ -157,9 +169,9 @@
     $appliedBatch = ! empty($filters['batch_id'])
         ? ($batches->firstWhere('batch_id', (int) $filters['batch_id'])?->batch_code ?? '#'.$filters['batch_id'])
         : 'All batches';
-    $appliedVariety = ! empty($filters['variety_id'])
-        ? ($varieties->firstWhere('variety_id', (int) $filters['variety_id'])?->variety_name ?? '#'.$filters['variety_id'])
-        : 'All varieties';
+    $appliedVariety = ! empty($filters['scion_variety_id'])
+        ? ($scionVarieties->firstWhere('scion_variety_id', (int) $filters['scion_variety_id'])?->scion_variety_name ?? '#'.$filters['scion_variety_id'])
+        : 'All scion varieties';
 @endphp
 
 <!-- Print Gap Report Modal -->
@@ -168,7 +180,7 @@
         <div class="modal-content">
             <form method="GET" action="{{ route('analytics.historical.gap-report.export') }}" target="_blank">
                 <input type="hidden" name="batch_id" value="{{ $filters['batch_id'] ?? '' }}">
-                <input type="hidden" name="variety_id" value="{{ $filters['variety_id'] ?? '' }}">
+                <input type="hidden" name="scion_variety_id" value="{{ $filters['scion_variety_id'] ?? '' }}">
                 <div class="modal-header">
                     <h5 class="modal-title">Print Gap Report</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -178,7 +190,7 @@
                     <table class="table table-sm mb-3">
                         <tbody>
                             <tr>
-                                <th class="text-muted small fw-normal" style="width: 40%;">Variety</th>
+                                <th class="text-muted small fw-normal" style="width: 40%;">Scion Variety</th>
                                 <td>{{ $appliedVariety }}</td>
                             </tr>
                             <tr>
@@ -188,7 +200,7 @@
                         </tbody>
                     </table>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>The PDF contains the per-batch expected vs actual inventory and the gap, plus grand totals.
+                        <i class="bi bi-info-circle me-1"></i>The PDF contains the per-batch expected vs available inventory, the pulled-out quantity and the gap, plus grand totals.
                     </p>
                 </div>
                 <div class="modal-footer">

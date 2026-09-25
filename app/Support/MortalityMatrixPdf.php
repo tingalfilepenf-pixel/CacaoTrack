@@ -7,10 +7,10 @@ use FPDF;
 /**
  * Printable "Mortality Root-Cause Matrix" PDF (FPDF, landscape).
  *
- * This is a tabular deliverable (PRD §13.2): every cell, row total and grand
+ * This is a tabular deliverable (PRD §9.4): every cell, row total and grand
  * total is passed in by the controller from real normalized operational data
- * (mortality records + signed adjustments) — RULE 5/12. The matrix is generated
- * live; no report table is involved (PRD §9, ERD §9.4).
+ * (mortality records) — RULE 5/12. The matrix is generated live; no report
+ * table is involved (PRD §9, ERD §9.4).
  *
  * Non Latin-1 characters are transliterated so the core FPDF fonts render.
  */
@@ -47,7 +47,6 @@ class MortalityMatrixPdf extends FPDF
      * @param  list<string>  $causes
      * @param  list<array{variety:string, cells:array<string,int>, total:int}>  $rows
      * @param  array<string,int>  $totalsByCause
-     * @param  array{raw:int, adjustment:int, effective:int}  $totals
      */
     public function __construct(
         private readonly string $filterLabel,
@@ -56,7 +55,7 @@ class MortalityMatrixPdf extends FPDF
         private readonly array $causes,
         private readonly array $rows,
         private readonly array $totalsByCause,
-        private readonly array $totals,
+        private readonly int $totalMortality,
     ) {
         parent::__construct('L', 'mm', 'A4');
 
@@ -129,9 +128,7 @@ class MortalityMatrixPdf extends FPDF
         $this->SetFont('Helvetica', '', 9);
         $this->SetTextColor(...self::TEXT);
         $this->SetXY(15, $summaryY + 1.8);
-        $this->Cell(91, 4.4, $this->txt(sprintf('Raw mortality: %d', $this->totals['raw'])), 0, 0, 'L');
-        $this->Cell(91, 4.4, $this->txt(sprintf('Adjustments: %+d', $this->totals['adjustment'])), 0, 0, 'L');
-        $this->Cell(91, 4.4, $this->txt(sprintf('Effective mortality: %d', $this->totals['effective'])), 0, 1, 'L');
+        $this->Cell(273, 4.4, $this->txt(sprintf('Total mortality: %d', $this->totalMortality)), 0, 1, 'L');
 
         $this->SetY($summaryY + 9.5);
         $this->SetX(12);
@@ -286,7 +283,7 @@ class MortalityMatrixPdf extends FPDF
             $causeX += $this->causeWidth;
         }
 
-        $this->vCenter(number_format($this->totals['effective']), $causeX, $y, $this->totalWidth, $height, 'C', self::DANGER, 'B', 9.5);
+        $this->vCenter(number_format($this->totalMortality), $causeX, $y, $this->totalWidth, $height, 'C', self::DANGER, 'B', 9.5);
 
         $this->SetXY($x, $y + $height);
     }

@@ -15,7 +15,7 @@
         @csrf
         <input type="hidden" name="analysis_type" value="{{ \App\Models\Analytic::TYPE_MORTALITY_MATRIX }}">
         <input type="hidden" name="batch_id" value="{{ $filters['batch_id'] ?? '' }}">
-        <input type="hidden" name="variety_id" value="{{ $filters['variety_id'] ?? '' }}">
+        <input type="hidden" name="scion_variety_id" value="{{ $filters['scion_variety_id'] ?? '' }}">
         <input type="hidden" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
         <input type="hidden" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
         <button type="submit" class="btn btn-success">
@@ -54,11 +54,11 @@
                 <input type="date" name="date_to" class="form-control" value="{{ $filters['date_to'] ?? '' }}">
             </div>
             <div class="col-md-2">
-                <label class="form-label text-muted small fw-bold">Variety</label>
-                <select name="variety_id" class="form-select">
-                    <option value="">All Varieties</option>
-                    @foreach ($varieties as $variety)
-                        <option value="{{ $variety->variety_id }}" @selected(($filters['variety_id'] ?? null) == $variety->variety_id)>{{ $variety->variety_name }}</option>
+                <label class="form-label text-muted small fw-bold">Scion Variety</label>
+                <select name="scion_variety_id" class="form-select">
+                    <option value="">All Scion Varieties</option>
+                    @foreach ($scionVarieties as $scionVariety)
+                        <option value="{{ $scionVariety->scion_variety_id }}" @selected(($filters['scion_variety_id'] ?? null) == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
                     @endforeach
                 </select>
             </div>
@@ -119,32 +119,12 @@
 @endif
 
 <div class="row g-3 mb-4">
-    <div class="col-md-4">
+    <div class="col-md-12">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <div class="text-muted small fw-bold text-uppercase">Raw Mortality</div>
-                <div class="fs-3 fw-bold">{{ number_format($matrix['rawTotal']) }}</div>
-                <div class="text-muted small">Recorded quantity before adjustments</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small fw-bold text-uppercase">Adjustments</div>
-                <div class="fs-3 fw-bold {{ $matrix['adjustmentTotal'] < 0 ? 'text-success' : ($matrix['adjustmentTotal'] > 0 ? 'text-danger' : 'text-muted') }}">
-                    {{ $matrix['adjustmentTotal'] > 0 ? '+' : '' }}{{ number_format($matrix['adjustmentTotal']) }}
-                </div>
-                <div class="text-muted small">Signed corrections from mortality adjustments</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small fw-bold text-uppercase">Effective Mortality</div>
+                <div class="text-muted small fw-bold text-uppercase">Total Mortality</div>
                 <div class="fs-3 fw-bold text-danger">{{ number_format($matrix['grandTotal']) }}</div>
-                <div class="text-muted small">Raw + adjustments (matches Mortality Tracking)</div>
+                <div class="text-muted small">Recorded mortality quantity for the applied filters (matches Mortality Tracking)</div>
             </div>
         </div>
     </div>
@@ -159,7 +139,7 @@
                 <table class="table table-bordered mb-0 align-middle text-center">
                     <thead class="table-light">
                         <tr>
-                            <th class="text-start">Variety</th>
+                            <th class="text-start">Scion Variety</th>
                             @foreach ($matrix['causes'] as $cause)
                                 @php $causeAlert = $causeAlerts->get($cause); @endphp
                                 <th class="{{ $causeAlert ? 'table-danger' : '' }}">
@@ -179,8 +159,6 @@
                                 @foreach ($matrix['causes'] as $cause)
                                     @php
                                         $effective = $row['cells'][$cause] ?? 0;
-                                        $raw = $row['rawCells'][$cause] ?? 0;
-                                        $adjustment = $row['adjustmentCells'][$cause] ?? 0;
                                         $cellAlert = $cellAlerts->get($row['variety'].'|'.$cause);
                                     @endphp
                                     <td class="{{ $cellAlert ? 'table-danger' : '' }}">
@@ -188,14 +166,6 @@
                                         @if ($cellAlert)
                                             <div class="small fw-bold text-danger">
                                                 <i class="bi bi-arrow-up-short"></i>{{ number_format($cellAlert['previous']) }} &rarr; {{ number_format($cellAlert['current']) }}
-                                            </div>
-                                        @endif
-                                        @if ($adjustment !== 0)
-                                            <div class="text-muted small">
-                                                base {{ number_format($raw) }}
-                                                <span class="{{ $adjustment < 0 ? 'text-success' : 'text-danger' }}">
-                                                    ({{ $adjustment > 0 ? '+' : '' }}{{ number_format($adjustment) }})
-                                                </span>
                                             </div>
                                         @endif
                                     </td>
@@ -234,9 +204,9 @@
     $appliedBatch = ! empty($filters['batch_id'])
         ? ($batches->firstWhere('batch_id', (int) $filters['batch_id'])?->batch_code ?? '#'.$filters['batch_id'])
         : 'All batches';
-    $appliedVariety = ! empty($filters['variety_id'])
-        ? ($varieties->firstWhere('variety_id', (int) $filters['variety_id'])?->variety_name ?? '#'.$filters['variety_id'])
-        : 'All varieties';
+    $appliedVariety = ! empty($filters['scion_variety_id'])
+        ? ($scionVarieties->firstWhere('scion_variety_id', (int) $filters['scion_variety_id'])?->scion_variety_name ?? '#'.$filters['scion_variety_id'])
+        : 'All scion varieties';
 @endphp
 
 <!-- Print Matrix Modal -->
@@ -245,7 +215,7 @@
         <div class="modal-content">
             <form method="GET" action="{{ route('analytics.mortality-matrix.export') }}" target="_blank">
                 <input type="hidden" name="batch_id" value="{{ $filters['batch_id'] ?? '' }}">
-                <input type="hidden" name="variety_id" value="{{ $filters['variety_id'] ?? '' }}">
+                <input type="hidden" name="scion_variety_id" value="{{ $filters['scion_variety_id'] ?? '' }}">
                 <input type="hidden" name="date_from" value="{{ $filters['date_from'] ?? '' }}">
                 <input type="hidden" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
                 <div class="modal-header">
@@ -261,7 +231,7 @@
                                 <td>{{ $appliedPeriod }}</td>
                             </tr>
                             <tr>
-                                <th class="text-muted small fw-normal">Variety</th>
+                                <th class="text-muted small fw-normal">Scion Variety</th>
                                 <td>{{ $appliedVariety }}</td>
                             </tr>
                             <tr>
@@ -271,7 +241,7 @@
                         </tbody>
                     </table>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>The PDF contains the real matrix (raw &rarr; adjustments &rarr; effective) and grand totals for the selected filters.
+                        <i class="bi bi-info-circle me-1"></i>The PDF contains the real matrix (mortality by cause) and grand totals for the selected filters.
                     </p>
                 </div>
                 <div class="modal-footer">

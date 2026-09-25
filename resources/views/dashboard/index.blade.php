@@ -106,14 +106,14 @@
 
     <!-- Charts Row 2 -->
     <div class="row mb-4">
-        <!-- Inventory by Variety -->
+        <!-- Inventory by Scion Variety -->
         <div class="col-xl-6 mb-4 mb-xl-0">
             <div class="card h-100">
                 <div class="card-header">
-                    <h6 class="m-0 fw-bold text-dark">Inventory by Variety</h6>
+                    <h6 class="m-0 fw-bold text-dark">Inventory by Scion Variety</h6>
                 </div>
                 <div class="card-body">
-                    @if (count($inventoryByVariety['labels']) > 0 && array_sum($inventoryByVariety['values']) > 0)
+                    @if (count($inventoryByScionVariety['labels']) > 0 && array_sum($inventoryByScionVariety['values']) > 0)
                         <div id="inventoryVarietyChart" style="height: 300px; width: 100%;"></div>
                     @else
                         <p class="text-muted text-center my-5">No data available for the selected period.</p>
@@ -207,16 +207,16 @@
         });
         @endif
 
-        @if (count($inventoryByVariety['labels']) > 0 && array_sum($inventoryByVariety['values']) > 0)
+        @if (count($inventoryByScionVariety['labels']) > 0 && array_sum($inventoryByScionVariety['values']) > 0)
         render('inventoryVarietyChart', {
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
             grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
             xAxis: { type: 'value', name: 'Trees' },
-            yAxis: { type: 'category', data: @json($inventoryByVariety['labels']) },
+            yAxis: { type: 'category', data: @json($inventoryByScionVariety['labels']) },
             series: [{
                 name: 'Inventory',
                 type: 'bar',
-                data: @json($inventoryByVariety['values']),
+                data: @json($inventoryByScionVariety['values']),
                 itemStyle: { color: '#198754' }
             }]
         });

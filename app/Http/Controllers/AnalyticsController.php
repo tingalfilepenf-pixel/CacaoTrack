@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ActivityLog;
 use App\Models\Analytic;
 use App\Models\Batch;
-use App\Models\Variety;
+use App\Models\ScionVariety;
 use App\Support\AnalyticsMetrics;
 use App\Support\GapReportPdf;
 use App\Support\MortalityMatrixPdf;
@@ -40,14 +40,14 @@ class AnalyticsController extends Controller
             'crudeMortalityRate' => AnalyticsMetrics::crudeMortalityRate(),
             'totalReplantingDeficit' => AnalyticsMetrics::totalReplantingDeficit(),
             'mortalityTrend' => AnalyticsMetrics::mortalityTrend(6),
-            'inventoryByVariety' => AnalyticsMetrics::inventoryByVariety(),
+            'inventoryByScionVariety' => AnalyticsMetrics::inventoryByScionVariety(),
             'replantingDeficitByBatch' => AnalyticsMetrics::replantingDeficitByBatch(),
             'survivalVsMortality' => AnalyticsMetrics::survivalVsMortality(),
         ];
     }
 
     /**
-     * Printable Operational Analytics report (FPDF) — the PRD §12 KPIs plus the
+     * Printable Operational Analytics report (FPDF) — the PRD §10 KPIs plus the
      * tabular values behind each on-screen chart. Generated live (PRD §9).
      */
     public function exportOperationalPdf(Request $request): Response
@@ -63,7 +63,7 @@ class AnalyticsController extends Controller
                 ['label' => 'Replanting Deficit', 'value' => number_format($data['totalReplantingDeficit'])],
             ],
             $data['mortalityTrend'],
-            $data['inventoryByVariety'],
+            $data['inventoryByScionVariety'],
             $data['replantingDeficitByBatch'],
             $data['survivalVsMortality'],
         );
@@ -106,9 +106,9 @@ class AnalyticsController extends Controller
         }
 
         fputcsv($handle, []);
-        fputcsv($handle, ['Inventory by Variety', 'Inventory']);
-        foreach ($data['inventoryByVariety']['labels'] as $index => $label) {
-            fputcsv($handle, [$label, $data['inventoryByVariety']['values'][$index] ?? 0]);
+        fputcsv($handle, ['Inventory by Scion Variety', 'Inventory']);
+        foreach ($data['inventoryByScionVariety']['labels'] as $index => $label) {
+            fputcsv($handle, [$label, $data['inventoryByScionVariety']['values'][$index] ?? 0]);
         }
 
         fputcsv($handle, []);
@@ -136,20 +136,17 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Tabular deliverable: per-batch Cacao Tree Stock Ledger (PRD §13.1).
+     * Tabular deliverable: Cacao Tree Stock Ledger as a MONTHLY GRID, grouped by
+     * month with dynamic per-Scion-Variety columns (Part C — matches the
+     * client's real manual ledger, not just PRD §9.3's column list).
      */
     public function stockLedger(Request $request)
     {
-        $filters = $request->validate([
-            'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
-            'variety_id' => ['nullable', 'integer', 'exists:varieties,variety_id'],
-            'date_from' => ['nullable', 'date'],
-            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-        ]);
+        $filters = $request->validate($this->ledgerRules());
 
-        $query = AnalyticsMetrics::stockLedgerQuery(
+        $grid = AnalyticsMetrics::stockLedgerGrid(
             $filters['batch_id'] ?? null,
-            $filters['variety_id'] ?? null,
+            $filters['scion_variety_id'] ?? null,
             $filters['date_from'] ?? null,
             $filters['date_to'] ?? null,
         );
@@ -157,7 +154,7 @@ class AnalyticsController extends Controller
         return view('analytics.stock-ledger', array_merge(
             $this->filterOptions(),
             [
-                'ledger' => $query->paginate(10)->withQueryString(),
+                'grid' => $grid,
                 'filters' => $filters,
                 'reports' => $this->reportsFor(Analytic::TYPE_STOCK_LEDGER),
             ],
@@ -165,61 +162,30 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Printable Cacao Tree Stock Ledger (FPDF) built from the same real
-     * normalized operational data as the on-screen ledger (PRD §13.1).
-     *
-     * No report table is used: the ledger is generated live from batches,
-     * inventory, mortality and replanting (PRD §9, ERD §9.4, RULE 4/5/12).
+     * Printable Cacao Tree Stock Ledger (FPDF) built from the same real monthly
+     * grid data as the on-screen ledger (Part C). No report table is used: the
+     * ledger is generated live from Stock In, batches, mortality, regraft and
+     * Stock Out (PRD §9, ERD §9.4, RULE 4/5/12).
      */
     public function exportPdf(Request $request): Response
     {
-        $filters = $request->validate([
-            'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
-            'variety_id' => ['nullable', 'integer', 'exists:varieties,variety_id'],
-            'date_from' => ['nullable', 'date'],
-            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-        ]);
+        $filters = $request->validate($this->ledgerRules());
 
-        $batches = AnalyticsMetrics::stockLedgerQuery(
+        $grid = AnalyticsMetrics::stockLedgerGrid(
             $filters['batch_id'] ?? null,
-            $filters['variety_id'] ?? null,
+            $filters['scion_variety_id'] ?? null,
             $filters['date_from'] ?? null,
             $filters['date_to'] ?? null,
-        )->get();
-
-        $rows = $batches->map(function (Batch $batch): array {
-            $available = $batch->inventory?->current_quantity ?? $batch->available_count;
-            $status = $batch->inventory?->derivedStatus() ?? $batch->status;
-
-            return [
-                'batch_code' => $batch->batch_code,
-                'variety' => $batch->variety?->variety_name,
-                'scion' => $batch->scion?->scion_name,
-                'grafted' => (int) $batch->total_grafted,
-                'viable' => (int) $batch->viable_count,
-                'available' => (int) $available,
-                'mortality' => $batch->effectiveMortalityQuantity(),
-                'replanting' => $batch->totalReplanted(),
-                'grafted_date' => $batch->grafted_date?->format('M d, Y'),
-                'status' => ucfirst((string) $status),
-            ];
-        })->all();
-
-        $totals = [
-            'batches' => count($rows),
-            'grafted' => (int) $batches->sum('total_grafted'),
-            'viable' => (int) $batches->sum('viable_count'),
-            'available' => (int) collect($rows)->sum('available'),
-            'mortality' => (int) collect($rows)->sum('mortality'),
-            'replanting' => (int) collect($rows)->sum('replanting'),
-        ];
+        );
 
         $pdf = new StockLedgerPdf(
             $this->ledgerLabel($filters),
             (string) $request->user()->name,
             now()->format('M j, Y g:i A'),
-            $rows,
-            $totals,
+            $grid['varieties'],
+            $grid['months'],
+            $grid['grandTotals'],
+            $grid['summary'],
         );
 
         $pdf->AddPage();
@@ -234,7 +200,7 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Tabular deliverable: Mortality Root-Cause Matrix (PRD §13.2).
+     * Tabular deliverable: Mortality Root-Cause Matrix (PRD §9.4).
      */
     public function mortalityMatrix(Request $request)
     {
@@ -242,7 +208,7 @@ class AnalyticsController extends Controller
 
         $matrix = AnalyticsMetrics::mortalityMatrix(
             $filters['batch_id'] ?? null,
-            $filters['variety_id'] ?? null,
+            $filters['scion_variety_id'] ?? null,
             $filters['date_from'] ?? null,
             $filters['date_to'] ?? null,
         );
@@ -255,7 +221,7 @@ class AnalyticsController extends Controller
         );
 
         // Transient feedback for the current render: no table, no persistence
-        // (PRD §19, ERD §9.5). now() keeps it to this request only.
+        // (PRD §15, ERD §9.5). now() keeps it to this request only.
         if (($message = $this->mortalityIncreaseToast($alerts)) !== null) {
             $request->session()->now('warning', $message);
         }
@@ -275,7 +241,7 @@ class AnalyticsController extends Controller
     /**
      * Build the toast message for a detected mortality increase, or null when
      * nothing increased. Centralized here so the wording stays with the rule
-     * (RULE 6); the toast itself is the transient session-flash surface (PRD §19).
+     * (RULE 6); the toast itself is the transient session-flash surface (PRD §15).
      *
      * @param  array{hasBaseline:bool,causes:array<int,array{cause:string,previous:int,current:int,increase:int}>,cells:array<int,array{variety:string,cause:string,previous:int,current:int,increase:int}>}  $alerts
      */
@@ -323,23 +289,28 @@ class AnalyticsController extends Controller
     protected function latestMatrixReport(array $filters): ?Analytic
     {
         $period = $this->periodLabel($filters['date_from'] ?? null, $filters['date_to'] ?? null);
+        $currentVariety = $filters['scion_variety_id'] ?? null;
 
         return Analytic::query()
             ->where('analysis_type', Analytic::TYPE_MORTALITY_MATRIX)
             ->where('analysis_period', $period)
             ->orderByDesc('generated_at')
             ->get()
-            ->first(function (Analytic $report) use ($filters): bool {
+            ->first(function (Analytic $report) use ($filters, $currentVariety): bool {
                 $stored = $report->result_summary['filters'] ?? null;
 
                 // Legacy snapshot without filter metadata: only comparable when the
                 // current view is not narrowed by batch/variety.
                 if (! is_array($stored)) {
-                    return empty($filters['batch_id']) && empty($filters['variety_id']);
+                    return empty($filters['batch_id']) && empty($currentVariety);
                 }
 
+                // Accept the revised `scion_variety_id` key, falling back to the
+                // pre-P5 `variety_id` key for legacy snapshots.
+                $storedVariety = $stored['scion_variety_id'] ?? ($stored['variety_id'] ?? null);
+
                 return (string) ($stored['batch_id'] ?? '') === (string) ($filters['batch_id'] ?? '')
-                    && (string) ($stored['variety_id'] ?? '') === (string) ($filters['variety_id'] ?? '')
+                    && (string) $storedVariety === (string) $currentVariety
                     && (string) ($stored['date_from'] ?? '') === (string) ($filters['date_from'] ?? '')
                     && (string) ($stored['date_to'] ?? '') === (string) ($filters['date_to'] ?? '');
             });
@@ -347,8 +318,8 @@ class AnalyticsController extends Controller
 
     /**
      * Printable Mortality Root-Cause Matrix (FPDF) built from the same real,
-     * filter-aware matrix data as the page (PRD §13.2). No report table —
-     * generated live from mortality records + adjustments (PRD §9, ERD §9.4).
+     * filter-aware matrix data as the page (PRD §9.4). No report table —
+     * generated live from mortality records (PRD §9, ERD §9.4).
      */
     public function exportMatrixPdf(Request $request): Response
     {
@@ -356,7 +327,7 @@ class AnalyticsController extends Controller
 
         $matrix = AnalyticsMetrics::mortalityMatrix(
             $filters['batch_id'] ?? null,
-            $filters['variety_id'] ?? null,
+            $filters['scion_variety_id'] ?? null,
             $filters['date_from'] ?? null,
             $filters['date_to'] ?? null,
         );
@@ -368,11 +339,7 @@ class AnalyticsController extends Controller
             $matrix['causes'],
             $matrix['rows'],
             $matrix['totalsByCause'],
-            [
-                'raw' => $matrix['rawTotal'],
-                'adjustment' => $matrix['adjustmentTotal'],
-                'effective' => $matrix['grandTotal'],
-            ],
+            $matrix['grandTotal'],
         );
 
         $pdf->AddPage();
@@ -387,7 +354,7 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * CSV export of the Mortality Root-Cause Matrix (PRD §13.2) from the same
+     * CSV export of the Mortality Root-Cause Matrix (PRD §9.4) from the same
      * real, filter-aware data. Generated live — no report table (PRD §9).
      */
     public function exportMatrixCsv(Request $request): Response
@@ -396,7 +363,7 @@ class AnalyticsController extends Controller
 
         $matrix = AnalyticsMetrics::mortalityMatrix(
             $filters['batch_id'] ?? null,
-            $filters['variety_id'] ?? null,
+            $filters['scion_variety_id'] ?? null,
             $filters['date_from'] ?? null,
             $filters['date_to'] ?? null,
         );
@@ -439,7 +406,7 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Historical deliverable: Mortality Seasonality Heatmap (PRD §14.1).
+     * Historical deliverable: Mortality Seasonality Heatmap (PRD §9.5).
      */
     public function seasonality(Request $request)
     {
@@ -452,7 +419,7 @@ class AnalyticsController extends Controller
             [
                 'heatmap' => AnalyticsMetrics::seasonality(
                     isset($filters['year']) ? (int) $filters['year'] : null,
-                    $filters['variety_id'] ?? null,
+                    $filters['scion_variety_id'] ?? null,
                     $filters['batch_id'] ?? null,
                 ),
                 'filters' => $filters,
@@ -461,13 +428,13 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Historical deliverable: Age Profile (PRD §14.2).
+     * Historical deliverable: Age Profile (PRD §9.5).
      */
     public function ageProfile(Request $request)
     {
         $filters = $request->validate([
             'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
-            'variety_id' => ['nullable', 'integer', 'exists:varieties,variety_id'],
+            'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],
             'as_of' => ['nullable', 'date'],
         ]);
 
@@ -476,7 +443,7 @@ class AnalyticsController extends Controller
             [
                 'profile' => AnalyticsMetrics::ageProfile(
                     $filters['batch_id'] ?? null,
-                    $filters['variety_id'] ?? null,
+                    $filters['scion_variety_id'] ?? null,
                     $filters['as_of'] ?? null,
                 ),
                 'filters' => $filters,
@@ -485,7 +452,7 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Historical deliverable: Gap Report (PRD §14.3).
+     * Historical deliverable: Gap Report (PRD §9.5).
      */
     public function gapReport(Request $request)
     {
@@ -496,7 +463,7 @@ class AnalyticsController extends Controller
             [
                 'gap' => AnalyticsMetrics::gapReport(
                     $filters['batch_id'] ?? null,
-                    $filters['variety_id'] ?? null,
+                    $filters['scion_variety_id'] ?? null,
                 ),
                 'filters' => $filters,
                 'reports' => $this->reportsFor(Analytic::TYPE_GAP_REPORT),
@@ -506,7 +473,7 @@ class AnalyticsController extends Controller
 
     /**
      * Printable Gap Report (FPDF) built from the same real, filter-aware data as
-     * the page (PRD §14.3). Generated live — no report table (PRD §9, ERD §9.4).
+     * the page (PRD §9.5). Generated live — no report table (PRD §9, ERD §9.4).
      */
     public function exportGapPdf(Request $request): Response
     {
@@ -514,7 +481,7 @@ class AnalyticsController extends Controller
 
         $gap = AnalyticsMetrics::gapReport(
             $filters['batch_id'] ?? null,
-            $filters['variety_id'] ?? null,
+            $filters['scion_variety_id'] ?? null,
         );
 
         $pdf = new GapReportPdf(
@@ -525,6 +492,7 @@ class AnalyticsController extends Controller
             [
                 'expected' => $gap['totalExpected'],
                 'actual' => $gap['totalActual'],
+                'pulled_out' => $gap['totalPulledOut'],
                 'gap' => $gap['totalGap'],
             ],
         );
@@ -541,7 +509,7 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * CSV export of the Gap Report (PRD §14.3) from the same real, filter-aware
+     * CSV export of the Gap Report (PRD §9.5) from the same real, filter-aware
      * data. Generated live — no report table (PRD §9).
      */
     public function exportGapCsv(Request $request): Response
@@ -550,7 +518,7 @@ class AnalyticsController extends Controller
 
         $gap = AnalyticsMetrics::gapReport(
             $filters['batch_id'] ?? null,
-            $filters['variety_id'] ?? null,
+            $filters['scion_variety_id'] ?? null,
         );
 
         $filename = 'cacao-gap-report-'.now()->format('Y-m-d').'.csv';
@@ -565,13 +533,13 @@ class AnalyticsController extends Controller
 
         $handle = fopen('php://temp', 'r+');
 
-        fputcsv($handle, ['Batch', 'Variety', 'Expected', 'Actual', 'Gap']);
+        fputcsv($handle, ['Batch', 'Variety', 'Expected', 'Actual', 'Pulled Out', 'Gap']);
 
         foreach ($gap['rows'] as $row) {
-            fputcsv($handle, [$row['batch'], $row['variety'], $row['expected'], $row['actual'], $row['gap']]);
+            fputcsv($handle, [$row['batch'], $row['variety'], $row['expected'], $row['actual'], $row['pulled_out'], $row['gap']]);
         }
 
-        fputcsv($handle, ['Total', '', $gap['totalExpected'], $gap['totalActual'], $gap['totalGap']]);
+        fputcsv($handle, ['Total', '', $gap['totalExpected'], $gap['totalActual'], $gap['totalPulledOut'], $gap['totalGap']]);
 
         rewind($handle);
         $csv = (string) stream_get_contents($handle);
@@ -611,11 +579,24 @@ class AnalyticsController extends Controller
     /**
      * @return array<string,array<int,string>>
      */
+    protected function ledgerRules(): array
+    {
+        return [
+            'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
+            'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ];
+    }
+
+    /**
+     * @return array<string,array<int,string>>
+     */
     protected function matrixRules(): array
     {
         return [
             'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
-            'variety_id' => ['nullable', 'integer', 'exists:varieties,variety_id'],
+            'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ];
@@ -628,17 +609,17 @@ class AnalyticsController extends Controller
     {
         return [
             'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
-            'variety_id' => ['nullable', 'integer', 'exists:varieties,variety_id'],
+            'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],
         ];
     }
 
     /**
-     * @return array{varieties:Collection,batches:Collection}
+     * @return array{scionVarieties:Collection,batches:Collection}
      */
     protected function filterOptions(): array
     {
         return [
-            'varieties' => Variety::orderBy('variety_name')->get(),
+            'scionVarieties' => ScionVariety::orderBy('scion_variety_name')->get(),
             'batches' => Batch::orderBy('batch_code')->get(),
         ];
     }
@@ -691,7 +672,7 @@ class AnalyticsController extends Controller
      */
     protected function matrixLabel(array $filters): string
     {
-        return $this->filterLabel($filters, 'All varieties (all time)');
+        return $this->filterLabel($filters, 'All scion varieties (all time)');
     }
 
     /**
@@ -727,9 +708,9 @@ class AnalyticsController extends Controller
             $parts[] = 'Batch: '.($code ?? '#'.$filters['batch_id']);
         }
 
-        if (! empty($filters['variety_id'])) {
-            $name = Variety::whereKey($filters['variety_id'])->value('variety_name');
-            $parts[] = 'Variety: '.($name ?? '#'.$filters['variety_id']);
+        if (! empty($filters['scion_variety_id'])) {
+            $name = ScionVariety::whereKey($filters['scion_variety_id'])->value('scion_variety_name');
+            $parts[] = 'Scion Variety: '.($name ?? '#'.$filters['scion_variety_id']);
         }
 
         return $parts === [] ? $empty : implode('  |  ', $parts);

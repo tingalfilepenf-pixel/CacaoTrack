@@ -101,10 +101,10 @@
         <div class="col-lg-6 mt-3 mt-lg-0">
             <div class="card h-100">
                 <div class="card-header bg-white">
-                    <h6 class="mb-0 fw-bold text-primary">Inventory by Variety</h6>
+                    <h6 class="mb-0 fw-bold text-primary">Inventory by Scion Variety</h6>
                 </div>
                 <div class="card-body">
-                    @if (count($inventoryByVariety['labels']) > 0 && array_sum($inventoryByVariety['values']) > 0)
+                    @if (count($inventoryByScionVariety['labels']) > 0 && array_sum($inventoryByScionVariety['values']) > 0)
                         <div id="inventoryVarietyChart" style="height: 300px; width: 100%;"></div>
                     @else
                         <p class="text-muted text-center my-5">No data available for the selected period.</p>
@@ -198,7 +198,7 @@
                 <div class="modal-body">
                     <p class="text-muted small">
                         The printable PDF contains the current KPI cards and the tabular values behind each chart
-                        (Mortality Trend, Inventory by Variety, Replanting Deficit by Batch, Survival vs Mortality).
+                        (Mortality Trend, Inventory by Scion Variety, Replanting Deficit by Batch, Survival vs Mortality).
                     </p>
                     <p class="text-muted small mb-0">
                         <i class="bi bi-info-circle me-1"></i>All values are read live from the database (all time).
@@ -248,16 +248,16 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     @endif
 
-    @if (count($inventoryByVariety['labels']) > 0 && array_sum($inventoryByVariety['values']) > 0)
+    @if (count($inventoryByScionVariety['labels']) > 0 && array_sum($inventoryByScionVariety['values']) > 0)
     render('inventoryVarietyChart', {
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
         grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: @json($inventoryByVariety['labels']) },
+        xAxis: { type: 'category', data: @json($inventoryByScionVariety['labels']) },
         yAxis: { type: 'value', name: 'Trees' },
         series: [{
             name: 'Inventory',
             type: 'bar',
-            data: @json($inventoryByVariety['values']),
+            data: @json($inventoryByScionVariety['values']),
             itemStyle: { color: '#0d6efd' }
         }]
     });
