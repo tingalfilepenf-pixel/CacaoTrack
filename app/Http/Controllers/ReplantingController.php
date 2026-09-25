@@ -2,19 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreReplantingRecordRequest;
 use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\ReplantingRecord;
-use App\Models\Scion;
+use App\Support\DuplicateSubmissionGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ReplantingController extends Controller
 {
+    /**
+     * FR-05 Replanting listing. Replanting is linked to the batch and its
+     * deficit (effective mortality − total replanted); the removed scion stock
+     * pool is no longer involved.
+     */
     public function index(Request $request): View
     {
         $filters = $request->validate([
@@ -22,7 +27,7 @@ class ReplantingController extends Controller
         ]);
 
         $batches = Batch::query()
-            ->with(['variety', 'replantingRecords.user'])
+            ->with(['scionVariety', 'replantingRecords.user'])
             ->when($filters['batch_id'] ?? null, fn ($query, $batchId) => $query->where('batch_id', $batchId))
             ->orderBy('batch_code')
             ->get();
@@ -42,11 +47,6 @@ class ReplantingController extends Controller
             ];
         });
 
-        $totalDeficit = $summaries->sum('deficit');
-        $totalReplanted = $summaries->sum('total_replanted');
-        $totalMortality = $summaries->sum('effective_mortality');
-        $batchesWithDeficit = $summaries->where('deficit', '>', 0)->count();
-
         $replantableBatches = $summaries
             ->where('deficit', '>', 0)
             ->reject(fn (array $summary) => $summary['batch']->isArchived())
@@ -56,66 +56,56 @@ class ReplantingController extends Controller
             'summaries' => $summaries,
             'replantableBatches' => $replantableBatches,
             'filters' => $filters,
-            'totalDeficit' => $totalDeficit,
-            'totalReplanted' => $totalReplanted,
-            'totalMortality' => $totalMortality,
-            'batchesWithDeficit' => $batchesWithDeficit,
+            'totalDeficit' => $summaries->sum('deficit'),
+            'totalReplanted' => $summaries->sum('total_replanted'),
+            'totalMortality' => $summaries->sum('effective_mortality'),
+            'batchesWithDeficit' => $summaries->where('deficit', '>', 0)->count(),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    /**
+     * Record a replanting entry against the batch's remaining deficit. The
+     * removed Scion stock-pool lock/deduction is gone (revised ERD §6).
+     */
+    public function store(StoreReplantingRecordRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'batch_id' => ['required', 'integer', Batch::activeExistsRule('batch_id')],
-            'quantity' => ['required', 'integer', 'min:1'],
-            'replanting_date' => ['required', 'date'],
-            'remark' => ['nullable', 'string', 'max:255'],
-        ]);
+        $validated = $request->validated();
 
-        $batch = Batch::findOrFail($validated['batch_id']);
-        $deficit = $batch->replantingDeficit();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh('replanting', $validated, 'replanting');
 
-        if ($validated['quantity'] > $deficit) {
-            throw ValidationException::withMessages([
-                'quantity' => "Replanting cannot exceed the batch's remaining deficit of {$deficit} for {$batch->batch_code}.",
-            ]);
-        }
+        try {
+            DB::transaction(function () use ($validated): void {
+                $batch = Batch::query()->lockForUpdate()->findOrFail($validated['batch_id']);
 
-        DB::transaction(function () use ($validated, $batch): void {
-            // Lock the batch's scion pool and deduct the scions used (approved ERD
-            // revision §9.10). RULE 7: the deduction is transaction-safe and the
-            // available balance can never go negative.
-            $scion = Scion::query()
-                ->whereKey($batch->scion_id)
-                ->lockForUpdate()
-                ->first();
+                $deficit = $batch->replantingDeficit();
 
-            $available = (int) ($scion?->quantity ?? 0);
+                if ((int) $validated['quantity'] > $deficit) {
+                    $this->failValidation([
+                        'quantity' => "Replanting cannot exceed the batch's remaining deficit of {$deficit} for {$batch->batch_code}.",
+                    ], 'replanting');
+                }
 
-            if (! $scion || $validated['quantity'] > $available) {
-                throw ValidationException::withMessages([
-                    'quantity' => "Not enough available scions for {$batch->batch_code}: {$available} remaining, {$validated['quantity']} requested.",
+                ReplantingRecord::create([
+                    'batch_id' => $batch->batch_id,
+                    'user_id' => Auth::id(),
+                    'quantity' => $validated['quantity'],
+                    'replanting_date' => $validated['replanting_date'],
+                    'remark' => $validated['remark'] ?? null,
                 ]);
-            }
 
-            ReplantingRecord::create([
-                'batch_id' => $batch->batch_id,
-                'user_id' => Auth::id(),
-                'quantity' => $validated['quantity'],
-                'replanting_date' => $validated['replanting_date'],
-                'remark' => $validated['remark'] ?? null,
-            ]);
+                ActivityLog::record(
+                    $batch->batch_id,
+                    ActivityLog::TYPE_REPLANTING_RECORDED,
+                    "Recorded {$validated['quantity']} replanting for {$batch->batch_code}.",
+                    null,
+                    $validated['replanting_date'],
+                );
+            });
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('replanting', $fingerprint);
 
-            $scion->deduct((int) $validated['quantity']);
-
-            ActivityLog::record(
-                $batch->batch_id,
-                ActivityLog::TYPE_REPLANTING_RECORDED,
-                "Recorded {$validated['quantity']} replanting for {$batch->batch_code}. Available scions: {$scion->quantity}.",
-                null,
-                $validated['replanting_date'],
-            );
-        });
+            throw $exception;
+        }
 
         return redirect()
             ->route('operational.replanting')

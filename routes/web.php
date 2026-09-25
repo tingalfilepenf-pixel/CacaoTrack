@@ -4,22 +4,18 @@ use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BatchController;
-use App\Http\Controllers\BatchMonitoringController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DailyChecklistController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MortalityController;
-use App\Http\Controllers\PotTypeController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReplantingController;
-use App\Http\Controllers\ScionController;
+use App\Http\Controllers\ScionVarietyController;
 use App\Http\Controllers\StockInController;
 use App\Http\Controllers\StockOutController;
-use App\Http\Controllers\StockReversalController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
-use App\Http\Controllers\VarietyController;
 use Illuminate\Support\Facades\Route;
 
 // Dashboard (PRD §12): real KPIs/charts, protected like every other data page (FR-01).
@@ -30,7 +26,8 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-// Operational Routes — require the `record_operations` access restriction.
+// Operational Routes — Batches, Mortality, Replanting and the checklist all
+// require the `record_operations` access restriction (PRD §5).
 Route::prefix('operational')->middleware(['auth', 'permission:record_operations'])->group(function () {
     Route::get('/checklist', [DailyChecklistController::class, 'index'])->name('operational.checklist');
     Route::get('/checklist/export', [DailyChecklistController::class, 'exportPdf'])->name('operational.checklist.export');
@@ -41,17 +38,31 @@ Route::prefix('operational')->middleware(['auth', 'permission:record_operations'
     Route::post('/checklist/tasks/{task}/restore', [DailyChecklistController::class, 'restoreTask'])->name('operational.checklist.tasks.restore');
     Route::delete('/checklist/tasks/{task}', [DailyChecklistController::class, 'destroyTask'])->name('operational.checklist.tasks.destroy');
 
+    // Mortality is record-only: the adjustment route was removed with the
+    // Mortality_Adjustments entity (revised ERD §6).
     Route::get('/mortality', [MortalityController::class, 'index'])->name('operational.mortality');
     Route::post('/mortality/records', [MortalityController::class, 'store'])->name('operational.mortality.records.store');
-    Route::post('/mortality/records/{mortality}/adjust', [MortalityController::class, 'adjust'])->name('operational.mortality.records.adjust');
 
     Route::get('/replanting', [ReplantingController::class, 'index'])->name('operational.replanting');
     Route::post('/replanting/records', [ReplantingController::class, 'store'])->name('operational.replanting.records.store');
 
-    // Batch Monitoring (FR-18, approved ERD revision §9.11). Read-only view;
-    // plant status is updated through Mortality Tracking, not here.
-    Route::get('/batch-monitoring', [BatchMonitoringController::class, 'index'])->name('operational.batch-monitoring');
-    Route::post('/batch-monitoring/batches/{batch}/start', [BatchMonitoringController::class, 'start'])->name('operational.batch-monitoring.batches.start');
+    // Batches moved from `/inventory/batches` to `/operational/batches` (P3
+    // decision f): a batch is the central operational record (PRD §5).
+    Route::get('/batches', [BatchController::class, 'index'])->name('operational.batches');
+    Route::post('/batches/manage', [BatchController::class, 'store'])->name('operational.batches.manage.store');
+    Route::put('/batches/{batch}', [BatchController::class, 'update'])->name('operational.batches.update');
+    Route::post('/batches/{batch}/archive', [BatchController::class, 'archive'])->name('operational.batches.archive');
+    Route::post('/batches/{batch}/restore', [BatchController::class, 'restore'])->name('operational.batches.restore');
+});
+
+// Scion Variety master data (FR-07). Lives in the Operational area but keeps
+// the master-data access restriction `manage_inventory` (P3 decision g).
+Route::prefix('operational')->middleware(['auth', 'permission:manage_inventory'])->group(function () {
+    Route::get('/scion-varieties', [ScionVarietyController::class, 'index'])->name('operational.scion-varieties');
+    Route::post('/scion-varieties/manage', [ScionVarietyController::class, 'store'])->name('operational.scion-varieties.manage.store');
+    Route::put('/scion-varieties/{scion_variety}', [ScionVarietyController::class, 'update'])->name('operational.scion-varieties.update');
+    Route::post('/scion-varieties/{scion_variety}/archive', [ScionVarietyController::class, 'archive'])->name('operational.scion-varieties.archive');
+    Route::post('/scion-varieties/{scion_variety}/restore', [ScionVarietyController::class, 'restore'])->name('operational.scion-varieties.restore');
 });
 
 // Inventory Routes
@@ -70,10 +81,12 @@ Route::prefix('inventory')->group(function () {
         Route::get('/stock-out', [StockOutController::class, 'index'])->name('inventory.stock-out');
         Route::post('/stock-out', [StockOutController::class, 'store'])->name('inventory.stock-out.store');
         Route::post('/clients', [StockOutController::class, 'storeClient'])->name('inventory.clients.store');
-
-        Route::get('/stock-reversal', [StockReversalController::class, 'index'])->name('inventory.stock-reversal');
-        Route::post('/stock-reversal', [StockReversalController::class, 'store'])->name('inventory.stock-reversal.store');
     });
+
+    // "Record Monthly Inventory" (FR-08) writes a stored monthly snapshot.
+    Route::middleware(['auth', 'permission:manage_inventory'])
+        ->post('/snapshots', [InventoryController::class, 'store'])
+        ->name('inventory.snapshots.store');
 
     // Management master data — require the `manage_inventory` access restriction.
     Route::middleware(['auth', 'permission:manage_inventory'])->group(function () {
@@ -88,27 +101,6 @@ Route::prefix('inventory')->group(function () {
         Route::put('/clients/{client}', [ClientController::class, 'update'])->name('inventory.clients.update');
         Route::post('/clients/{client}/archive', [ClientController::class, 'archive'])->name('inventory.clients.archive');
         Route::post('/clients/{client}/restore', [ClientController::class, 'restore'])->name('inventory.clients.restore');
-
-        Route::get('/varieties', [VarietyController::class, 'index'])->name('inventory.varieties');
-        Route::post('/varieties/manage', [VarietyController::class, 'store'])->name('inventory.varieties.manage.store');
-        Route::put('/varieties/{variety}', [VarietyController::class, 'update'])->name('inventory.varieties.update');
-        Route::post('/varieties/{variety}/archive', [VarietyController::class, 'archive'])->name('inventory.varieties.archive');
-        Route::post('/varieties/{variety}/restore', [VarietyController::class, 'restore'])->name('inventory.varieties.restore');
-
-        Route::get('/scions', [ScionController::class, 'index'])->name('inventory.scions');
-        Route::post('/scions/receive', [ScionController::class, 'receive'])->name('inventory.scions.receive');
-
-        Route::get('/pot-types', [PotTypeController::class, 'index'])->name('inventory.pot-types');
-        Route::post('/pot-types/manage', [PotTypeController::class, 'store'])->name('inventory.pot-types.manage.store');
-        Route::put('/pot-types/{pot_type}', [PotTypeController::class, 'update'])->name('inventory.pot-types.update');
-        Route::post('/pot-types/{pot_type}/archive', [PotTypeController::class, 'archive'])->name('inventory.pot-types.archive');
-        Route::post('/pot-types/{pot_type}/restore', [PotTypeController::class, 'restore'])->name('inventory.pot-types.restore');
-
-        Route::get('/batches', [BatchController::class, 'index'])->name('inventory.batches');
-        Route::post('/batches/manage', [BatchController::class, 'store'])->name('inventory.batches.manage.store');
-        Route::put('/batches/{batch}', [BatchController::class, 'update'])->name('inventory.batches.update');
-        Route::post('/batches/{batch}/archive', [BatchController::class, 'archive'])->name('inventory.batches.archive');
-        Route::post('/batches/{batch}/restore', [BatchController::class, 'restore'])->name('inventory.batches.restore');
     });
 });
 

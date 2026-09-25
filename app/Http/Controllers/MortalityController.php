@@ -2,46 +2,47 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreMortalityRecordRequest;
 use App\Models\ActivityLog;
 use App\Models\Batch;
-use App\Models\MortalityAdjustment;
 use App\Models\MortalityRecord;
-use App\Models\Variety;
+use App\Models\ScionVariety;
+use App\Support\DuplicateSubmissionGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class MortalityController extends Controller
 {
+    /**
+     * FR-04 Mortality Tracking listing. Mortality has no adjustment/correction
+     * action any more (Mortality_Adjustments was removed with the revised
+     * model).
+     */
     public function index(Request $request): View
     {
         $filters = $request->validate([
             'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
-            'variety_id' => ['nullable', 'integer', 'exists:varieties,variety_id'],
+            'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
 
         $base = MortalityRecord::query()
             ->when($filters['batch_id'] ?? null, fn ($query, $batchId) => $query->where('batch_id', $batchId))
-            ->when($filters['variety_id'] ?? null, fn ($query, $varietyId) => $query->whereHas(
+            ->when($filters['scion_variety_id'] ?? null, fn ($query, $scionVarietyId) => $query->whereHas(
                 'batch',
-                fn ($batchQuery) => $batchQuery->where('variety_id', $varietyId),
+                fn ($batchQuery) => $batchQuery->where('scion_variety_id', $scionVarietyId),
             ))
             ->when($filters['date_from'] ?? null, fn ($query, $date) => $query->whereDate('recorded_at', '>=', $date))
             ->when($filters['date_to'] ?? null, fn ($query, $date) => $query->whereDate('recorded_at', '<=', $date));
 
-        $filteredRecords = (clone $base)->with('adjustments')->get();
-
-        $totalMortality = $filteredRecords->sum(fn (MortalityRecord $record) => $record->effectiveQuantity());
-        $recordCount = $filteredRecords->count();
-        $batchesAffected = $filteredRecords->pluck('batch_id')->unique()->count();
+        $filteredRecords = (clone $base)->get();
 
         $records = (clone $base)
-            ->with(['batch.variety', 'user', 'adjustments.approver'])
+            ->with(['batch.scionVariety', 'user'])
             ->orderByDesc('recorded_at')
             ->orderByDesc('mortality_id')
             ->paginate(10)
@@ -49,112 +50,63 @@ class MortalityController extends Controller
 
         return view('operational.mortality.index', [
             'records' => $records,
-            'batches' => Batch::with('variety')->orderBy('batch_code')->get(),
-            'activeBatches' => Batch::active()->with('variety')->orderBy('batch_code')->get(),
-            'varieties' => Variety::orderBy('variety_name')->get(),
+            'batches' => Batch::with('scionVariety')->orderBy('batch_code')->get(),
+            'activeBatches' => Batch::active()->with('scionVariety')->orderBy('batch_code')->get(),
+            'scionVarieties' => ScionVariety::orderBy('scion_variety_name')->get(),
             'filters' => $filters,
-            'totalMortality' => $totalMortality,
-            'recordCount' => $recordCount,
-            'batchesAffected' => $batchesAffected,
+            'totalMortality' => $filteredRecords->sum(fn (MortalityRecord $record) => $record->effectiveQuantity()),
+            'recordCount' => $filteredRecords->count(),
+            'batchesAffected' => $filteredRecords->pluck('batch_id')->unique()->count(),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    /**
+     * Record mortality. This action only ever creates a Mortality_Record row —
+     * it never writes `batches.viable_count` (locked business rule 1). The
+     * remaining capacity comes from the model's own cap logic.
+     */
+    public function store(StoreMortalityRecordRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'batch_id' => ['required', 'integer', Batch::activeExistsRule('batch_id')],
-            'quantity' => ['required', 'integer', 'min:1'],
-            'cause' => ['required', 'string', 'max:255'],
-            'recorded_at' => ['required', 'date'],
-        ]);
+        $validated = $request->validated();
 
-        DB::transaction(function () use ($validated): void {
-            $batch = Batch::query()->lockForUpdate()->findOrFail($validated['batch_id']);
+        $fingerprint = DuplicateSubmissionGuard::assertFresh('mortality', $validated, 'mortality');
 
-            $alive = $batch->alivePlants();
+        try {
+            DB::transaction(function () use ($validated): void {
+                $batch = Batch::query()->lockForUpdate()->findOrFail($validated['batch_id']);
 
-            if ($validated['quantity'] > $alive) {
-                throw ValidationException::withMessages([
-                    'quantity' => "Mortality cannot exceed the batch's alive plant count of {$alive}.",
+                $capacity = $batch->remainingMortalityCapacity();
+
+                if ((int) $validated['quantity'] > $capacity) {
+                    $this->failValidation([
+                        'quantity' => "Mortality cannot exceed the batch's remaining mortality capacity of {$capacity} for {$batch->batch_code}.",
+                    ], 'mortality');
+                }
+
+                MortalityRecord::create([
+                    'batch_id' => $batch->batch_id,
+                    'user_id' => Auth::id(),
+                    'quantity' => $validated['quantity'],
+                    'cause' => $validated['cause'],
+                    'recorded_at' => $validated['recorded_at'],
                 ]);
-            }
 
-            MortalityRecord::create([
-                'batch_id' => $batch->batch_id,
-                'user_id' => Auth::id(),
-                'quantity' => $validated['quantity'],
-                'cause' => $validated['cause'],
-                'recorded_at' => $validated['recorded_at'],
-            ]);
+                ActivityLog::record(
+                    $batch->batch_id,
+                    ActivityLog::TYPE_MORTALITY_RECORDED,
+                    "Recorded {$validated['quantity']} mortality for {$batch->batch_code} due to {$validated['cause']}.",
+                    null,
+                    $validated['recorded_at'],
+                );
+            });
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('mortality', $fingerprint);
 
-            // Mortality is the only operation that updates plant status: deduct
-            // the dead plants from the batch's alive count (stored viable_count).
-            $batch->applyAliveDelta(-(int) $validated['quantity']);
-
-            ActivityLog::record(
-                $batch->batch_id,
-                ActivityLog::TYPE_MORTALITY_RECORDED,
-                "Recorded {$validated['quantity']} mortality for {$batch->batch_code} due to {$validated['cause']}.",
-                null,
-                $validated['recorded_at'],
-            );
-        });
+            throw $exception;
+        }
 
         return redirect()
             ->route('operational.mortality')
             ->with('success', 'Mortality record saved successfully.');
-    }
-
-    public function adjust(Request $request, MortalityRecord $mortality): RedirectResponse
-    {
-        $validated = $request->validate([
-            'adjustment_quantity' => ['required', 'integer', 'not_in:0'],
-            'reason' => ['required', 'string', 'max:255'],
-        ]);
-
-        DB::transaction(function () use ($mortality, $validated): void {
-            $batch = Batch::query()->lockForUpdate()->findOrFail($mortality->batch_id);
-            $delta = (int) $validated['adjustment_quantity'];
-
-            $newEffective = $mortality->effectiveQuantity() + $delta;
-
-            if ($newEffective < 0) {
-                throw ValidationException::withMessages([
-                    'adjustment_quantity' => 'This adjustment would make the effective mortality negative.',
-                ]);
-            }
-
-            // A positive adjustment records additional deaths, so it cannot
-            // exceed the batch's current alive count. A negative adjustment
-            // restores plants back to the alive count.
-            if ($delta > 0 && $delta > $batch->alivePlants()) {
-                throw ValidationException::withMessages([
-                    'adjustment_quantity' => "This adjustment would exceed the batch's alive plant count of {$batch->alivePlants()}.",
-                ]);
-            }
-
-            MortalityAdjustment::create([
-                'mortality_id' => $mortality->mortality_id,
-                'approved_by_id' => Auth::id(),
-                'adjustment_quantity' => $delta,
-                'reason' => $validated['reason'],
-                'adjusted_at' => now(),
-            ]);
-
-            // Keep the alive count consistent with the audit mortality total.
-            $batch->applyAliveDelta(-$delta);
-
-            $formattedDelta = ($delta > 0 ? '+' : '').$delta;
-
-            ActivityLog::record(
-                $batch->batch_id,
-                ActivityLog::TYPE_MORTALITY_ADJUSTED,
-                "Adjusted mortality record #{$mortality->mortality_id} by {$formattedDelta} ({$validated['reason']}).",
-            );
-        });
-
-        return redirect()
-            ->route('operational.mortality')
-            ->with('success', 'Mortality adjustment saved successfully.');
     }
 }

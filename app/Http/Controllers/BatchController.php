@@ -2,31 +2,31 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreBatchRequest;
+use App\Http\Requests\UpdateBatchRequest;
 use App\Models\ActivityLog;
 use App\Models\Batch;
-use App\Models\Inventory;
-use App\Models\PotType;
-use App\Models\Scion;
-use App\Models\Variety;
+use App\Models\ScionVariety;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 
 class BatchController extends Controller
 {
     /**
-     * FR-16 Batch Management listing. Readable and mutable by any
-     * authenticated user (consistent with the other Management pages).
+     * FR-06 Batch listing (Operational → Batches, `/operational/batches`).
+     *
+     * A batch is the central operational record: one nullable
+     * `scion_variety_id`, no variety/pot/monitoring columns, and many monthly
+     * Inventory snapshots.
      */
     public function index(Request $request): View
     {
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
-            'variety_id' => ['nullable', 'integer', 'exists:varieties,variety_id'],
-            'scion_id' => ['nullable', 'integer', 'exists:scions,scion_id'],
+            'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],
             'status' => ['nullable', 'string', 'in:'.implode(',', Batch::STATUSES)],
             'tab' => ['nullable', 'string', 'in:active,archived'],
         ]);
@@ -37,11 +37,8 @@ class BatchController extends Controller
             ->when($filters['search'] ?? null, function ($query, $search): void {
                 $query->where('batch_code', 'like', "%{$search}%");
             })
-            ->when($filters['variety_id'] ?? null, function ($query, $varietyId): void {
-                $query->where('variety_id', $varietyId);
-            })
-            ->when($filters['scion_id'] ?? null, function ($query, $scionId): void {
-                $query->where('scion_id', $scionId);
+            ->when($filters['scion_variety_id'] ?? null, function ($query, $scionVarietyId): void {
+                $query->where('scion_variety_id', $scionVarietyId);
             })
             ->when($filters['status'] ?? null, function ($query, $status): void {
                 $query->where('status', $status);
@@ -56,29 +53,20 @@ class BatchController extends Controller
         );
 
         $batches = (clone $visible)
-            ->with(['variety', 'scion', 'potType', 'inventory'])
+            ->with(['scionVariety', 'latestInventory'])
             ->withCount(['mortalityRecords', 'replantingRecords'])
             ->withExists(Batch::OPERATIONAL_RELATIONS)
             ->orderBy('batch_code')
             ->paginate(10)
             ->withQueryString();
 
-        // New-record selectors offer active master data only, but an archived
-        // master that is already referenced by a batch must stay selectable so
-        // that existing batches remain editable (ERD §9.8).
-        $varieties = Variety::query()
-            ->where(fn ($query) => $query->active()->orWhereIn('variety_id', Batch::query()->select('variety_id')))
-            ->orderBy('variety_name')
-            ->get();
-
-        $scions = Scion::query()
-            ->where(fn ($query) => $query->active()->orWhereIn('scion_id', Batch::query()->select('scion_id')))
-            ->orderBy('scion_name')
-            ->get();
-
-        $potTypes = PotType::query()
-            ->where(fn ($query) => $query->active()->orWhereIn('pot_id', Batch::query()->select('pot_id')))
-            ->orderBy('pot_name')
+        // New-record selectors offer active scion varieties only, but an
+        // archived variety already referenced by a batch stays selectable so
+        // existing batches remain editable (ERD §9.8).
+        $scionVarieties = ScionVariety::query()
+            ->where(fn ($query) => $query->active()
+                ->orWhereIn('scion_variety_id', Batch::query()->select('scion_variety_id')))
+            ->orderBy('scion_variety_name')
             ->get();
 
         return view('inventory.batches.index', [
@@ -86,9 +74,7 @@ class BatchController extends Controller
             'filters' => $filters,
             'status' => $tab,
             'archivedCount' => $archivedCount,
-            'varieties' => $varieties,
-            'scions' => $scions,
-            'potTypes' => $potTypes,
+            'scionVarieties' => $scionVarieties,
             'totalBatches' => (clone $visible)->count(),
             'activeBatches' => (clone $visible)->where('status', Batch::STATUS_ACTIVE)->count(),
             'inactiveBatches' => (clone $visible)->where('status', Batch::STATUS_INACTIVE)->count(),
@@ -96,18 +82,9 @@ class BatchController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(StoreBatchRequest $request): RedirectResponse
     {
-        $validator = Validator::make($request->all(), Batch::rules());
-
-        if ($validator->fails()) {
-            return redirect()
-                ->route('inventory.batches')
-                ->withErrors($validator, 'batch')
-                ->withInput();
-        }
-
-        $validated = $validator->validated();
+        $validated = $request->validated();
 
         DB::transaction(function () use ($validated): void {
             $batch = Batch::create([
@@ -117,8 +94,6 @@ class BatchController extends Controller
                 'created_at' => now(),
             ]);
 
-            Inventory::syncFromBatch($batch, true);
-
             ActivityLog::record(
                 null,
                 ActivityLog::TYPE_BATCH_CREATED,
@@ -127,45 +102,15 @@ class BatchController extends Controller
         });
 
         return redirect()
-            ->route('inventory.batches')
+            ->route('operational.batches')
             ->with('success', 'Batch added successfully.');
     }
 
-    public function update(Request $request, Batch $batch): RedirectResponse
+    public function update(UpdateBatchRequest $request, Batch $batch): RedirectResponse
     {
         $used = $batch->hasOperationalRecords();
 
-        $rules = Batch::rules($batch->batch_id);
-
-        if ($used) {
-            unset($rules['total_grafted'], $rules['viable_count']);
-        }
-
-        // An existing (possibly archived) master reference stays valid, so only
-        // a *switch* to a different archived master is rejected (ERD §9.8).
-        foreach (['variety_id' => 'varieties', 'scion_id' => 'scions', 'pot_id' => 'pot_types'] as $field => $table) {
-            if ((int) $request->input($field) === (int) $batch->{$field}) {
-                $rules[$field] = ['required', 'integer', 'exists:'.$table.','.$field];
-            }
-        }
-
-        $validator = Validator::make($request->all(), $rules);
-
-        if ($validator->fails()) {
-            return redirect()
-                ->route('inventory.batches')
-                ->withErrors($validator, 'batch')
-                ->withInput(['edit_batch_id' => $batch->batch_id]);
-        }
-
-        if ($used && $this->countsChanged($batch, $request)) {
-            return redirect()
-                ->route('inventory.batches')
-                ->with('error', 'This batch already has operational records, so total grafted and viable count can no longer be changed.')
-                ->withInput(['edit_batch_id' => $batch->batch_id]);
-        }
-
-        $validated = $validator->validated();
+        $validated = $request->validated();
 
         DB::transaction(function () use ($batch, $validated, $used): void {
             $batch->fill($validated);
@@ -176,10 +121,6 @@ class BatchController extends Controller
 
             $batch->save();
 
-            if (! $used) {
-                Inventory::syncFromBatch($batch, true);
-            }
-
             ActivityLog::record(
                 null,
                 ActivityLog::TYPE_BATCH_UPDATED,
@@ -188,7 +129,7 @@ class BatchController extends Controller
         });
 
         return redirect()
-            ->route('inventory.batches')
+            ->route('operational.batches')
             ->with('success', 'Batch updated successfully.');
     }
 
@@ -201,7 +142,7 @@ class BatchController extends Controller
     {
         if ($batch->isArchived()) {
             return redirect()
-                ->route('inventory.batches')
+                ->route('operational.batches')
                 ->with('error', 'This batch is already archived.');
         }
 
@@ -216,7 +157,7 @@ class BatchController extends Controller
         });
 
         return redirect()
-            ->route('inventory.batches')
+            ->route('operational.batches')
             ->with('success', 'Batch archived successfully.');
     }
 
@@ -227,7 +168,7 @@ class BatchController extends Controller
     {
         if (! $batch->isArchived()) {
             return redirect()
-                ->route('inventory.batches')
+                ->route('operational.batches')
                 ->with('error', 'This batch is not archived.');
         }
 
@@ -242,22 +183,7 @@ class BatchController extends Controller
         });
 
         return redirect()
-            ->route('inventory.batches', ['tab' => 'archived'])
+            ->route('operational.batches', ['tab' => 'archived'])
             ->with('success', 'Batch restored successfully.');
-    }
-
-    /**
-     * Detect an attempt to change a locked count (used batches only).
-     * The edit form disables these inputs, so an absent field is not a change.
-     */
-    private function countsChanged(Batch $batch, Request $request): bool
-    {
-        foreach (['total_grafted', 'viable_count'] as $field) {
-            if ($request->has($field) && (int) $request->input($field) !== (int) $batch->{$field}) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
