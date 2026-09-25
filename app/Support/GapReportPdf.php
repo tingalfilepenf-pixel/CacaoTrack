@@ -9,7 +9,11 @@ use FPDF;
  *
  * Historical deliverable (PRD §9.5): per batch, expected = `viable_count`,
  * actual = `available_count`, pulled out = summed Stock_Out_Detail quantity, and
- * gap = max(0, expected − actual − pulled out). Every value is passed in by the
+ * gap = `Batch::effectiveMortalityQuantity()` (recorded mortality still
+ * unreflected in `available_count`). The old `expected − actual − pulled out`
+ * identity always resolves to 0 because Stock Out is already netted out of the
+ * live balance on every validated release. `expected`/`actual`/`pulled_out` are
+ * retained as context columns only. Every value is passed in by the
  * controller from the centralized AnalyticsMetrics::gapReport() (RULE 5/6/12).
  * The report is generated live — no report table is involved (PRD §9, ERD §9.4).
  *
@@ -118,11 +122,12 @@ class GapReportPdf extends FPDF
         $this->Cell(68, 4.4, $this->txt(sprintf('Expected: %d', $this->totals['expected'])), 0, 0, 'L');
         $this->Cell(68, 4.4, $this->txt(sprintf('Available: %d', $this->totals['actual'])), 0, 0, 'L');
         $this->Cell(68, 4.4, $this->txt(sprintf('Pulled out: %d', $this->totals['pulled_out'])), 0, 0, 'L');
-        $this->Cell(69, 4.4, $this->txt(sprintf('Total gap: %d', $this->totals['gap'])), 0, 1, 'L');
+        $this->Cell(69, 4.4, $this->txt(sprintf('Gap (effective mortality): %d', $this->totals['gap'])), 0, 1, 'L');
 
         $this->SetY($summaryY + 9.5);
         $this->SetX(12);
         $this->drawTableHeader();
+        $this->drawGapNote();
     }
 
     public function footer(): void
@@ -184,7 +189,7 @@ class GapReportPdf extends FPDF
             'expected' => 'Expected',
             'actual' => 'Available',
             'pulled_out' => 'Pulled Out',
-            'gap' => 'Gap',
+            'gap' => 'Gap (Mortality)',
         ];
 
         $this->SetFont('Helvetica', 'B', 8.5);
@@ -202,6 +207,25 @@ class GapReportPdf extends FPDF
 
         $this->SetTextColor(...self::TEXT);
         $this->SetDrawColor(...self::BORDER);
+    }
+
+    /**
+     * One-line definition of "Gap" so the printed report is self-describing
+     * (traceability) rather than a bare number.
+     */
+    private function drawGapNote(): void
+    {
+        $this->SetFont('Helvetica', 'I', 7);
+        $this->SetTextColor(...self::MUTED);
+        $this->SetX(12);
+        $this->MultiCell(
+            self::TABLE_WIDTH,
+            3.6,
+            $this->txt('Gap = effective mortality: Stock Out is already netted out of the live available balance on every validated release, so recorded mortality is the only quantity still unreflected in Available.'),
+            0,
+            'L',
+        );
+        $this->SetTextColor(...self::TEXT);
     }
 
     /**

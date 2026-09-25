@@ -64,8 +64,11 @@
             </div>
         </form>
         <small class="text-muted d-block mt-2">
-            Expected = batch viable count; Available = live available balance; Pulled Out = stock-out quantity for the batch;
-            Gap = expected − available − pulled out (never negative). Replanting is deliberately excluded from the netting.
+            Expected = batch viable count; Available = live available balance; Pulled Out = stock-out quantity for the batch.
+            <strong>Gap = effective mortality for the batch.</strong> Stock Out is already netted out of the live available
+            balance on every validated release, so <em>viable − available − pulled out</em> always equals zero; recorded
+            mortality is the only quantity still unreflected in Available, i.e. how much of the live balance may be
+            overstated until those deaths are reconciled.
         </small>
     </div>
 </div>
@@ -75,38 +78,36 @@
         <div class="card border-0 shadow-sm bg-primary text-white text-center py-4">
             <h5 class="text-uppercase text-white-50 mb-2">Total Gap</h5>
             <h1 class="display-4 fw-bold mb-0">{{ number_format($gap['totalGap']) }} <span class="fs-4">TREES</span></h1>
-            <p class="mt-3 mb-0">Potential Replanting Requirement</p>
+            <p class="mt-3 mb-0">Recorded mortality not yet reconciled out of the live available balance</p>
         </div>
     </div>
 </div>
 
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-body bg-light text-center">
-                <div class="d-flex justify-content-center align-items-center flex-column flex-md-row gap-3">
-                    <div class="p-3 bg-white border rounded">
+<div class="card mb-4">
+    <div class="card-body bg-light">
+        <div class="row g-3 align-items-stretch">
+            <div class="col-lg-8">
+                <span class="text-muted d-block small text-uppercase fw-bold mb-2">Live ledger context</span>
+                <div class="d-flex flex-wrap gap-3 h-100">
+                    <div class="p-3 bg-white border rounded flex-fill">
                         <span class="text-muted d-block small">Expected</span>
                         <strong class="fs-5">{{ number_format($gap['totalExpected']) }}</strong>
                     </div>
-                    <i class="bi bi-dash d-none d-md-block fs-3 text-muted"></i>
-                    <i class="bi bi-arrow-down d-md-none fs-3 text-muted"></i>
-                    <div class="p-3 bg-white border rounded border-warning">
+                    <div class="p-3 bg-white border rounded flex-fill">
                         <span class="text-muted d-block small">Available</span>
                         <strong class="fs-5 text-warning">{{ number_format($gap['totalActual']) }}</strong>
                     </div>
-                    <i class="bi bi-dash d-none d-md-block fs-3 text-muted"></i>
-                    <i class="bi bi-arrow-down d-md-none fs-3 text-muted"></i>
-                    <div class="p-3 bg-white border rounded border-secondary">
+                    <div class="p-3 bg-white border rounded flex-fill">
                         <span class="text-muted d-block small">Pulled Out</span>
                         <strong class="fs-5 text-secondary">{{ number_format($gap['totalPulledOut']) }}</strong>
                     </div>
-                    <i class="bi bi-arrow-right d-none d-md-block fs-3 text-muted"></i>
-                    <i class="bi bi-arrow-down d-md-none fs-3 text-muted"></i>
-                    <div class="p-3 bg-white border rounded border-danger">
-                        <span class="text-muted d-block small">Gap</span>
-                        <strong class="fs-5 text-danger">{{ number_format($gap['totalGap']) }}</strong>
-                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="p-3 bg-white border border-danger rounded text-center h-100 d-flex flex-column justify-content-center">
+                    <span class="text-muted d-block small">Gap = Effective Mortality</span>
+                    <strong class="fs-4 text-danger">{{ number_format($gap['totalGap']) }}</strong>
+                    <span class="text-muted small">Recorded mortality not yet reconciled out of Available</span>
                 </div>
             </div>
         </div>
@@ -130,7 +131,7 @@
                             <th class="text-end">Expected</th>
                             <th class="text-end">Available</th>
                             <th class="text-end">Pulled Out</th>
-                            <th class="text-end">Gap</th>
+                            <th class="text-end">Gap<br><small class="fw-normal text-muted">Effective Mortality</small></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -200,7 +201,7 @@
                         </tbody>
                     </table>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>The PDF contains the per-batch expected vs available inventory, the pulled-out quantity and the gap, plus grand totals.
+                        <i class="bi bi-info-circle me-1"></i>The PDF contains the per-batch expected vs available inventory, the pulled-out quantity and the gap (= effective mortality), plus grand totals.
                     </p>
                 </div>
                 <div class="modal-footer">

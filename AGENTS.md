@@ -30,9 +30,15 @@
   dated event per batch; `inventories.regraft` (the monthly aggregate) is **untouched**. There is
   deliberately **no** CRUD controller/route/view for it yet (the Stock Ledger reads it); a recording
   UI is a flagged follow-up.
-- **P5 open flags:** (1) the locked Gap formula is `max(0, viable_count − available_count −
-  total_stock_out_for_batch)`; because `available_count` is already decremented by Stock Out this
-  currently resolves to 0 for all batches — the panel must confirm before relying on Gap.
+- **P5 open flags:** (1) the **Gap formula was corrected** (post-P5 follow-up) to
+  `Gap = Batch::effectiveMortalityQuantity()` (recorded mortality). The original
+  `max(0, viable_count − available_count − total_stock_out_for_batch)` was algebraically wrong: it is
+  a mathematical identity that always resolves to 0 regardless of the data, because `available_count`
+  is already netted down by Stock Out on every validated release (`StockOutController` decrements it,
+  and `StoreStockOutRequest` + the controller's per-line/per-batch checks enforce `quantity ≤
+  available_count`). Mortality is the only quantity still unreflected in `available_count`, so it is
+  the actual gap — how much of the live "available" balance may be overstated until recorded deaths
+  are reconciled out of it. The view/PDF say so explicitly now.
   (2) Stock Ledger "Ready to Plant" maps to the batch's live `available_count` aligned to its
   `grafted_date` — a best-guess interpretation, pending client confirmation.
 - Phase 0 (safety/docs) is DONE: `db_capstone` backed up, PRD/ERD replaced, this file updated.
@@ -144,7 +150,8 @@ table beyond these 15 (see the banner). `inventories.regraft` (monthly aggregate
   = `Batch::totalAvailableQuantity()`; the false PRD §12.2 citation removed; inventory grouped by
   **Scion Variety**; survival vs mortality no longer double-counts; mortality matrix is
   adjustment-free. The Stock Ledger is now a **monthly grid** with dynamic per-Scion-Variety columns
-  (view + FPDF). PDF/CSV exports rebuilt; Gap locked to `viable_count − available_count − stock_out`.
+  (view + FPDF). PDF/CSV exports rebuilt; Gap corrected to `Batch::effectiveMortalityQuantity()` (see the
+P5 open-flags note above).
   The one approved schema exception is `regraft_records` + `RegraftRecord` + `Batch::regraftRecords()`.
   `/` (Dashboard) returns **200**. See `session.handoff.md` §2 Session BQ.
 - **P6 Tests/docs/verify (NEXT):** rewrite affected tests; run MySQL suite + Pint + `view:cache` +

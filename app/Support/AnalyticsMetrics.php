@@ -28,7 +28,8 @@ use Illuminate\Support\Facades\DB;
  * Definitions (approved, revised 15-entity model):
  *  - Crude Mortality Rate = effective mortality / total grafted * 100, for the
  *    filtered batches; the date range filters the mortality numerator.
- *  - Gap = max(0, Batch.Viable_Count - Batch.Available_Count - Stock_Out qty).
+ *  - Gap = Batch::effectiveMortalityQuantity() (recorded mortality not yet
+ *    reflected in the live `available_count` balance).
  *  - Age = reference date - Batch.Grafted_Date, counted in inventory quantity
  *    buckets 0-30 / 31-60 / 61-90 / 91+ days.
  */
@@ -408,12 +409,23 @@ class AnalyticsMetrics
     }
 
     /**
-     * Gap report: expected viable vs actual available per batch.
+     * Gap report: per batch, the recorded mortality still unreflected in the
+     * live available balance.
      *
-     * Locked P5 formula: gap = max(0, viable_count - available_count -
-     * total_stock_out_for_batch). Replanting is deliberately excluded from the
-     * netting. `total_stock_out_for_batch` is the summed Stock_Out_Detail
-     * quantity for the batch.
+     * Corrected Gap formula: gap = Batch::effectiveMortalityQuantity().
+     *
+     * Why: `available_count` already has every Stock Out fully netted out at
+     * the time of release (`StockOutController` decrements it, and
+     * `StoreStockOutRequest` + the controller's per-line/per-batch checks
+     * enforce quantity <= `available_count` on every current, validated write).
+     * The previous `max(0, viable_count - available_count - stock_out)` is
+     * therefore a mathematical identity that always resolves to 0 regardless of
+     * the data. Mortality is the only quantity currently unreflected in
+     * `available_count`, so it is the actual gap: how much of the live
+     * "available" balance is potentially overstated because recorded deaths have
+     * not been reconciled out of it yet. `expected` (viable_count), `actual`
+     * (available_count) and `pulled_out` (summed Stock_Out_Detail quantity) are
+     * retained as context columns only.
      *
      * @return array{rows:array<int,array{batch:string,variety:string,expected:int,actual:int,pulled_out:int,gap:int}>,totalExpected:int,totalActual:int,totalPulledOut:int,totalGap:int}
      */
@@ -441,7 +453,7 @@ class AnalyticsMetrics
                 'expected' => $expected,
                 'actual' => $actual,
                 'pulled_out' => $pulledOut,
-                'gap' => max(0, $expected - $actual - $pulledOut),
+                'gap' => $batch->effectiveMortalityQuantity(),
             ];
         })->all();
 

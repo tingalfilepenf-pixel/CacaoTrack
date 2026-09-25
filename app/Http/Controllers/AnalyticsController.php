@@ -533,7 +533,7 @@ class AnalyticsController extends Controller
 
         $handle = fopen('php://temp', 'r+');
 
-        fputcsv($handle, ['Batch', 'Variety', 'Expected', 'Actual', 'Pulled Out', 'Gap']);
+        fputcsv($handle, ['Batch', 'Variety', 'Expected', 'Available', 'Pulled Out', 'Gap (Effective Mortality)']);
 
         foreach ($gap['rows'] as $row) {
             fputcsv($handle, [$row['batch'], $row['variety'], $row['expected'], $row['actual'], $row['pulled_out'], $row['gap']]);
