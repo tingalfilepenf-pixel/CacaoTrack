@@ -463,7 +463,7 @@ The existing company terms **Batches, Viable, Inventory, Mortality, Replanting, 
 ### Operational
 - Daily Checklist
 - Mortality Tracking
-- Replanting
+- Regraft
 - Batches
 - Scion Variety
 
@@ -499,4 +499,4 @@ The existing company terms **Batches, Viable, Inventory, Mortality, Replanting, 
 
 The ERD should represent the company's actual workflow without creating duplicate processes:
 
-**Stock In records the usable seedling supply after the five-day viability check; Batch represents the grafted cacao; Scion Variety supports grafting/regrafting; Mortality and Replanting record what happens during the cycle; Inventory records the monthly Batch status; and Stock Out / Pull Out records healthy cacao delivered to Clients.**
+**Stock In records the usable seedling supply after the five-day viability check; Batch represents the grafted cacao; Scion Variety supports grafting/regrafting; Mortality and Regraft record what happens during the cycle; Inventory records the monthly Batch status; and Stock Out / Pull Out records healthy cacao delivered to Clients.**
