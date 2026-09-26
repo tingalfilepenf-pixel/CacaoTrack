@@ -299,6 +299,27 @@ This supports multiple Scion Varieties in one Pull Out, matching the company's e
 
 ---
 
+### 3.16 `Scion_Receiving`
+
+| Key | Attribute |
+|---|---|
+| PK | `Scion_Receiving_ID` |
+| FK | `Scion_Variety_ID` |
+| FK | `Supplier_ID` *(nullable)* |
+| — | `Quantity` |
+| — | `Unit_Price` *(nullable)* |
+| — | `Date_Received` |
+| — | `Origin` *(nullable)* |
+| — | `Notes` *(nullable)* |
+
+**Purpose:** Records the receipt of scion material for a given Scion Variety. `Supplier_ID` is nullable because scions are not always tied to a formal Supplier record.
+
+This is a standalone, **additive** record. It does **not** hold any stock balance on `Scion_Variety`, and it does **not** replace or alter the existing Regraft/Replanting records.
+
+**Freshness/viability rule — PLANNED, NOT YET IMPLEMENTED:** a freshness/viability check for received scions is planned, but has deliberately **not** been implemented. There is no usable-until value, no warning, and no blocking yet. Implementation is pending client confirmation of (a) the allowed viability window and (b) whether the rule should warn or block.
+
+---
+
 ## 4. Entity Relationships
 
 ```text
@@ -313,14 +334,16 @@ Users
  └──< Stock_Out
 
 Supplier
- └──< Stock_In
+ ├──< Stock_In
+ └──< Scion_Receiving
 
 Stock_In
  └── records the usable/Viable seedling supply before Batch establishment
 
 Scion_Variety
  ├──< Batch
- └──< Stock_Out_Detail
+ ├──< Stock_Out_Detail
+ └──< Scion_Receiving
 
 Batch
  ├──< Activity_Log
