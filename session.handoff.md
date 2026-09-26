@@ -1,10 +1,31 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session BX → next session)
-> - **P0–P5 DONE. Latest commit: BX regraft_records consolidation (`22ef695`) — this APPLIES the
->   Session BU proposal (the earlier "done" report was false).** Prior: BS Gap fix (`1744975`),
->   BT display rename (`bd47433`), BV Scion_Receiving (`33ff6b0`). The ERD docs + `AGENTS.md` + this
->   handoff are synced in the following `docs:` commit. Two untracked `docs/*.csv` sample exports remain.
+> ### ▶ Continue here (latest: Session BZ; **P6 DONE — refactor P0–P6 complete**)
+> - **▶ Session BZ (DONE — P6 seeders/tests/docs/verify; commit checkpoints below):** migrated the
+>   whole test suite to the revised model and made it green. **Deleted** the five legacy tests for
+>   removed entities (`BatchMonitoringTest`, `VarietyTest`, `PotTypeTest`, `ScionTest`,
+>   `StockReversalTest`). **Rewrote** `AnalyticsTest` (corrected Gap = `effectiveMortalityQuantity()`,
+>   full current-model setup; 51 tests) and every old-model feature test (Batch/Inventory/Mortality/
+>   Replanting/StockIn/StockOut/ActivityLog/Dashboard/Supplier/Client/UserManagement). **Added
+>   factories** for `ScionVariety`/`Batch`/`MortalityRecord`/`ReplantingRecord`/`StockIn`/`StockOut`/
+>   `StockOutDetail`/`ScionReceiving`/`Inventory`/`Supplier`/`Client` (with `HasFactory` on those
+>   models) and **rewrote `DatabaseSeeder` + `ActivityLogSeeder`** to the current schema (idempotent;
+>   B001 carries genuine mortality + regraft; seeded Stock Out respects `available_count`). **Added
+>   Part D tests:** `BatchRelationshipsTest`, `ScionReceivingTest`, `CumulativeEventRecordsTest`,
+>   `StockValidationTest`, `StructuralIndependenceTest`, `GapReportTest`. **Verified:** full MySQL
+>   suite **280 passed / 1170 assertions**, Pint + `php -l` clean, `migrate:status` 0 Pending,
+>   seeders clean + idempotent on `db_capstone_test`, no removed-entity references left in `tests/`.
+>   **Docs:** P6-deferred items + the `db_capstone` data-policy recommendation were added to
+>   `AGENTS.md` (no destructive action taken — explicit sign-off still required).
+> - **P0–P6 DONE. Prior commits: BY ERD terminology fix (`9bd3c8a`), BX regraft_records consolidation
+>   (`22ef695`) + its docs sync (`bff2c26`).** Prior: BS Gap fix (`1744975`), BT display rename
+>   (`bd47433`), BV Scion_Receiving (`33ff6b0`). Two untracked `docs/*.csv` sample exports remain.
+> - **▶ Session BY (DONE — handoff refresh + ERD user-facing terminology; doc-only):** renamed the last
+>   two user-facing "Replanting" labels to **"Regraft"** in `docs/CacaoTrack_ERD.md` + `_REVISED.md`
+>   (§7 sidebar list, §8 Design Principle) to match the executed display rename (`bd47433`).
+>   **`Replanting_Record`/`replanting_records` + §3.11 stay as-is** (internal names). Both ERD files
+>   kept byte-identical (SHA-256 match). Committed `9bd3c8a` (2 files, +4/−4). **No code/DB/migration
+>   change; no test suite run.**
 > - **▶ Session BX (DONE — the `regraft_records` consolidation APPLIED; code + migration, commit
 >   `22ef695`):** migration `2026_09_26_000002_drop_regraft_records_table` **dropped `regraft_records`**
 >   (it held **0 rows** — clean drop, no data migration; the create migration `2026_09_25_000009` is
@@ -30,29 +51,28 @@
 > - **Session BT (DONE — display rename, commit `bd47433`):** every user-visible "Replanting" is now
 >   "Regraft" (display-only; internal names stay `Replanting`). Dashboard KPIs identical — Inventory
 >   **1130** / Crude Mortality **40.00%** / Regraft Deficit **385**. **No DB/schema/data change.**
-> - **▶ Session BU (read-only audit — STILL THE IMMEDIATE DECISION): the "consolidation fix" was NEVER
->   applied.** `regraft_records` still exists (**0 rows**) beside `replanting_records` (**13 rows**);
->   **no drop migration exists** (the only regraft migration is
->   `2026_09_25_000009_create_regraft_records_table`, which only drops in its `down()`). **The Stock
->   Ledger's Regraft column still reads `RegraftRecord`/`regraft_records`**
->   (`AnalyticsMetrics::stockLedgerGrid()` `:579`), so it displays 0 while the real data lives in
->   `replanting_records`. `app/Models/RegraftRecord.php` and `Batch::regraftRecords()` are still
->   present. **Awaiting your go-ahead to do the consolidation for real** — see §6 for the proposed
->   steps. **No data was changed.**
-> - **Still open:** `Scion_Receiving` has **no CRUD UI and no defined usage/traceability link yet**
->   (flagged); Stock Ledger "Ready to Plant" best-guess mapping. The `regraft_records` CRUD UI flag is
->   **dropped** (the table no longer exists). **`AGENTS.md` is updated:** it now lists **one** approved
->   additive exception (`scion_receivings`, Session BV) and records the `regraft_records` retraction.
-> - **After the (now-applied) consolidation = P6** (seeders/tests/docs/verify); first settle the Session
->   BR data policy (regenerate clean seed data vs synthetic fixtures).
+> - **Session BU (historical — read-only audit; RESOLVED in BX):** it found the "consolidation fix"
+>   had never been applied (`regraft_records` present with 0 rows; no drop migration; Stock Ledger
+>   reading the empty table). Session BX then **applied** it (see above). **No further action.**
+> - **Still open (non-blocking):** `Scion_Receiving` has **no CRUD UI and no defined usage/traceability
+>   link yet** (flagged); Stock Ledger "Ready to Plant" best-guess mapping. **`AGENTS.md` + both ERD
+>   docs now list one approved additive exception (`scion_receivings`, Session BV); the
+>   `regraft_records` CRUD UI flag is dropped (table retracted).**
+> - **▶ NEXT = P6 (seeders/tests/docs/verify).** First settle the **Session BR data policy** —
+>   regenerate clean seed data (and reconcile `available_count`) **vs** leave the live pre-refactor
+>   rows and build synthetic fixtures. Then rewrite the affected seeders/tests, run the MySQL suite
+>   (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`) + Pint +
+>   `view:cache` + `migrate:status` + live spot-checks, and update this file + `AGENTS.md`.
 > - **Verify quickly:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->   (never point tests at `db_capstone`). Full detail: §2 Session BV/BU/BT/BS/BR/BQ, §3, §5, §6.
+>   (never point tests at `db_capstone`). Full detail: §2 Session BY/BX/BV/BU/BT/BS/BR/BQ, §3, §5, §6.
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session BX** (which **APPLIED** the long-pending `regraft_records` consolidation: the
-duplicate table was dropped — 0 rows, no data migration — the model/relation/import removed, and the
-Stock Ledger's Regraft column repointed at `replanting_records`; `AGENTS.md` + both ERD docs now record
-**one** remaining approved additive exception, `scion_receivings`, Session BV). Before that: Phase 5
+project after **Session BY** (a handoff-refresh + doc-only pass that renamed the two remaining
+user-facing "Replanting" labels to "Regraft" in the ERD sidebar/design principle; right before it,
+**Session BX APPLIED** the long-pending `regraft_records` consolidation: the duplicate table was
+dropped — 0 rows, no data migration — the model/relation/import removed, and the Stock Ledger's Regraft
+column repointed at `replanting_records`; `AGENTS.md` + both ERD docs now record **one** remaining
+approved additive exception, `scion_receivings`, Session BV). Before that: Phase 5
 (Analytics/reports) was **implemented in Session BQ**; the Gap formula was corrected in Session BS; the
 Replanting→Regraft display rename landed in Session BT; Session BU audited the still-unapplied
 `regraft_records` consolidation; Session BV added the **`Scion_Receiving`** entity as additive schema +
@@ -691,9 +711,11 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 ## 2. Session log (oldest → newest; detailed entries end with Session BH, followed by the refactor entries BI (P0), BJ (P1), BK (P2 plan), BL (P3 plan), BM (P2 implemented), BN (P3 implemented), BO (P4 views/sidebar implemented), BP (housekeeping: commit P4 + correct the `AGENTS.md` banner), BQ (P5 analytics/reports implemented), BR (live `db_capstone` data audit — investigation only), BS (Gap formula corrected to effective mortality — post-P5 follow-up), BT (user-facing Replanting→Regraft display rename —    implemented), BU (consolidation audit — `regraft_records` still live; read-only), BV
    (`Scion_Receiving` entity — additive schema + model only, IMPLEMENTED), BW (docs sync —
    `AGENTS.md` + this handoff aligned; `regraft_records` consolidation verified as never applied;
-   no code/migration/DB change) and BX (the `regraft_records` consolidation **APPLIED** — dropped the
+   no code/migration/DB change), BX (the `regraft_records` consolidation **APPLIED** — dropped the
    duplicate table via migration `2026_09_26_000002`, deleted the model/relation/import, repointed the
-   Stock Ledger's Regraft column at `replanting_records`; commit `22ef695`; no test suite run — P6))
+   Stock Ledger's Regraft column at `replanting_records`; commit `22ef695`; no test suite run — P6) and
+   BY (handoff-refresh + ERD user-facing "Replanting"→"Regraft" labels in §7/§8; docs only; commit
+   `9bd3c8a`))
 
 ### Session A — Daily Checklist (previous session)
 The Operational → **Daily Checklist** page (`/operational/checklist`) was converted from a static
@@ -4197,6 +4219,9 @@ appears never applied. The four answers:
 
 **Impact:** the Stock Ledger under-reports Regraft (always 0 today). **The consolidation remains
 outstanding** and is the immediate next action pending approval — see §6. **No data was changed.**
+*(Historical — this was the state at the end of Session BU. **Resolved in Session BX**, which applied
+the consolidation: `regraft_records` dropped, model/relation/import removed, Stock Ledger repointed at
+`replanting_records`. See the Session BX entry below.)*
 
 ### Session BV — `Scion_Receiving` entity: additive schema + model only (IMPLEMENTED)
 
@@ -4746,6 +4771,22 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
       `Batch_Monitoring` is retained for history but is never written.
 
 ## 5. Verification status
+- **Session BZ (P6 seeders/tests/docs/verify): full suite run and GREEN.** MySQL suite
+  (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **280 passed / 1170 assertions, 0 failures**. `vendor\bin\pint` clean (one import tidy-up on
+  `StockInTest`); `php -l` clean across 56 changed/new PHP files; `migrate:status` **0 Pending**;
+  seeders run cleanly and re-run idempotently against `db_capstone_test` (B001 mortality 25 /
+  regraft 15, B002 available 120 after the seeded 20-unit release, gap total 50, no double-debit).
+  No `Variety`/`PotType`/`BatchMonitoring`/`StockReversal`/generic `Scion`/`MortalityAdjustment`/
+  `RegraftRecord`/`regraft_records` reference remains in `tests/` (only the intentional structural
+  regression guard and current UI labels such as "Inventory by Scion Variety"). **No destructive
+  action against `db_capstone`; no schema change.**
+- **Session BY (handoff refresh + ERD terminology; doc-only): no test suite run** (P6). Edited
+  `docs/CacaoTrack_ERD.md` + `docs/CacaoTrack_ERD_REVISED.md` only: §7 sidebar `Replanting` → `Regraft`
+  and §8 Design Principle `Mortality and Replanting` → `Mortality and Regraft`. §3.11 / entity names
+  (`Replanting_Record`, `Replanting_ID`, `Replanting_Date`) deliberately unchanged. Both files remain
+  byte-identical (SHA-256 `91C6F7E9…48B2F6`). Committed `9bd3c8a` (2 files, +4/−4). **No
+  code/DB/migration change; no live DB read.**
 - **Session BX (`regraft_records` consolidation APPLIED): no test suite run** (deferred to P6 — the
   seeders/tests still target the OLD model). **Verified with literal command output (not summarized):**
   `php -l` clean on the changed files and `vendor\bin\pint` **passed**; `php artisan migrate --force`
@@ -5036,6 +5077,27 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
+- **▶ Session BZ (DONE — P6 seeders/tests/docs/verify; refactor P0–P6 complete):** the test suite,
+  factories and seeders now target the revised 15-entity model and pass (**280/1170**). See the
+  Session BZ entry in the banner and §5. **P6 deferred items (confirmed open, DO NOT build without
+  sign-off):** (1) Scion Receiving linkage/traceability (graft/regraft referencing a
+  `Scion_Receiving` row; **no** stock-balance deduction); (2) Scion Receiving CRUD UI (scion variety,
+  origin nullable, supplier nullable, quantity, date received, price, notes); (3) Stock Ledger
+  "Ready to Plant" mapping — leave as `available_count` (unconfirmed), do not change. **`db_capstone`
+  data policy (decided, NOT executed):** recommend **wipe + reseed** with fresh schema-valid data
+  after a fresh backup, because the live rows are pre-refactor residue (`available_count` = old
+  ledger 1130, not `viable − stock_out`; B005 available 600 > viable 100; releases not reproducible
+  by the validated Stock Out path). Fallback: preserve with a documented stale-ledger caveat. **Any
+  destructive action against `db_capstone` requires separate explicit approval.** Full text in
+  `AGENTS.md` §"P6 deferred items" / §"db_capstone data policy — RECOMMENDATION".
+- **▶ Session BY (DONE — handoff refresh + ERD user-facing terminology; doc-only, commit `9bd3c8a`):**
+  renamed the two remaining user-facing "Replanting" labels to **"Regraft"** in both
+  `docs/CacaoTrack_ERD.md` and `docs/CacaoTrack_ERD_REVISED.md` (§7 sidebar list + §8 Design Principle),
+  matching the executed display rename (`bd47433`). **Internal names / §3.11 kept as-is**
+  (`Replanting_Record` / `replanting_records`). Both ERD files byte-identical. **No code/DB/migration
+  change.**
+- **▶ NEXT = P6 (seeders/tests/docs/verify)** — see the banner and the "NEXT" bullet further below.
+  **First decision:** the Session BR data policy (regenerate clean seed data vs synthetic fixtures).
 - **▶ Session BX (DONE — the `regraft_records` consolidation APPLIED; code + migration, commit
   `22ef695`):** `regraft_records` was **dropped** (0 rows — no data migration; migration
   `2026_09_26_000002_drop_regraft_records_table`, create migration `2026_09_25_000009` kept as

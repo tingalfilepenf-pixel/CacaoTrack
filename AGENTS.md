@@ -13,14 +13,14 @@
   `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md` now contain the revised content; identical
   copies are retained for provenance at `docs/CacaoTrack_PRD_REVISED.md` /
   `docs/CacaoTrack_ERD_REVISED.md`. The **canonical files (no `_REVISED` suffix) are authoritative.**
-- **P1 (schema), P2 (models), P3 (controllers/routes), P4 (views/sidebar) and P5 (analytics/reports)
-  are DONE. The seeders/tests are NOT refactored yet (P6).** `db_capstone` uses the revised schema,
-  `app/Models` matches it (Session BM), `app/Http/Controllers` + `routes/web.php` match it (Session
-  BN, checkpoint `3d3f9f9`), the **views/sidebar match it** (Session BO, checkpoint `0803bdf`) and
-  the **analytics/report layer matches it** (P5, checkpoint `d139286` — `AnalyticsMetrics`, the
-  PDF/CSV classes and the Dashboard/Stock Ledger/Matrix/Historical pages all query the current
-  models; `/` (Dashboard) returns **200**). **The seeders/tests still describe the OLD model**, so the
-  test suite fails until **P6** rewrites them.
+- **P1 (schema), P2 (models), P3 (controllers/routes), P4 (views/sidebar), P5 (analytics/reports) and
+  P6 (seeders/tests) are DONE.** `db_capstone` uses the revised schema, `app/Models` matches it
+  (Session BM), `app/Http/Controllers` + `routes/web.php` match it (Session BN, checkpoint `3d3f9f9`),
+  the **views/sidebar match it** (Session BO, checkpoint `0803bdf`), the **analytics/report layer
+  matches it** (P5, checkpoint `d139286` — `AnalyticsMetrics`, the PDF/CSV classes and the
+  Dashboard/Stock Ledger/Matrix/Historical pages all query the current models; `/` returns **200**),
+  and the **seeders/tests/factories now match it** (P6 — see the P6 note in the plan below). The
+  five legacy test files for removed entities were deleted and the suite is green.
 - Until P6 lands: **do not** reintroduce removed tables/columns or add new features without checking
   the plan. New schema/business-logic work must follow the revised ERD. There is **one approved
   additive schema addition** beyond the 15 entities — `scion_receivings` + `ScionReceiving` (Session
@@ -172,8 +172,20 @@ P5 open-flags note above).
   The P5 `regraft_records` exception was **retracted in Session BX** (dropped; the Stock Ledger reads
   `replanting_records` — see the banner). `/` (Dashboard) returns **200**. See `session.handoff.md`
   §2 Session BQ / Session BX.
-- **P6 Tests/docs/verify (NEXT):** rewrite affected tests; run MySQL suite + Pint + `view:cache` +
-  `migrate:status` + live spot-checks; update handoff and this file.
+- **P6 Tests/docs/verify (DONE — Session BZ):** the five legacy tests for removed entities were
+  deleted (`BatchMonitoringTest`, `VarietyTest`, `PotTypeTest`, `ScionTest`, `StockReversalTest`);
+  the stale `AnalyticsTest` Gap assertions were rewritten to the corrected formula
+  (`Gap = Batch::effectiveMortalityQuantity()`) and the whole old-model feature suite was migrated to
+  the revised schema; **factories** were added for `ScionVariety`/`Batch`/`MortalityRecord`/
+  `ReplantingRecord`/`StockIn`/`StockOut`/`StockOutDetail`/`ScionReceiving`/`Inventory`/`Supplier`/
+  `Client` (with `HasFactory` added to those models); `DatabaseSeeder` + `ActivityLogSeeder` were
+  rewritten to the current schema (idempotent; B001 carries genuine mortality **and** regraft; seeded
+  Stock Out respects `available_count`); and new Part D tests cover relationships, validation,
+  cumulative event records, date handling, the corrected Gap formula, Mortality↔Replanting
+  independence and the Scion_Receiving no-balance/no-freshness guards. **Verified:** full MySQL suite
+  **280 passed / 1170 assertions**, `vendor\bin\pint` clean, `php -l` clean, `migrate:status`
+  **0 Pending**, seeders run cleanly (and re-run idempotently) against `db_capstone_test`, and no
+  reference to the removed entities remains in `tests/`.
 
 ## Locked decisions (user-approved)
 1. Backup → migrate data → drop removed tables/columns.
@@ -292,3 +304,35 @@ the P1–P3 schema transition (now complete); P6 rewrites tests + docs. (For ful
   hardcode KPIs or fabricate chart datasets (RULE 5/6; revised PRD §16).
 - Transaction-safe quantity changes: validate → authorize → lock/read the applicable balance →
   apply the delta → record Activity History → commit; roll back on any failure (revised PRD §8).
+
+## P6 deferred items (confirmed open — DO NOT implement without sign-off)
+1. **Scion Receiving linkage (traceability):** grafting/regrafting records referencing a specific
+   `Scion_Receiving` row so scion material can be traced. **No stock-balance deduction.** The
+   route/controller/validation/views/tests are to be added only after the workflow is confirmed with
+   the client. `ScionReceiving` is currently a standalone receiving log.
+2. **Scion Receiving CRUD UI:** create/view/edit/delete for `scion_receivings`. Confirmed fields:
+   scion variety, origin (nullable), supplier (nullable), quantity, date received, price, notes.
+   Not built (schema + model only).
+3. **Stock Ledger "Ready to Plant" mapping:** currently maps to the batch's live `available_count`,
+   aligned to its `grafted_date`. This is an unconfirmed best-guess interpretation. **Leave the
+   implementation exactly as-is** (code + PDF) until the client confirms the definition.
+4. **`db_capstone` data policy (Part F below):** the decision is recorded; any wipe/reseed action
+   requires separate explicit approval before execution.
+
+## `db_capstone` data policy — RECOMMENDATION (decided, NOT executed)
+**Recommendation: wipe + reseed `db_capstone` with fresh, schema-valid data (after a fresh backup),
+pending explicit sign-off.** Reasoning: every operational row currently in `db_capstone` is
+pre-refactor residue (Session BR). All 9 batches were created before P1 (`2026-09-12`…`2026-09-23`),
+all 7 stock-outs are migrated legacy headers, and `batches.available_count` was backfilled once from
+the old `inventories.current_quantity` (`SUM = 1130`), so it tracks
+`initial + stock-ins − stock-outs − reversals` and **not** `viable_count − stock_out`. Consequences:
+at least one batch has `available_count` greater than its own `viable_count` (B005: available 600 >
+viable 100), and the seeded releases cannot be reproduced by the current validated Stock Out path
+(`StoreStockOutRequest` + `StockOutController` reject `quantity > available_count`). This residue
+therefore undermines the very metrics P5/P6 rely on (Total Active Inventory = the stale 1130;
+Stock Ledger "Ready to Plant" = the stale `available_count`). Fresh seed data removes the
+inconsistency and gives a clean, reproducible demo state; the seeder now enforces the app's own
+invariants. **Fallback if the residue must be preserved:** keep it as historical/demo data with a
+documented caveat that `available_count` is the old ledger (not `viable − stock_out`) and that
+dashboard/ledger figures for those rows are stale — but analytics correctness is then not guaranteed.
+**No destructive command may be run against `db_capstone` until the user explicitly approves.**
