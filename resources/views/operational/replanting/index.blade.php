@@ -1,11 +1,11 @@
 @extends('layouts.app')
 
-@section('title', 'Replanting')
-@section('page_title', 'Replanting')
+@section('title', 'Regraft')
+@section('page_title', 'Regraft')
 
 @section('page_actions')
 <button class="btn btn-warning text-dark" data-bs-toggle="modal" data-bs-target="#recordReplantingModal">
-    <i class="bi bi-plus-lg me-1"></i> Record Replanting
+    <i class="bi bi-plus-lg me-1"></i> Record Regraft
 </button>
 @endsection
 
@@ -44,18 +44,18 @@
     <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100 border-start border-4 border-warning">
             <div class="card-body">
-                <div class="text-muted small fw-bold text-uppercase">Replanting Deficit</div>
+                <div class="text-muted small fw-bold text-uppercase">Regraft Deficit</div>
                 <div class="fs-3 fw-bold text-warning">{{ number_format($totalDeficit) }} <span class="fs-6 fw-normal text-muted">trees</span></div>
-                <div class="text-muted small">Trees that still need to be replanted for the current filters</div>
+                <div class="text-muted small">Trees that still need to be regrafted for the current filters</div>
             </div>
         </div>
     </div>
     <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <div class="text-muted small fw-bold text-uppercase">Total Replanted</div>
+                <div class="text-muted small fw-bold text-uppercase">Total Regrafted</div>
                 <div class="fs-3 fw-bold text-success">{{ number_format($totalReplanted) }}</div>
-                <div class="text-muted small">Quantity replanted across the current filters</div>
+                <div class="text-muted small">Quantity regrafted across the current filters</div>
             </div>
         </div>
     </div>
@@ -64,7 +64,7 @@
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Batches With Deficit</div>
                 <div class="fs-3 fw-bold">{{ number_format($batchesWithDeficit) }}</div>
-                <div class="text-muted small">Batches still awaiting replanting</div>
+                <div class="text-muted small">Batches still awaiting regraft</div>
             </div>
         </div>
     </div>
@@ -98,7 +98,7 @@
 <!-- Replanting Status by Batch -->
 <div class="card mb-4">
     <div class="card-header bg-white py-3">
-        <h6 class="m-0 font-weight-bold text-primary">Replanting Status by Batch</h6>
+        <h6 class="m-0 font-weight-bold text-primary">Regraft Status by Batch</h6>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -108,7 +108,7 @@
                         <th class="ps-4">BATCH</th>
                         <th>SCION VARIETY</th>
                         <th>TOTAL MORTALITY</th>
-                        <th>REPLANTED</th>
+                        <th>REGRAFTED</th>
                         <th>REMAINING (DEFICIT)</th>
                         <th class="text-end pe-4">ACTION</th>
                     </tr>
@@ -162,14 +162,14 @@
     <div class="modal-dialog">
         <div class="modal-content border-warning">
             <div class="modal-header bg-warning">
-                <h5 class="modal-title">Record Replanting</h5>
+                <h5 class="modal-title">Record Regraft</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" action="{{ route('operational.replanting.records.store') }}">
                 @csrf
                 <div class="modal-body">
                     <div class="alert alert-info py-2 small">
-                        <i class="bi bi-info-circle me-1"></i> Recording a replanting will reduce the replanting deficit for the selected batch.
+                        <i class="bi bi-info-circle me-1"></i> Recording a regraft will reduce the regraft deficit for the selected batch.
                     </div>
 
                     <div class="mb-3">
@@ -183,17 +183,17 @@
                             @endforeach
                         </select>
                         @if ($replantableBatches->isEmpty())
-                            <div class="form-text text-warning">No batches currently have a replanting deficit.</div>
+                            <div class="form-text text-warning">No batches currently have a regraft deficit.</div>
                         @endif
                     </div>
 
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label for="recordQuantity" class="form-label text-muted small fw-bold">Quantity Replanted</label>
+                            <label for="recordQuantity" class="form-label text-muted small fw-bold">Quantity Regrafted</label>
                             <input type="number" class="form-control" id="recordQuantity" name="quantity" min="1" value="{{ old('quantity') }}" required>
                         </div>
                         <div class="col-md-6">
-                            <label for="recordDate" class="form-label text-muted small fw-bold">Replanting Date</label>
+                            <label for="recordDate" class="form-label text-muted small fw-bold">Regraft Date</label>
                             <input type="date" class="form-control" id="recordDate" name="replanting_date" value="{{ old('replanting_date', now()->toDateString()) }}" required>
                         </div>
                     </div>
@@ -204,12 +204,12 @@
                     </div>
 
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i> Replanting cannot exceed the batch's remaining deficit (effective mortality minus already replanted).
+                        <i class="bi bi-info-circle me-1"></i> Regraft cannot exceed the batch's remaining deficit (effective mortality minus already regrafted).
                     </p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning text-dark fw-bold">Save Replanting</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-bold">Save Regraft</button>
                 </div>
             </form>
         </div>
@@ -221,7 +221,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Replanting History — <span id="historyBatch">&mdash;</span></h5>
+                <h5 class="modal-title">Regraft History — <span id="historyBatch">&mdash;</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -237,7 +237,7 @@
                         </thead>
                         <tbody id="historyRows">
                             <tr>
-                                <td colspan="4" class="text-center text-muted py-3">No replanting records.</td>
+                                <td colspan="4" class="text-center text-muted py-3">No regraft records.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -279,7 +279,7 @@
                 };
 
                 if (!records.length) {
-                    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No replanting records.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No regraft records.</td></tr>';
                     return;
                 }
 

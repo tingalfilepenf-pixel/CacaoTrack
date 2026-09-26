@@ -53,7 +53,7 @@
                 </a>
                 <a href="{{ route('operational.replanting') }}" class="nav-link {{ request()->routeIs('operational.replanting') ? 'active' : '' }}">
                     <i class="bi bi-arrow-repeat"></i>
-                    <span>Replanting</span>
+                    <span>Regraft</span>
                 </a>
                 <a href="{{ route('operational.batches') }}" class="nav-link {{ request()->routeIs('operational.batches') ? 'active' : '' }}">
                     <i class="bi bi-boxes"></i>

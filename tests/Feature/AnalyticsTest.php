@@ -164,7 +164,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('270', $content);
         $this->assertStringContainsString('Crude Mortality Rate', $content);
         $this->assertStringContainsString('10.00%', $content);
-        $this->assertStringContainsString('Replanting Deficit', $content);
+        $this->assertStringContainsString('Regraft Deficit', $content);
         $this->assertStringContainsString('Mortality Trend', $content);
         $this->assertStringContainsString('Inventory by Variety', $content);
         $this->assertStringContainsString('Criollo', $content);
@@ -189,7 +189,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('10.00%', $csv);
         $this->assertStringContainsString('Mortality Trend (Last 6 Months)', $csv);
         $this->assertStringContainsString('Inventory by Variety', $csv);
-        $this->assertStringContainsString('Replanting Deficit by Batch', $csv);
+        $this->assertStringContainsString('Regraft Deficit by Batch', $csv);
         $this->assertStringContainsString('Survival vs Mortality', $csv);
         $this->assertStringContainsString('Criollo', $csv);
         $this->assertStringContainsString('B001', $csv);

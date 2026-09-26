@@ -147,7 +147,7 @@ class OperationalAnalyticsPdf extends FPDF
         );
 
         $this->sectionTable(
-            'Replanting Deficit by Batch',
+            'Regraft Deficit by Batch',
             'Batch',
             $this->zip($this->replantingDeficitByBatch['labels'], $this->replantingDeficitByBatch['values']),
             'Deficit',

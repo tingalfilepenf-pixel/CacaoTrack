@@ -71,9 +71,9 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <p class="text-muted text-uppercase small fw-bold mb-1">Replanting Deficit</p>
+                            <p class="text-muted text-uppercase small fw-bold mb-1">Regraft Deficit</p>
                             <h2 class="mb-0 text-warning">{{ number_format($totalReplantingDeficit) }}</h2>
-                            <span class="text-muted small">Trees pending replanting</span>
+                            <span class="text-muted small">Trees pending regraft</span>
                         </div>
                         <i class="bi bi-exclamation-triangle-fill stat-card-icon text-warning"></i>
                     </div>
@@ -119,7 +119,7 @@
         <div class="col-lg-6">
             <div class="card h-100">
                 <div class="card-header bg-white">
-                    <h6 class="mb-0 fw-bold text-primary">Replanting Deficit by Batch</h6>
+                    <h6 class="mb-0 fw-bold text-primary">Regraft Deficit by Batch</h6>
                 </div>
                 <div class="card-body">
                     @if (count($replantingDeficitByBatch['labels']) > 0 && array_sum($replantingDeficitByBatch['values']) > 0)
@@ -198,7 +198,7 @@
                 <div class="modal-body">
                     <p class="text-muted small">
                         The printable PDF contains the current KPI cards and the tabular values behind each chart
-                        (Mortality Trend, Inventory by Scion Variety, Replanting Deficit by Batch, Survival vs Mortality).
+                        (Mortality Trend, Inventory by Scion Variety, Regraft Deficit by Batch, Survival vs Mortality).
                     </p>
                     <p class="text-muted small mb-0">
                         <i class="bi bi-info-circle me-1"></i>All values are read live from the database (all time).
@@ -270,7 +270,7 @@ document.addEventListener('DOMContentLoaded', function () {
         xAxis: { type: 'category', data: @json($replantingDeficitByBatch['labels']) },
         yAxis: { type: 'value', name: 'Trees' },
         series: [{
-            name: 'Replanting Deficit',
+            name: 'Regraft Deficit',
             type: 'bar',
             data: @json($replantingDeficitByBatch['values']),
             itemStyle: { color: '#ffc107' }

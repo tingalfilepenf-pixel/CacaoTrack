@@ -192,7 +192,7 @@ class StockLedgerPdf extends FPDF
             'Seedlings: %d' => $this->summary['seedlings'] ?? 0,
             'Grafted: %d' => $this->summary['grafted'] ?? 0,
             'Mortality: %d' => $this->summary['mortality'] ?? 0,
-            'Re Graft: %d' => $this->summary['regraft'] ?? 0,
+            'Regraft: %d' => $this->summary['regraft'] ?? 0,
             'Ready to Plant: %d' => $this->summary['ready_to_plant'] ?? 0,
             'Pullout: %d' => $this->summary['pullout'] ?? 0,
         ];
@@ -404,7 +404,7 @@ class StockLedgerPdf extends FPDF
      */
     private function sections(): array
     {
-        return ['Grafted', 'Mortality', 'Re Graft', 'Ready to Plant', 'Pullout'];
+        return ['Grafted', 'Mortality', 'Regraft', 'Ready to Plant', 'Pullout'];
     }
 
     /**

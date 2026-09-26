@@ -7,7 +7,7 @@
     $sections = [
         'grafted' => 'Grafted',
         'mortality' => 'Mortality',
-        'regraft' => 'Re Graft',
+        'regraft' => 'Regraft',
         'ready' => 'Ready to Plant',
         'pullout' => 'Pullout',
     ];
@@ -99,7 +99,7 @@
         @enderror
         <small class="text-muted d-block mt-2">
             Monthly grid grouped by month, with dynamic per-Scion-Variety columns. Seedlings = Stock In quantity;
-            Grafted = batch total grafted; Mortality / Re Graft / Ready to Plant / Pullout, per scion variety.
+            Grafted = batch total grafted; Mortality / Regraft / Ready to Plant / Pullout, per scion variety.
             <span class="fst-italic">Ready to Plant currently maps to each batch's live available count (pending client confirmation).</span>
         </small>
     </div>

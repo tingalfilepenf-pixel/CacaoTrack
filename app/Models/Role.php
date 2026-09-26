@@ -59,7 +59,7 @@ class Role
         'manage_users' => 'Manage Users & Roles',
         'manage_inventory' => 'Manage Master Data & Batches',
         'manage_stock' => 'Perform Stock Transactions',
-        'record_operations' => 'Record Operations (Checklist, Mortality, Replanting)',
+        'record_operations' => 'Record Operations (Checklist, Mortality, Regraft)',
         'view_analytics' => 'View Analytics',
         'generate_reports' => 'Generate Reports',
         'view_activity' => 'View Activity History',

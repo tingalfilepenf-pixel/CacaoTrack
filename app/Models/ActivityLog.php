@@ -29,7 +29,7 @@ class ActivityLog extends Model
         'task_deleted' => 'Task Deleted',
         'mortality_recorded' => 'Mortality Recorded',
         'mortality_adjusted' => 'Mortality Adjusted',
-        'replanting_recorded' => 'Replanting Recorded',
+        'replanting_recorded' => 'Regraft Recorded',
         'stock_in_recorded' => 'Stock In Recorded',
         'stock_out_recorded' => 'Stock Out Recorded',
         'stock_reversal_recorded' => 'Stock Reversal Recorded',

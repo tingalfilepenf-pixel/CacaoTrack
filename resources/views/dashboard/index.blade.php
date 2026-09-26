@@ -54,10 +54,10 @@
                     <div class="row align-items-center">
                         <div class="col me-2">
                             <div class="small fw-bold text-warning text-uppercase mb-1">
-                                Replanting Deficit
+                                Regraft Deficit
                             </div>
                             <div class="h3 mb-0 fw-bold text-dark">{{ number_format($totalReplantingDeficit) }}</div>
-                            <div class="text-muted small mt-1">Trees pending replanting</div>
+                            <div class="text-muted small mt-1">Trees pending regraft</div>
                         </div>
                         <div class="col-auto">
                             <i class="bi bi-exclamation-triangle text-warning fs-1 opacity-50"></i>

@@ -60,7 +60,7 @@ class AnalyticsController extends Controller
             [
                 ['label' => 'Total Active Inventory', 'value' => number_format($data['totalActiveInventory'])],
                 ['label' => 'Crude Mortality Rate', 'value' => number_format($data['crudeMortalityRate'], 2).'%'],
-                ['label' => 'Replanting Deficit', 'value' => number_format($data['totalReplantingDeficit'])],
+                ['label' => 'Regraft Deficit', 'value' => number_format($data['totalReplantingDeficit'])],
             ],
             $data['mortalityTrend'],
             $data['inventoryByScionVariety'],
@@ -97,7 +97,7 @@ class AnalyticsController extends Controller
         fputcsv($handle, ['Key Performance Indicators', 'Value']);
         fputcsv($handle, ['Total Active Inventory', $data['totalActiveInventory']]);
         fputcsv($handle, ['Crude Mortality Rate', number_format($data['crudeMortalityRate'], 2).'%']);
-        fputcsv($handle, ['Replanting Deficit', $data['totalReplantingDeficit']]);
+        fputcsv($handle, ['Regraft Deficit', $data['totalReplantingDeficit']]);
 
         fputcsv($handle, []);
         fputcsv($handle, ['Mortality Trend (Last 6 Months)', 'Mortality']);
@@ -112,7 +112,7 @@ class AnalyticsController extends Controller
         }
 
         fputcsv($handle, []);
-        fputcsv($handle, ['Replanting Deficit by Batch', 'Deficit']);
+        fputcsv($handle, ['Regraft Deficit by Batch', 'Deficit']);
         foreach ($data['replantingDeficitByBatch']['labels'] as $index => $label) {
             fputcsv($handle, [$label, $data['replantingDeficitByBatch']['values'][$index] ?? 0]);
         }

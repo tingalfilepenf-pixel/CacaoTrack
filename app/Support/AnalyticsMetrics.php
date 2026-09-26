@@ -594,7 +594,7 @@ class AnalyticsMetrics
 
             $events[] = [
                 'date' => $record->regraft_date->toDateString(),
-                'description' => 'Re Graft ('.($record->batch?->batch_code ?? '—').')'.($record->remark ? ' — '.$record->remark : ''),
+                'description' => 'Regraft ('.($record->batch?->batch_code ?? '—').')'.($record->remark ? ' — '.$record->remark : ''),
                 'seedlings' => 0,
                 'grafted' => [],
                 'mortality' => [],

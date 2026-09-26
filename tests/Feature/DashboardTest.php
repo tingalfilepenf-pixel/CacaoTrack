@@ -67,7 +67,7 @@ class DashboardTest extends TestCase
         $response->assertOk();
         $response->assertSee('Total Active Inventory');
         $response->assertSee('Crude Mortality Rate');
-        $response->assertSee('Replanting Deficit');
+        $response->assertSee('Regraft Deficit');
         $response->assertSee('Recent Activities');
     }
 

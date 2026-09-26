@@ -437,7 +437,7 @@
                     <p class="mb-2">Archive <strong id="archiveBatchCode">&mdash;</strong>?</p>
                     <p class="text-muted small mb-0">
                         <i class="bi bi-info-circle me-1"></i>Archiving hides the batch from the active directory and from new
-                        operational forms, but its inventory, mortality, replanting, stock and activity history are preserved.
+                        operational forms, but its inventory, mortality, regraft, stock and activity history are preserved.
                         You can restore it anytime from the Archived tab.
                     </p>
                 </div>
@@ -518,7 +518,7 @@
                     </div>
                     <div class="col-md-3">
                         <div class="border rounded p-3 h-100">
-                            <div class="text-muted small fw-bold">Replanting</div>
+                            <div class="text-muted small fw-bold">Regraft</div>
                             <div class="fs-5 fw-bold text-warning" id="detailsReplanting">&mdash;</div>
                             <div class="text-muted small">recorded entries</div>
                         </div>

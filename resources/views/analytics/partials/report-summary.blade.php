@@ -1,5 +1,5 @@
 @php
-    $humanize = fn ($key) => ucwords(str_replace(['_', '-'], ' ', (string) $key));
+    $humanize = fn ($key) => str_replace('Replanting', 'Regraft', ucwords(str_replace(['_', '-'], ' ', (string) $key)));
 @endphp
 
 @if (is_array($summary) && $summary !== [])

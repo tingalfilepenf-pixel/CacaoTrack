@@ -28,10 +28,10 @@ class StoreReplantingRecordRequest extends AppFormRequest
     {
         return [
             'batch_id.required' => 'Please select a batch.',
-            'quantity.required' => 'The replanting quantity is required.',
-            'quantity.min' => 'The replanting quantity must be at least 1.',
-            'replanting_date.required' => 'The replanting date is required.',
-            'replanting_date.date' => 'The replanting date must be a valid date.',
+            'quantity.required' => 'The regraft quantity is required.',
+            'quantity.min' => 'The regraft quantity must be at least 1.',
+            'replanting_date.required' => 'The regraft date is required.',
+            'replanting_date.date' => 'The regraft date must be a valid date.',
         ];
     }
 }

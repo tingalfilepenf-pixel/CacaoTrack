@@ -81,7 +81,7 @@ class ReplantingController extends Controller
 
                 if ((int) $validated['quantity'] > $deficit) {
                     $this->failValidation([
-                        'quantity' => "Replanting cannot exceed the batch's remaining deficit of {$deficit} for {$batch->batch_code}.",
+                        'quantity' => "Regraft cannot exceed the batch's remaining deficit of {$deficit} for {$batch->batch_code}.",
                     ], 'replanting');
                 }
 
@@ -96,7 +96,7 @@ class ReplantingController extends Controller
                 ActivityLog::record(
                     $batch->batch_id,
                     ActivityLog::TYPE_REPLANTING_RECORDED,
-                    "Recorded {$validated['quantity']} replanting for {$batch->batch_code}.",
+                    "Recorded {$validated['quantity']} regraft for {$batch->batch_code}.",
                     null,
                     $validated['replanting_date'],
                 );
@@ -109,6 +109,6 @@ class ReplantingController extends Controller
 
         return redirect()
             ->route('operational.replanting')
-            ->with('success', 'Replanting record saved successfully.');
+            ->with('success', 'Regraft record saved successfully.');
     }
 }
