@@ -12,7 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * standalone, additive record:
  *
  * - it does **not** add or hold any stock balance on `scion_varieties`;
- * - it does **not** touch `RegraftRecord` / `ReplantingRecord`;
+ * - it does **not** touch `ReplantingRecord` (Regraft and Replanting are the
+ *   same recorded procedure);
  * - there is deliberately **no** controller/route/view yet (schema + model
  *   only) pending confirmation of how usage should reference receiving
  *   records for traceability.

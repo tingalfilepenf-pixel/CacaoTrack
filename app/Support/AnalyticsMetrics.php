@@ -5,7 +5,7 @@ namespace App\Support;
 use App\Models\Analytic;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
-use App\Models\RegraftRecord;
+use App\Models\ReplantingRecord;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\StockOutDetail;
@@ -575,17 +575,19 @@ class AnalyticsMetrics
             ];
         }
 
-        // Re Graft per Scion Variety (P5 Regraft_Record).
-        $regraftRecords = RegraftRecord::query()
+        // Re Graft per Scion Variety. Regraft and Replanting are the same
+        // recorded procedure (the separate Regraft_Record table was retracted),
+        // so the ledger reads the real `replanting_records` rows.
+        $replantingRecords = ReplantingRecord::query()
             ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
-            ->when($from, fn (Builder $q) => $q->whereDate('regraft_date', '>=', $from))
-            ->when($to, fn (Builder $q) => $q->whereDate('regraft_date', '<=', $to))
+            ->when($from, fn (Builder $q) => $q->whereDate('replanting_date', '>=', $from))
+            ->when($to, fn (Builder $q) => $q->whereDate('replanting_date', '<=', $to))
             ->when($scionVarietyId, fn (Builder $q) => $q->whereHas('batch', fn (Builder $b) => $b->where('scion_variety_id', $scionVarietyId)))
             ->with('batch')
-            ->orderBy('regraft_date')
+            ->orderBy('replanting_date')
             ->get();
 
-        foreach ($regraftRecords as $record) {
+        foreach ($replantingRecords as $record) {
             $varietyId = $record->batch?->scion_variety_id ? (int) $record->batch->scion_variety_id : null;
 
             if ($varietyId !== null) {
@@ -593,7 +595,7 @@ class AnalyticsMetrics
             }
 
             $events[] = [
-                'date' => $record->regraft_date->toDateString(),
+                'date' => $record->replanting_date->toDateString(),
                 'description' => 'Regraft ('.($record->batch?->batch_code ?? '—').')'.($record->remark ? ' — '.$record->remark : ''),
                 'seedlings' => 0,
                 'grafted' => [],

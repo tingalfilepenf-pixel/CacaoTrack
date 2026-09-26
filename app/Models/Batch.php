@@ -92,15 +92,6 @@ class Batch extends Model
     }
 
     /**
-     * Dated regraft events for this batch (P5 `Regraft_Record`). This is the
-     * granular companion of the monthly `inventories.regraft` aggregate.
-     */
-    public function regraftRecords(): HasMany
-    {
-        return $this->hasMany(RegraftRecord::class, 'batch_id', 'batch_id');
-    }
-
-    /**
      * Monthly Inventory snapshots for this batch (many rows — the old
      * one-row-per-batch balance is gone).
      */
