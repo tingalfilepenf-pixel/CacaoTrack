@@ -22,14 +22,28 @@
   models; `/` (Dashboard) returns **200**). **The seeders/tests still describe the OLD model**, so the
   test suite fails until **P6** rewrites them.
 - Until P6 lands: **do not** reintroduce removed tables/columns or add new features without checking
-  the plan. New schema/business-logic work must follow the revised ERD. The **only** approved schema
-  exception is `regraft_records` + `RegraftRecord` (P5 Part B — see below); do not extend that pattern.
-- **P5 approved schema exception:** migration `2026_09_25_000009` created `regraft_records`
-  (mirrors `mortality_records`: `regraft_id`, `batch_id`, `user_id`, `quantity`, `regraft_date`,
-  `remark`) plus `App\Models\RegraftRecord` and `Batch::regraftRecords()`. It records Regraft as a
-  dated event per batch; `inventories.regraft` (the monthly aggregate) is **untouched**. There is
-  deliberately **no** CRUD controller/route/view for it yet (the Stock Ledger reads it); a recording
-  UI is a flagged follow-up.
+  the plan. New schema/business-logic work must follow the revised ERD. There is **one approved
+  additive schema addition** beyond the 15 entities — `scion_receivings` + `ScionReceiving` (Session
+  BV), documented below; do not extend that pattern. Validate new records with built-in Laravel rules
+  (e.g. `ScionReceiving::rules()`); do **not** create an additional table for validation.
+- **`regraft_records` retracted (Session BX — resolved; was P5 Part B):** `RegraftRecord` was a P5
+  approved schema exception that **duplicated `Replanting_Record`**; in the company's process Regraft
+  and Replanting are the **same recorded procedure**. It was dropped by migration
+  `2026_09_26_000002_drop_regraft_records_table` (the table held **0 rows** — no data migration needed;
+  the create migration `2026_09_25_000009` is left intact as history). `app/Models/RegraftRecord.php`,
+  `Batch::regraftRecords()` and the `AnalyticsMetrics` import were deleted, and the Stock Ledger's
+  Regraft column now reads `replanting_records` directly. **This resolves the Session BU proposal,
+  which (contrary to an earlier report) had never been applied.** `Regraft_Record` is no longer an
+  approved schema exception.
+- **Session BV approved schema addition — `scion_receivings` (additive only; commit `33ff6b0`):**
+  migration `2026_09_26_000001_create_scion_receivings_table` created `scion_receivings` (ERD §3.16)
+  plus `App\Models\ScionReceiving` — a **receiving log only** for scion material (`scion_variety_id`
+  required FK, `supplier_id` nullable FK, `quantity`, `unit_price` nullable, `date_received`, `origin`
+  single nullable, `notes` nullable). It holds **no stock balance** (nothing was added to
+  `scion_varieties`), does **not** alter `ReplantingRecord`, and has **no** CRUD
+  controller/route/view yet. Validation uses built-in Laravel rules (`ScionReceiving::rules()`) — no
+  additional table. **Freshness/viability rule NOT implemented** (no usable-until value, no warning, no
+  blocking) pending client confirmation of the allowed viability window and whether to warn or block.
 - **P5 open flags:** (1) the **Gap formula was corrected** (post-P5 follow-up) to
   `Gap = Batch::effectiveMortalityQuantity()` (recorded mortality). The original
   `max(0, viable_count − available_count − total_stock_out_for_batch)` was algebraically wrong: it is
@@ -53,8 +67,8 @@
   and `routes/web.php` now match the revised model; see `session.handoff.md` §2 Session BN for the
   route/permission map and the P3 flags. No migration, model, view, seeder or test file was touched.
 - **Do not invent, rename, or add tables, columns, FKs, or relationships** beyond the revised ERD.
-  The single exception is `regraft_records` (P5 Part B), which is explicitly approved and documented
-  in the banner above.
+  The one remaining approved additive exception is `scion_receivings` (Session BV), documented in the
+  banner above. Validate with built-in Laravel rules; do not add extra tables for validation.
 
 ## Source-of-truth docs (read before schema or business-logic changes)
 - `docs/CacaoTrack_PRD.md` — revised PRD: what the system must do (FR-01…FR-13, validation,
@@ -88,9 +102,12 @@ the five-day recounted usable quantity (they need not be equal); Stock In has **
 `Batch` has **no** `variety_id`, `pot_id`, or `monitoring_start_date`. `Inventory` is a **monthly
 snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` row is gone).
 `Stock_Out` is a header; each variety/batch quantity is a `Stock_Out_Detail` line. `Stock_In` has
-**no** `scion_quantity` and there is no scion stock pool. **P5 approved exception:**
-`Regraft_Record` (`regraft_records`) is an additional dated Regraft-event table — the single approved
-table beyond these 15 (see the banner). `inventories.regraft` (monthly aggregate) is unchanged.
+**no** `scion_quantity` and there is no scion stock pool. **Approved additive exception (1):**
+`Scion_Receiving` (`scion_receivings`, Session BV) logs scion-material receipts with no stock balance.
+It does not belong to the 15 entities; it is approved and documented in the banner. `Regraft` is not a
+separate entity — **Regraft and Replanting are the same recorded procedure**, recorded in
+`replanting_records` (the short-lived `regraft_records` exception was retracted; see the banner).
+`inventories.regraft` (monthly aggregate) is unchanged.
 
 ## Removed from the model/process (do NOT reintroduce)
 - Tables: `Batch_Monitoring`, `Variety`, generic `Scions` stock pool, `Pot_Type`,
@@ -152,8 +169,9 @@ table beyond these 15 (see the banner). `inventories.regraft` (monthly aggregate
   adjustment-free. The Stock Ledger is now a **monthly grid** with dynamic per-Scion-Variety columns
   (view + FPDF). PDF/CSV exports rebuilt; Gap corrected to `Batch::effectiveMortalityQuantity()` (see the
 P5 open-flags note above).
-  The one approved schema exception is `regraft_records` + `RegraftRecord` + `Batch::regraftRecords()`.
-  `/` (Dashboard) returns **200**. See `session.handoff.md` §2 Session BQ.
+  The P5 `regraft_records` exception was **retracted in Session BX** (dropped; the Stock Ledger reads
+  `replanting_records` — see the banner). `/` (Dashboard) returns **200**. See `session.handoff.md`
+  §2 Session BQ / Session BX.
 - **P6 Tests/docs/verify (NEXT):** rewrite affected tests; run MySQL suite + Pint + `view:cache` +
   `migrate:status` + live spot-checks; update handoff and this file.
 

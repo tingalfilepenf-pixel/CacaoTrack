@@ -1,36 +1,79 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session BQ → next session)
-> - **P0–P5 are DONE and committed.** Feature checkpoint `d139286` (P5 analytics/reports), docs
->   checkpoint `7cf3ca1` (AGENTS.md banner + this file). Working tree clean.
-> - **NEXT = P6 (seeders/tests/docs/verify).** The analytics layer now matches the revised model and
->   `/` (Dashboard) returns **200**; the **seeders/tests still target the OLD 19-table model**, so the
->   feature suite fails until P6 rewrites them.
-> - **Open decision #1 (needs your call):** the locked Gap formula
->   `max(0, viable_count − available_count − total_stock_out_for_batch)` currently resolves to **0**
->   for every batch, because `available_count` is already decremented by Stock Out. Say the word to
->   switch it to `viable_count − available_count` (the AGENTS P5 short form) instead.
-> - **Flag #2:** Stock Ledger "Ready to Plant" maps to the batch's live `available_count` — a
->   best-guess interpretation pending client confirmation.
+> ### ▶ Continue here (latest: Session BX → next session)
+> - **P0–P5 DONE. Latest commit: BX regraft_records consolidation (`22ef695`) — this APPLIES the
+>   Session BU proposal (the earlier "done" report was false).** Prior: BS Gap fix (`1744975`),
+>   BT display rename (`bd47433`), BV Scion_Receiving (`33ff6b0`). The ERD docs + `AGENTS.md` + this
+>   handoff are synced in the following `docs:` commit. Two untracked `docs/*.csv` sample exports remain.
+> - **▶ Session BX (DONE — the `regraft_records` consolidation APPLIED; code + migration, commit
+>   `22ef695`):** migration `2026_09_26_000002_drop_regraft_records_table` **dropped `regraft_records`**
+>   (it held **0 rows** — clean drop, no data migration; the create migration `2026_09_25_000009` is
+>   kept as history); `app/Models/RegraftRecord.php` deleted; `Batch::regraftRecords()` and the
+>   `AnalyticsMetrics` import removed; and `AnalyticsMetrics::stockLedgerGrid()` now reads
+>   **`replanting_records`** (grouped by `replanting_date` and the batch's `scion_variety_id`, the same
+>   pattern as the Mortality column). **Regraft and Replanting are the same recorded procedure.** Live
+>   proof: `Schema::hasTable('regraft_records')` = **false**; the Stock Ledger's grand Re Graft now reads
+>   **195** (= `replanting_records` **13 rows**, `SUM(quantity)` **195**) across Criollo 35 / Trinitario
+>   15 / Forastero 15 / Diaman 110 / Batangas 10 / White Flag 10 (was **0** before). `php -l` + Pint
+>   clean; `migrate:status` 0 Pending. **No test suite run (P6).**
+> - **▶ Session BW (historical — docs sync; superseded by BX):** it verified the consolidation had
+>   **never** been applied. BX now **applies** it.
+> - **▶ Session BV (DONE — additive schema + model, commit `33ff6b0`):** added the **`Scion_Receiving`**
+>   entity — table `scion_receivings` + `App\Models\ScionReceiving` (ERD §3.16). **Schema + model ONLY:**
+>   no controller/route/view, **no stock-balance column on `scion_varieties`**, and
+>   `RegraftRecord`/`ReplantingRecord` untouched. Confirmed fields: `scion_variety_id` (required FK),
+>   `supplier_id` (**nullable** FK), `quantity`, `unit_price` (nullable), `date_received`, `origin`
+>   (**single nullable** column), `notes` (nullable). **The freshness/viability rule is deliberately
+>   NOT implemented** (no `usable_until`, no warning, no blocking) pending client confirmation.
+>   Migration `2026_09_26_000001` ran (`migrate:status` 0 Pending); Pint + `php -l` clean; validation
+>   lives in `ScionReceiving::rules()`. **No test suite run (P6).**
+> - **Session BT (DONE — display rename, commit `bd47433`):** every user-visible "Replanting" is now
+>   "Regraft" (display-only; internal names stay `Replanting`). Dashboard KPIs identical — Inventory
+>   **1130** / Crude Mortality **40.00%** / Regraft Deficit **385**. **No DB/schema/data change.**
+> - **▶ Session BU (read-only audit — STILL THE IMMEDIATE DECISION): the "consolidation fix" was NEVER
+>   applied.** `regraft_records` still exists (**0 rows**) beside `replanting_records` (**13 rows**);
+>   **no drop migration exists** (the only regraft migration is
+>   `2026_09_25_000009_create_regraft_records_table`, which only drops in its `down()`). **The Stock
+>   Ledger's Regraft column still reads `RegraftRecord`/`regraft_records`**
+>   (`AnalyticsMetrics::stockLedgerGrid()` `:579`), so it displays 0 while the real data lives in
+>   `replanting_records`. `app/Models/RegraftRecord.php` and `Batch::regraftRecords()` are still
+>   present. **Awaiting your go-ahead to do the consolidation for real** — see §6 for the proposed
+>   steps. **No data was changed.**
+> - **Still open:** `Scion_Receiving` has **no CRUD UI and no defined usage/traceability link yet**
+>   (flagged); Stock Ledger "Ready to Plant" best-guess mapping. The `regraft_records` CRUD UI flag is
+>   **dropped** (the table no longer exists). **`AGENTS.md` is updated:** it now lists **one** approved
+>   additive exception (`scion_receivings`, Session BV) and records the `regraft_records` retraction.
+> - **After the (now-applied) consolidation = P6** (seeders/tests/docs/verify); first settle the Session
+>   BR data policy (regenerate clean seed data vs synthetic fixtures).
 > - **Verify quickly:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->   (never point tests at `db_capstone`). Full detail: §2 Session BQ, §5, §6.
+>   (never point tests at `db_capstone`). Full detail: §2 Session BV/BU/BT/BS/BR/BQ, §3, §5, §6.
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after the latest session (**Session BQ — Phase 5 (Analytics/reports) of the revised-PRD/ERD
-refactor was IMPLEMENTED**): the **analytic/report layer was migrated onto the revised model** —
+project after **Session BX** (which **APPLIED** the long-pending `regraft_records` consolidation: the
+duplicate table was dropped — 0 rows, no data migration — the model/relation/import removed, and the
+Stock Ledger's Regraft column repointed at `replanting_records`; `AGENTS.md` + both ERD docs now record
+**one** remaining approved additive exception, `scion_receivings`, Session BV). Before that: Phase 5
+(Analytics/reports) was **implemented in Session BQ**; the Gap formula was corrected in Session BS; the
+Replanting→Regraft display rename landed in Session BT; Session BU audited the still-unapplied
+`regraft_records` consolidation; Session BV added the **`Scion_Receiving`** entity as additive schema +
+model only, with no freshness/viability logic yet; and Session BW synced the docs to the then-current
+reality): the
+**analytic/report layer was migrated onto the revised model** —
 `App\Support\AnalyticsMetrics` was rewritten (no `Variety`/`adjustments`/`current_quantity`/
 `inventory` references), the **Dashboard `/` returns 200**, and the **Stock Ledger is now a monthly
-grid** with dynamic per-Scion-Variety columns in both the Blade view and the FPDF. One **approved
-schema exception** landed: migration `2026_09_25_000009` created `regraft_records` +
-`App\Models\RegraftRecord` + `Batch::regraftRecords()` (Part B). All seven analytics pages and all
+grid** with dynamic per-Scion-Variety columns in both the Blade view and the FPDF. One **P5-approved
+schema exception** landed at the time: migration `2026_09_25_000009` created `regraft_records` +
+`App\Models\RegraftRecord` + `Batch::regraftRecords()` (Part B) — **retracted in Session BX** (it
+duplicated `Replanting_Record`; dropped with 0 rows). All seven analytics pages and all
 seven PDF/CSV exports return **200**; `php artisan view:cache` is clean and Pint passes. **The
 seeders/tests were NOT touched (P6).** P5 is committed as its own checkpoint (`d139286`, "feat(analytics):
 implement P5 revised-model analytics, dashboard and stock ledger"). See the Session BQ entry in
 §2/§5/§6. The refactor is now **P0–P5 DONE / P6 next**: the DB (P1), models (P2), controllers/routes
 (P3), views/sidebar (P4) **and analytics/reports (P5)** match the revised model, but the
 **seeders/tests still target the OLD model**, so the feature suite fails until P6 rewrites them.
-Two P5 flags remain: the locked Gap formula currently resolves to 0 (see the Session BQ entry), and
-Stock Ledger "Ready to Plant" is a flagged best-guess mapping. Before that, Session BN implemented Phase 3
+One P5 flag remains: Stock Ledger "Ready to Plant" is a flagged best-guess mapping. (The second P5
+flag — the Gap formula resolving to 0 — was **corrected in Session BS** to
+`Gap = Batch::effectiveMortalityQuantity()`; see the Session BS entry.) Before that, Session BN implemented Phase 3
 (Controllers & routes) — the removed controllers deleted, `ScionVarietyController` added, Form
 Requests added for every transactional store/update, and `routes/web.php` rewritten (Batches moved
 to `/operational/batches`; checkpoint `3d3f9f9`, 66 routes; **no migration/model/view/seeder/test
@@ -442,6 +485,34 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
+- **▶ Session BU (read-only audit — do this first): the consolidation fix was NEVER applied.**
+  `regraft_records` still exists (0 rows) next to `replanting_records` (13 rows); **no drop migration
+  exists**; `app/Models/RegraftRecord.php` + `Batch::regraftRecords()` remain; the Stock Ledger's
+  Regraft column still reads `RegraftRecord` (`AnalyticsMetrics::stockLedgerGrid():579`), so it shows
+  0. **Next action = apply the consolidation for real** (repoint the ledger at `ReplantingRecord`,
+  remove the model/relation, add a drop migration, retire `Regraft_Record` in the docs) — pending your
+  go-ahead. Full detail: §2 Session BU / §6.
+- **▶ Session BT (DONE — display rename, commit `bd47433`):** every user-visible "Replanting" is now
+  "Regraft" (sidebar, KPI cards, Stock Ledger "Re Graft" header, PDF/CSV headers, Activity History
+  label, `record_operations` permission label, validation/toast copy). Internal names stay
+  `Replanting`. Dashboard KPIs verified identical (1130 / 40.00% / 385). **No DB/schema/data change.**
+  Full detail: §2 Session BT.
+- **Working tree note:** `session.handoff.md` itself is **uncommitted** (the BS/BR documentation
+  additions plus this update), and `docs/cacao-operational-analytics-2026-09-25.csv` +
+  `docs/cacao-stock-ledger.csv` are **untracked** sample exports. Commit or clean up as desired.
+- **▶ Session BS (DONE — Gap formula corrected, commit `1744975`):** `Gap = Batch::effectiveMortalityQuantity()`.
+  No DB/schema/data change; `AGENTS.md` + Gap view/PDF/CSV updated. Verified live: 9 batches, gaps
+  B001 125 / B002 20 / B003 45 / B004 300 / B005 50 / B006 30 / B007 0 / TAB007 10 / TAB008 0 →
+  `totalGap = 580 = SUM(mortality_records.quantity)`. **The prior Gap "Open decision #1" is CLOSED.**
+  Still open: "Ready to Plant" mapping; `regraft_records` CRUD UI. Full detail: Session BS entry in §2/§5/§6.
+- **▶ Session BR (read-only DB audit — do this first):** before writing P6 seeders/tests, note that
+  the live `db_capstone` operational data is **pre-refactor residue**. All 9 batches were created
+  `2026-09-12`…`2026-09-23` (< P1); all 7 stock-outs are the migrated legacy headers. `available_count`
+  is the backfilled OLD `inventories.current_quantity` ledger (`initial + stock-ins − stock-outs −
+  reversals` = 1130), not `viable_count − stock_out`; `SUM(viable)=1170`, `SUM(stock_out)=2130`. The
+  current Stock Out validation cannot reproduce it. **Decide the P6 data policy:** regenerate clean
+  seed data (and reconcile `available_count`) vs leave live rows and use synthetic fixtures. **No
+  data was changed.** Full detail: Session BR entry in §2/§5/§6.
 - **▶ NEXT: revised-PRD/ERD refactor — P0/P1/P2/P3/P4/P5 DONE; implement P6 (Tests/docs/verify) next.**
   `db_capstone` has the revised schema (P1: eight reversible migrations
   `2026_09_25_000001..000008`; **P5 added the one approved exception `2026_09_25_000009`
@@ -457,9 +528,10 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
   PRD §12.2 citation removed) and removed every other stale `Variety`/`adjustments`/
   `current_quantity`/`inventory` reference; added the **approved `regraft_records`** migration +
   `RegraftRecord` + `Batch::regraftRecords()`; rebuilt the **Stock Ledger as a monthly grid** (dynamic
-  per-Scion-Variety columns, view + FPDF); rebuilt remaining pages and PDF/CSV exports; Gap uses the
-  locked formula. **Two flags:** the locked Gap formula currently resolves to **0** (available_count
-  already nets Stock Out), and "Ready to Plant" is a flagged best-guess mapping. **No seeders/tests
+  per-Scion-Variety columns, view + FPDF); rebuilt remaining pages and PDF/CSV exports; Gap used the
+  locked formula. **Two flags (at the time):** the locked Gap formula resolved to **0** (available_count
+  already nets Stock Out) — **corrected in Session BS** to `Batch::effectiveMortalityQuantity()` — and
+  "Ready to Plant" is a flagged best-guess mapping. **No seeders/tests
   touched (P6).**
 - **P4 (DONE — Session BO; see the Session BO entry in §2/§5/§6):** repointed
   `resources/views/layouts/sidebar.blade.php` to the real P3 routes and deleted the Batch Monitoring /
@@ -616,7 +688,12 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
   "could not find driver". Tests were run against a dedicated MySQL DB instead (see §5).
 - `.npmrc` has `ignore-scripts=true`.
 
-## 2. Session log (oldest → newest; detailed entries end with Session BH, followed by the refactor entries BI (P0), BJ (P1), BK (P2 plan), BL (P3 plan), BM (P2 implemented), BN (P3 implemented), BO (P4 views/sidebar implemented), BP (housekeeping: commit P4 + correct the `AGENTS.md` banner) and BQ (P5 analytics/reports implemented))
+## 2. Session log (oldest → newest; detailed entries end with Session BH, followed by the refactor entries BI (P0), BJ (P1), BK (P2 plan), BL (P3 plan), BM (P2 implemented), BN (P3 implemented), BO (P4 views/sidebar implemented), BP (housekeeping: commit P4 + correct the `AGENTS.md` banner), BQ (P5 analytics/reports implemented), BR (live `db_capstone` data audit — investigation only), BS (Gap formula corrected to effective mortality — post-P5 follow-up), BT (user-facing Replanting→Regraft display rename —    implemented), BU (consolidation audit — `regraft_records` still live; read-only), BV
+   (`Scion_Receiving` entity — additive schema + model only, IMPLEMENTED), BW (docs sync —
+   `AGENTS.md` + this handoff aligned; `regraft_records` consolidation verified as never applied;
+   no code/migration/DB change) and BX (the `regraft_records` consolidation **APPLIED** — dropped the
+   duplicate table via migration `2026_09_26_000002`, deleted the model/relation/import, repointed the
+   Stock Ledger's Regraft column at `replanting_records`; commit `22ef695`; no test suite run — P6))
 
 ### Session A — Daily Checklist (previous session)
 The Operational → **Daily Checklist** page (`/operational/checklist`) was converted from a static
@@ -3948,11 +4025,11 @@ Analytics, Root Cause Matrix, Seasonality, Age Profile and Gap Report all query 
 the matrix lost its adjustment UI (single Total Mortality card / summary line); Age Profile counts
 `available_count`; Gap uses the locked formula (below). OperationalAnalyticsPdf / StockLedgerPdf /
 MortalityMatrixPdf / GapReportPdf and all CSV exports were rebuilt (Gap now shows a Pulled Out
-column; Stock Ledger follows the Part C grid). **FLAG:** the locked Gap formula
-`max(0, viable_count − available_count − total_stock_out_for_batch)` currently resolves to **0** for
-every batch, because `available_count` is already decremented by Stock Out on save (so
-`viable − available` ≈ stock-out and the extra subtraction cancels it) — this needs panel
-confirmation before the Gap Report is relied on.
+column; Stock Ledger follows the Part C grid). **FLAG (since CLOSED — corrected in Session BS):** the
+locked Gap formula `max(0, viable_count − available_count − total_stock_out_for_batch)` resolved to
+**0** for every batch, because `available_count` is already decremented by Stock Out on save (so
+`viable − available` ≈ stock-out and the extra subtraction cancels it). The panel confirmed the
+formula was algebraically wrong; Session BS replaced it with `Gap = Batch::effectiveMortalityQuantity()`.
 
 **Verification:** `php -l` clean; `php artisan view:cache` clean; `vendor\bin\pint` passed on all
 changed files; migration applied (`migrate:status` 0 pending). A runtime smoke test
@@ -3963,12 +4040,282 @@ changed files; migration applied (`migrate:status` 0 pending). A runtime smoke t
 `/mortality-matrix/export/csv`, `/gap-report/export`, `/gap-report/export/csv`). **No test suite was
 run** (deferred to P6 — the seeders/tests still target the OLD model).
 
+### Session BR — live `db_capstone` data audit: `viable_count` / `available_count` / Stock Out reconciliation (INVESTIGATION ONLY)
+
+Verification/investigation only — **no code, migration, model, seeder or DB change**; the live DB was
+read read-only through `php artisan tinker`. Trigger: the live 9 batches show
+`SUM(viable_count) = 1170` and `SUM(available_count) = 1130`, but the stock-out quantity across those
+batches is **2130** — so `viable − available` (40) does not track total stock-out as the P5 Gap logic
+implies.
+
+**Finding 1 — every batch and every stock-out is PRE-refactor residue.** All `batches.created_at` fall
+on `2026-09-12`…`2026-09-23`, before the P1 migrations (`2026_09_25_000001..009`) and before P2/P3
+landed. B001–B003 carry the seeder timestamp `2026-09-12 08:37:29`
+(`DatabaseSeeder.php:112,125,138`); B004…TAB008 were created by the **old** BatchController
+(`activity_logs` `batch_created` rows 14/46/49/50/54/74). All **7** `stock_out_details` are the legacy
+headers converted by `2026_09_25_000006_migrate_stock_outs_to_header_and_details.php:19-29` (release
+dates `2026-09-14`…`2026-09-23`); there is **no 8th** stock-out, i.e. none was written post-refactor.
+
+**Finding 2 — `available_count` is the OLD inventory ledger, not `viable_count`-based.** It was
+backfilled once from the dropped `inventories.current_quantity`
+(`2026_09_25_000007_convert_inventories_to_monthly_snapshots.php:41`), so it equals
+`initial + Stock In − Stock Out − Stock Reversal`, completely decoupled from `viable_count`. The live
+sum reconciles exactly: initial 1260 (seeder 180+140+95 plus old-style created batches
+350+100+100+100+0+195) + stock-ins 2250 − stock-outs 2130 − reversal 250 (`activity_id` 10) =
+**1130**. This is why `viable − available` (40) is unrelated to stock-out (2130). B005 is the clearest
+proof: `available_count = 600` while `viable_count = 100`.
+
+**Finding 3 — the current Stock Out path cannot produce the 2130.** `StoreStockOutRequest`
+(`:23-34`) has **no** availability rule (only `integer|min:1` + `activeExistsRule`); the enforcement
+is server-side in `StockOutController::lockAndValidateBatches()` — batch locked with `lockForUpdate()`
+(`:180`), per-line check (`:194`) and per-batch aggregate check (`:215`) against the locked
+`available_count`, with the decrement only after validation (`:138`). A live validated write therefore
+cannot exceed `available_count`; the residue was written by the OLD model, whose batch-scoped Stock In
+topped up the balance.
+
+**Finding 4 — complete list of every `available_count` WRITE** (the reverse/restore audit):
+- `app/Http/Controllers/BatchController.php:93` — create: `= $validated['viable_count']`
+- `app/Http/Controllers/BatchController.php:119` — update: `= $validated['viable_count']` (guarded by `! $used`)
+- `app/Http/Controllers/StockOutController.php:138` — `$batch->decrement('available_count', $released)`
+- `database/migrations/2026_09_25_000007_...php:41` — one-time backfill (`:83` is a read)
+- `database/seeders/DatabaseSeeder.php:112,125,138`
+- Test fixtures only: `StockOutTest.php:34`, `StockInTest.php:34`, `InventoryTest.php:33`,
+  `MortalityTest.php:32`, `ReplantingTest.php:34`, `AnalyticsTest.php:97`, `ActivityLogTest.php:34`,
+  `DashboardTest.php:35`, `BatchManagementTest.php:53,93,225`, `BatchMonitoringTest.php:32,64`,
+  `ClientTest.php:33`, `VarietyTest.php:30`, `PotTypeTest.php:30`, `ScionTest.php:41`,
+  `SupplierTest.php:33`, `UserManagementTest.php:54`, `StockReversalTest.php:37`.
+There is **no increment/restore** anywhere: `ReplantingController` creates only a `ReplantingRecord`
+(`:88-94`); `RegraftRecord`/`MortalityRecord` don't touch it; **no Batch observer/event**
+(`AppServiceProvider::boot()` is empty; the only `booted()` hooks are `Inventory.php:52` status,
+`StockIn.php:51` viable guard, `StockOutDetail.php:57` scion-variety derivation — none write
+`available_count`); `Batch::rules()` deliberately omits it (`app/Models/Batch.php:228-238`).
+
+**Consequence for P6:** the live operational rows are pre-refactor residue with an internally
+inconsistent `available_count`, so P6's seeders/tests must be written against clean, current-model
+data. Decide whether to (a) regenerate seed data and reconcile `available_count` before P6, or
+(b) leave the live rows untouched and have P6 use synthetic fixtures. **No data was changed.**
+
+### Session BS — Gap formula corrected to effective mortality (post-P5 follow-up, IMPLEMENTED)
+
+Follow-up fix to the Session BQ P5 Gap Report (committed as checkpoint **`1744975`**,
+"fix(analytics): correct Gap formula to effective mortality"). **No DB/schema/data change** — pure
+code/view/PDF/CSV + `AGENTS.md` change; the existing P5 commit `d139286` was **not** amended.
+
+**The bug:** the locked formula `max(0, viable_count − available_count − total_stock_out_for_batch)`
+was algebraically wrong — it is a mathematical identity that always resolves to **0** regardless of
+the data, because `available_count` is already netted down by Stock Out on every validated release
+(`StockOutController` decrements it; `StoreStockOutRequest` + the controller's per-line/per-batch
+checks enforce `quantity ≤ available_count`). So subtracting stock-out again cancels it out. It was
+never test-data-specific.
+
+**The corrected formula:** `Gap = Batch::effectiveMortalityQuantity()` (reused unchanged). Mortality
+is the only quantity still unreflected in `available_count`, so it is the real gap — how much of the
+live "available" balance may be overstated until recorded deaths are reconciled out of it.
+
+**Files changed (5):**
+- `app/Support/AnalyticsMetrics.php` — `gapReport()` `gap` now `$batch->effectiveMortalityQuantity()`;
+  `expected`/`actual`/`pulled_out` kept as context columns; class + method docs explain the identity.
+- `resources/views/analytics/historical/gap-report.blade.php` — explanatory copy rewritten; summary
+  strip restructured ("Live ledger context" + a "Gap = Effective Mortality" card); Total Gap subtitle;
+  table header "Gap / Effective Mortality"; print-modal note.
+- `app/Support/GapReportPdf.php` — doc block; `Gap (Mortality)` column; summary
+  `Gap (effective mortality): %d`; new self-describing note line under the table header.
+- `app/Http/Controllers/AnalyticsController.php` — CSV header
+  `Batch,Variety,Expected,Available,Pulled Out,Gap (Effective Mortality)`.
+- `AGENTS.md` — P5 open-flags #1 replaced with the corrected formula + reasoning; P5 plan line updated.
+
+**Verification (live `db_capstone`, read-only, freshly queried against the corrected formula):**
+all 9 batches — B001 125, B002 20, B003 45, B004 300, B005 50, B006 30, B007 0, TAB007 10,
+TAB008 0. Row gaps reconcile to `totalGap = 580`, which equals both the sum of the rows and the
+independent `SUM(mortality_records.quantity)`; per-batch `effectiveMortalityQuantity()` matches
+`MortalityRecord::effectiveQuantityForBatch()`. The two zero batches genuinely have 0 mortality rows.
+`php artisan view:cache` clean; `vendor\bin\pint` passed; `php -l` clean; the FPDF renders
+(`%PDF-1.3`, 10,530 bytes) with the new note. **No test suite run** (P6 — `tests/Feature/AnalyticsTest.php`
+still asserts the old gap values and remains part of the old-model suite).
+
+**Still open (unchanged):** Stock Ledger "Ready to Plant" best-guess mapping; `regraft_records` has no
+CRUD UI yet. **The prior "Open decision #1" (Gap) is now CLOSED.**
+
+### Session BT — user-facing terminology rename: "Replanting" → "Regraft" (DISPLAY-ONLY, IMPLEMENTED)
+
+Committed as checkpoint **`bd47433`** ("refactor(ui): rename user-facing Replanting to Regraft");
+17 files, 52/52 lines. **Display text only — no DB/schema/data/logic change** and **no internal
+rename**.
+
+**What changed (every user-visible occurrence):** sidebar label; Dashboard KPI card
+("Replanting Deficit" → "Regraft Deficit") + sub-text; Operational Analytics KPI card, "Regraft
+Deficit by Batch" chart header + ECharts series name + print-modal copy; the whole Regraft page
+(title / page title, "Record Regraft", summary cards, "REGRAFTED" column, modal titles/labels/copy,
+empty states, success flash); Batches archive-modal copy + details label; Stock Ledger "Re Graft"
+column header and legend in the Blade view **and** `StockLedgerPdf` (`Re Graft: %d` summary strip +
+section headers) + the `AnalyticsMetrics` ledger row description; Operational Analytics PDF/CSV
+headers (`AnalyticsController` + `OperationalAnalyticsPdf`); Activity History type label
+(`ActivityLog::TYPES['replanting_recorded'] => 'Regraft Recorded'`); the `record_operations`
+permission label (`Role.php`); Regraft validation/toast/activity copy
+(`StoreReplantingRecordRequest`, `ReplantingController`); and the generated-report summary label
+mapping (`report-summary.blade.php` now renders the internal `total_replanting_deficit` key as
+"Total Regraft Deficit"). Two test assertions were updated (`DashboardTest:70`,
+`AnalyticsTest:167,192`).
+
+**Deliberately NOT renamed (internal names stay "Replanting"):** `ReplantingController`,
+`ReplantingRecord`, `StoreReplantingRecordRequest`, the `replanting_records` table/columns,
+`Batch::replantingDeficit()`/`totalReplanted()`/`replantingRecords()`,
+`AnalyticsMetrics::totalReplantingDeficit()`/`replantingDeficitByBatch()`, the
+`operational.replanting*` routes, the `total_replanting_deficit` result-summary key, variables, DOM
+ids, the error-bag name and code comments.
+
+**Verification:** `php artisan view:cache` clean; `vendor\bin\pint` passed; Dashboard KPIs captured
+before and after are identical — `totalActiveInventory` **1130**, `crudeMortalityRate` **40**
+(40.00%), `totalReplantingDeficit` **385**. **No migration run; no schema/data change.** Not touched
+(not app UI): `README.md`, `docs/CacaoTrack_Design.md`, and the committed `docs/*.csv` samples.
+
+### Session BU — consolidation audit: `regraft_records` still live; consolidation never applied (READ-ONLY)
+
+Investigation only — **no code, migration, model or DB change.** Trigger: phpMyAdmin shows both
+`regraft_records` **and** `replanting_records` live in `db_capstone`, i.e. the earlier "consolidation
+fix" (drop `regraft_records`, repoint the Stock Ledger's Regraft column at `Replanting_Record`)
+appears never applied. The four answers:
+
+1. **No drop migration exists.** The **only** regraft migration is
+   `database/migrations/2026_09_25_000009_create_regraft_records_table.php`, which **creates** the
+   table in `up()` and only drops it in `down()`. A repo-wide grep for `regraft_records` hits only:
+   that migration, `app/Models/RegraftRecord.php`, `Batch::regraftRecords()`
+   (`app/Models/Batch.php:98`) and `AnalyticsMetrics::stockLedgerGrid()` (`:579`/`:588`).
+2. **It has not been run** (it cannot have been — nothing exists to run). `php artisan migrate:status`:
+   every migration `Ran`, **0 Pending**; the only regraft line is
+   `2026_09_25_000009_create_regraft_records_table .. [22] Ran`.
+3. **The Stock Ledger "Regraft" column reads `regraft_records`, not `replanting_records`.**
+   `AnalyticsMetrics::stockLedgerGrid()` (`app/Support/AnalyticsMetrics.php:578-605`) runs
+   `RegraftRecord::query()...` and emits `'regraft' => [$varietyId => (int) $record->quantity]`.
+   Live check: `regraft_records` = **0 rows**, `replanting_records` = **13 rows** — so the column is
+   effectively empty while the real data sits in `replanting_records` (which also feeds the Regraft
+   page via `Batch::totalReplanted()`/`replantingDeficit()` and the Inventory snapshot's `regraft`
+   column, `InventoryController.php:105`).
+4. **`app/Models/RegraftRecord.php` is still present** (62 lines; `$table = 'regraft_records'`,
+   `totalForBatch()`), plus its relation `Batch::regraftRecords()` and the `AnalyticsMetrics` import
+   (`:8`).
+
+**Impact:** the Stock Ledger under-reports Regraft (always 0 today). **The consolidation remains
+outstanding** and is the immediate next action pending approval — see §6. **No data was changed.**
+
+### Session BV — `Scion_Receiving` entity: additive schema + model only (IMPLEMENTED)
+
+Built the **Scion Receiving record only** — a new, standalone entity. **No controller, route or view
+was added**, and the freshness/viability check was explicitly **out of scope** pending a client
+business-rule confirmation (no `usable_until`, no warning, no blocking). No test suite run (P6).
+
+**Confirmed open decisions (asked + answered before building):**
+1. `supplier_id` is **nullable** — scions are not always tied to a formal Supplier record.
+2. The origin field is a **single nullable `origin`** column (not `reference_number`, and not both).
+
+**Files created:**
+- `database/migrations/2026_09_26_000001_create_scion_receivings_table.php` — table
+  `scion_receivings`: `scion_receiving_id` PK (bigIncrements); `scion_variety_id` **required** FK →
+  `scion_varieties` (`restrictOnDelete`); `supplier_id` **nullable** FK → `suppliers`
+  (`restrictOnDelete`); `quantity` unsignedInteger; `unit_price` decimal(12,2) nullable;
+  `date_received` date (indexed); `origin` varchar nullable; `notes` text nullable. No timestamps.
+  No stock-balance column anywhere.
+- `app/Models/ScionReceiving.php` — `$table = 'scion_receivings'`, PK `scion_receiving_id`, no
+  timestamps; `belongsTo` `ScionVariety` (`scion_variety_id`) and `Supplier` (`supplier_id`);
+  casts `quantity` int / `unit_price` decimal:2 / `date_received` date; `reference()` → `SCR-###`
+  (presentation only); centralized `rules()` (RULE 6): `scion_variety_id` required +
+  `ScionVariety::activeExistsRule()`, `supplier_id` nullable + `Supplier::activeExistsRule()`,
+  `quantity` required integer min:1, `unit_price` nullable numeric min:0, `date_received` required
+  date `before_or_equal:today`, `origin` nullable max:255, `notes` nullable max:1000. Built-in
+  Laravel validation only — no extra table, no custom validator.
+
+**Docs updated:** `Scion_Receiving` added as ERD **§3.16** (with the table, purpose, and the
+additive/no-balance notes) plus its relationships in §4 (`Supplier └──< Scion_Receiving`,
+`Scion_Variety └──< Scion_Receiving`) — applied to **both** `docs/CacaoTrack_ERD_REVISED.md` and the
+**canonical** `docs/CacaoTrack_ERD.md` (kept byte-identical; SHA-256 match verified). The entry states
+explicitly that a **freshness/viability rule is PLANNED but NOT YET IMPLEMENTED** (no usable-until, no
+warning, no blocking) pending client confirmation of the allowed window and whether to warn or block.
+The PRD was **not** touched.
+
+**Deliberately NOT done (flags):** no CRUD controller/route/view (the traceability question — how
+usage should reference receiving records — is still open); no stock balance on `scion_varieties`; no
+touch to `RegraftRecord`/`ReplantingRecord`; no freshness/viability logic. **`AGENTS.md` updated (later
+docs pass, DONE):** it now lists **both** approved additive exceptions (`regraft_records` P5 Part B +
+`scion_receivings` Session BV) and explicitly marks the `regraft_records` consolidation as never applied.
+
+**Verification:** migration applied (`php artisan migrate --force`); `migrate:status` **0 Pending**
+(`2026_09_26_000001 .. Ran`); `php artisan db:table scion_receivings` confirms the exact column
+types/nulls and both FKs (`on delete restrict`); `vendor\bin\pint` passed; `php -l` clean; a tinker
+check confirms the model loads, `rules()` returns all 7 keys, and both relations exist. **No test
+suite run** (P6 — the suite still targets the OLD model). **Schema changed** (the DB is now **25
+tables**); **no operational data change** (the new table is empty). **Committed as its own isolated
+ checkpoint `33ff6b0`** (4 files: the migration, the model, and the two ERD docs) — `session.handoff.md`
+and the untracked `docs/*.csv` were deliberately left out of that commit.
+
+### Session BX — `regraft_records` consolidation APPLIED (code + migration, commit `22ef695`)
+
+The long-pending Session BU proposal was **actually applied this time** (an earlier report claimed it
+was done; it was not — the table, model, relation and the empty-table read were all still present).
+**Regraft and Replanting are the same recorded procedure**, so the duplicate `Regraft_Record` entity
+was retracted.
+
+**Files changed:**
+- **Added** `database/migrations/2026_09_26_000002_drop_regraft_records_table.php` — `up()` drops
+  `regraft_records`; a reversible `down()` recreates the (empty) table. The original create migration
+  `2026_09_25_000009_create_regraft_records_table.php` was **not edited** (kept as history).
+- **Deleted** `app/Models/RegraftRecord.php`.
+- **`app/Models/Batch.php`** — removed the `regraftRecords()` relation (the `ReplantingRecord`
+  relation remains).
+- **`app/Support/AnalyticsMetrics.php`** — removed the `use App\Models\RegraftRecord;` import, added
+  `use App\Models\ReplantingRecord;`, and rewrote the Stock Ledger's Re Graft block to query
+  `ReplantingRecord` by `replanting_date`, grouping per the batch's `scion_variety_id` (same shape as
+  the Mortality block). `regraft_records` had **0 rows**, so no data migration was needed.
+- **`app/Models/ScionReceiving.php`** — stale comment referencing `RegraftRecord` corrected.
+
+**Verification (literal, not summarized):** `php -l` clean + `vendor\bin\pint` **passed**;
+`php artisan migrate --force` → `2026_09_26_000002_drop_regraft_records_table .. DONE`;
+`migrate:status` **0 Pending**; tinker: `Schema::hasTable('regraft_records')` = **false**,
+`replanting_records` = **13 rows / SUM 195**, Stock Ledger grand Re Graft = **195**
+(Criollo 35 / Trinitario 15 / Forastero 15 / Diaman 110 / Batangas 10 / White Flag 10; was 0).
+A repo-wide grep for `regraft_records|RegraftRecord|regraftRecords` leaves **no live code references**
+— only the kept create migration, the new drop migration and the retraction notes.
+
+**Committed `22ef695`** (5 files changed, +60/−80). **No test suite run (P6).** ERD §2/§3.11 +
+`AGENTS.md` + this handoff updated (ERD canonical + `_REVISED` kept byte-identical).
+
 ## 3. Current database state (`db_capstone`)
 
-**Schema changed in Session BQ (P5 — the one approved exception):** migration
-`2026_09_25_000009_create_regraft_records_table` created the `regraft_records` table (0 rows — no
-fabricated data). No other schema/data change: the analytics layer is read-only. The DB is now
-**24 tables** (15 revised entities + `regraft_records` + framework).
+**Schema changed in Session BX (`regraft_records` dropped — the Session BU consolidation, APPLIED):**
+migration `2026_09_26_000002_drop_regraft_records_table` **dropped `regraft_records`** (it held **0
+rows** — no data migration needed; the create migration `2026_09_25_000009` is kept intact as
+history). The DB is **24 tables** again (15 revised entities + `scion_receivings` + framework).
+`app/Models/RegraftRecord.php` was deleted, `Batch::regraftRecords()` and the `AnalyticsMetrics` import
+were removed, and `AnalyticsMetrics::stockLedgerGrid()` now reads `replanting_records` (grouped by
+`replanting_date` + the batch's `scion_variety_id`). Live: `Schema::hasTable('regraft_records')` =
+**false**; the Stock Ledger's grand Re Graft = **195** = `replanting_records` **13 rows /
+SUM(quantity) 195** (was 0). Committed `22ef695`; no test suite run (P6).
+
+**Schema changed in Session BQ (P5 — the one approved exception at the time; RETRACTED in BX):**
+migration `2026_09_25_000009_create_regraft_records_table` created the `regraft_records` table (0 rows —
+no fabricated data). No other schema/data change: the analytics layer is read-only. The DB was **24
+tables** at that point (15 revised entities + `regraft_records` + framework); **Session BV later adds
+`scion_receivings` → 25 tables** (see the Session BV paragraph below); **Session BX later drops
+`regraft_records` → 24 tables again**.
+
+**No schema and no data change in Session BS.** The Gap-formula correction is code/view/PDF/CSV +
+`AGENTS.md` only; `db_capstone` was read read-only. A fresh read via `AnalyticsMetrics::gapReport()`
+returns `totalGap = 580` for all 9 batches (= `SUM(mortality_records.quantity)`), matching the
+Session BQ operational snapshot (`mortality_records` 17 rows / quantity **580**). No row was written.
+
+**No schema and no data change in Session BT** (display-text rename only — no migration run and
+`db_capstone` untouched). **No schema and no data change in Session BU** (read-only audit; the DB was
+read via `php artisan tinker` only). **Live confirmation (Session BU, historical):** `regraft_records`
+**still existed** (**0 rows**) alongside `replanting_records` (**13 rows**); `Schema::hasTable()`
+returned true for both. **Resolution:** Session BX **applied** the consolidation and dropped
+`regraft_records` (`Schema::hasTable()` now **false**).
+
+**Schema changed in Session BV (`Scion_Receiving` — a new table):** migration
+`2026_09_26_000001_create_scion_receivings_table` created `scion_receivings` (**0 rows — no fabricated
+data**). The DB was then **25 tables** (15 revised entities + `regraft_records` + `scion_receivings` +
+framework); **Session BX later drops `regraft_records` → 24 tables**. **No operational data was read or
+changed**, and `scion_varieties` gained **no** balance column. A freshness/viability rule is **NOT
+implemented**. No other schema/data change (`ReplantingRecord` untouched; `RegraftRecord` was later
+removed in Session BX).
 
 **Live `db_capstone` re-read in Session BQ (real UI usage — no session fabricated rows):** `users` 5;
 `scion_varieties` **8** (0 archived); `batches` **9** (0 archived); `stock_ins` **8** (quantity
@@ -3978,6 +4325,15 @@ fabricated data). No other schema/data change: the analytics layer is read-only.
 **12**; `activity_logs` **74**. Batch totals: `available_count` sum **1130**, `viable_count` sum
 **1170**, `total_grafted` sum **1450**. Scion varieties in use include Batangas, Batangas-Scion,
 Criollo, Diaman, Forastero, Trinitario, White Flag, tanom buh1.
+
+**Session BR audit (read-only) — the live operational rows are pre-refactor residue.** Every
+`batches.created_at` is `2026-09-12`…`2026-09-23` (< P1 `2026_09_25`); B001–B003 come from the seeder,
+B004–TAB008 from the old BatchController. All 7 `stock_out_details` are the migrated legacy headers
+(no post-refactor stock-out). `available_count` was backfilled from the old
+`inventories.current_quantity` (`2026_09_25_000007:41`), so it tracks
+`initial + stock-ins − stock-outs − reversals` = 1260 + 2250 − 2130 − 250 = **1130** and **not**
+`viable_count`. Hence B005 `available 600` > `viable 100`, and B001/B004 `available 0`.
+`viable − available` (40) ≠ stock-out (2130) is expected. **No data was changed.**
 
 **No schema and no data change in Session BO** (Phase 4 was the view/sidebar layer only — the one
 controller edit was a view-path string; no migration was run and `db_capstone` was not modified).
@@ -4390,6 +4746,63 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
       `Batch_Monitoring` is retained for history but is never written.
 
 ## 5. Verification status
+- **Session BX (`regraft_records` consolidation APPLIED): no test suite run** (deferred to P6 — the
+  seeders/tests still target the OLD model). **Verified with literal command output (not summarized):**
+  `php -l` clean on the changed files and `vendor\bin\pint` **passed**; `php artisan migrate --force`
+  applied `2026_09_26_000002_drop_regraft_records_table` (`DONE`); `php artisan migrate:status` shows
+  **0 Pending** (both `2026_09_25_000009` and `2026_09_26_000002` `Ran`); a live tinker read confirms
+  `Schema::hasTable('regraft_records')` = **false**, `replanting_records` = **13 rows / 195 quantity**,
+  and `AnalyticsMetrics::stockLedgerGrid()` now returns grand Re Graft **195** (Criollo 35 / Trinitario
+  15 / Forastero 15 / Diaman 110 / Batangas 10 / White Flag 10) instead of 0. A repo-wide grep for
+  `regraft_records|RegraftRecord|regraftRecords` returns **no live code references** (only the
+  intentionally-kept create migration `2026_09_25_000009`, the new drop migration, and the retraction
+  notes in the ERD/`AGENTS.md`/this handoff). **Schema changed** (`regraft_records` dropped; DB back to
+  **24 tables**); **0 data rows affected**. Committed **`22ef695`** (5 files changed, +60/−80).
+- **Session BW (docs sync): no test suite run** (docs-only; the suite still targets the OLD model —
+  P6). Verified read-only against `db_capstone`: `Schema::hasTable('regraft_records')` = **true**,
+  **0 rows**; `replanting_records` = **13 rows**; `migrate:status` shows `2026_09_25_000009` +
+  `2026_09_26_000001` `Ran` (**0 Pending**). Confirmed **no drop migration exists** and that
+  `app/Models/RegraftRecord.php`, `Batch::regraftRecords()` and `AnalyticsMetrics::stockLedgerGrid()`
+  still reference the empty table. **No code, migration, model or DB change.** Superseded by Session BX.
+- **Session BV (`Scion_Receiving` schema + model): no test suite run** (deferred to P6 — the
+  seeders/tests still target the OLD model). `php artisan migrate --force` applied
+  `2026_09_26_000001_create_scion_receivings_table`; **`migrate:status` 0 Pending**; `php artisan
+  db:table scion_receivings` confirms the 8 columns (nullable `supplier_id`/`unit_price`/`origin`/
+  `notes`) and both FKs `on delete restrict`; **`vendor\bin\pint` passed**; `php -l` clean on both new
+  files; a tinker check confirms the model loads, `rules()` returns all 7 keys, and `scionVariety()` /
+  `supplier()` exist. **Schema changed** (`scion_receivings` created; DB now **25 tables**); **no
+  operational data change**. Committed as its own checkpoint **`33ff6b0`** (4 files). Flags: no
+  controller/route/view; freshness/viability NOT implemented; `AGENTS.md`'s schema-exception line not
+  yet updated.
+- **Session BT (Regraft display rename): no test suite run** (deferred to P6 — the seeders/tests are
+  still the OLD model). `php artisan view:cache` clean; `vendor\bin\pint` passed; Dashboard KPIs
+  verified identical before/after (1130 / 40.00% / 385). **No migration run; no schema/data change.**
+  Committed `bd47433`; the two label-assertion tests (`DashboardTest:70`, `AnalyticsTest:167,192`)
+  were updated to the new text.
+- **Session BU (consolidation audit): read-only — no test suite run.** `db_capstone` was read via
+  `php artisan tinker` only; **no code/migration/model/DB change**. Confirmed: no drop migration
+  exists (only `2026_09_25_000009_create_regraft_records_table`, `Ran`, 0 Pending); the Stock Ledger's
+  Regraft column still reads `RegraftRecord`/`regraft_records` (`AnalyticsMetrics.php:578-605`); live
+  `regraft_records` = 0 rows vs `replanting_records` = 13 rows; `app/Models/RegraftRecord.php` and
+  `Batch::regraftRecords()` still present.
+- **Session BS (Gap formula corrected): no test suite run** (deferred to P6 —
+  `tests/Feature/AnalyticsTest.php` still asserts the old gap values and is part of the old-model
+  suite). **`php artisan view:cache` clean; `vendor\bin\pint` passed on all changed PHP files;
+  `php -l` clean.** Live `db_capstone` read read-only and **freshly queried against the corrected
+  formula**: all 9 batch gaps = B001 125, B002 20, B003 45, B004 300, B005 50, B006 30, B007 0,
+  TAB007 10, TAB008 0 → `totalGap = 580` = `SUM(mortality_records.quantity)`; the two zero batches
+  genuinely have 0 mortality rows. The FPDF renders (`%PDF-1.3`, 10,530 bytes) with the new
+  "Gap = effective mortality" note. **No migration run; no schema/data change.** Committed `1744975`
+  (the existing P5 commit `d139286` was not amended). Remaining flags: "Ready to Plant" mapping
+  (open) and the `regraft_records` CRUD UI (open).
+- **Session BR (live DB data audit): investigation only — no test suite run.** `db_capstone` was read
+  read-only via `php artisan tinker`; **no code/migration/seeder/test/DB change**. Confirmed all 9
+  batches and all 7 stock-outs are pre-refactor residue; `SUM(viable_count) = 1170`,
+  `SUM(available_count) = 1130` (old-ledger backfill), `SUM(stock_out_details.quantity) = 2130`; the
+  current Stock Out validation (`StockOutController::lockAndValidateBatches` `:180/:194/:215`,
+  decrement `:138`; `StoreStockOutRequest` has no availability rule) cannot exceed the locked
+  `available_count`, so this data was written by the OLD model. The complete `available_count` write
+  list and the no-increment/restore proof are in §2 Session BR.
 - **Session BQ (P5 Analytics/reports implemented): no test suite run** (deferred to P6 — the
   seeders/tests still target the OLD model). **`php -l` clean**; **`php artisan view:cache` clean**;
   **`vendor\bin\pint` passed** on all changed files; migration `2026_09_25_000009` applied
@@ -4400,7 +4813,8 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   exports. The Stock Ledger response contains the monthly grid markers (`September 2026`, `Seedlings`,
   `Re Graft`, `Ready to Plant`, `Pullout`, `GRAND TOTAL`). **Schema changed:** `regraft_records`
   created (the one approved P5 migration); `db_capstone` operational rows are unchanged. Flags: the
-  locked Gap formula currently resolves to **0**; "Ready to Plant" is a best-guess mapping.
+  locked Gap formula resolved to **0** at the time (**corrected in Session BS**); "Ready to Plant" is a
+  best-guess mapping.
 - **Session BP (housekeeping): no test suite run** — docs/git only (P4 commit `0803bdf` + the
   `AGENTS.md` banner commit `5a2a1ae`); **no code, migration, model, view, seeder or test file
   touched** and **no migration run / `db_capstone` unchanged**. Working tree is clean after the
@@ -4622,6 +5036,63 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
+- **▶ Session BX (DONE — the `regraft_records` consolidation APPLIED; code + migration, commit
+  `22ef695`):** `regraft_records` was **dropped** (0 rows — no data migration; migration
+  `2026_09_26_000002_drop_regraft_records_table`, create migration `2026_09_25_000009` kept as
+  history), `app/Models/RegraftRecord.php` deleted, `Batch::regraftRecords()` + the `AnalyticsMetrics`
+  import removed, and `AnalyticsMetrics::stockLedgerGrid()` repointed at **`replanting_records`**
+  (grouped by `replanting_date` + the batch's `scion_variety_id`, mirroring the Mortality column).
+  Live proof: `Schema::hasTable('regraft_records')` = **false**; Stock Ledger grand Re Graft = **195**
+  (= `replanting_records` 13 rows / SUM 195; was 0). **`AGENTS.md` + both ERD docs now list one
+  approved additive exception (`scion_receivings`).** No test suite run (P6). This **closes the Session
+  BU proposal.** **Remaining next action:** settle the Session BR P6 data policy (regenerate clean seed
+  data vs synthetic fixtures), then implement P6 (seeders/tests/docs/verify).
+- **▶ Session BW (historical — docs sync, verification only):** superseded by Session BX, which applied
+  the consolidation BW had verified as pending.
+- **▶ Session BV (DONE — `Scion_Receiving` schema + model only; commit `33ff6b0`):** added table
+  `scion_receivings` + `App\Models\ScionReceiving` (ERD §3.16; both ERD docs updated, byte-identical).
+  Confirmed: `supplier_id` **nullable**, a **single nullable `origin`** column. **Additive only** — no
+  controller/route/view, no balance on `scion_varieties`, `ReplantingRecord` untouched.
+  Validation is `ScionReceiving::rules()` (built-in rules; no extra table). **Freshness/viability NOT
+  implemented** (no usable-until, no warning, no blocking) pending client confirmation. **Follow-ups
+  (open):** (1) the usage/traceability link (how a future operation references a receiving record) is
+  still undefined — no CRUD UI yet; (2) **RESOLVED** — `AGENTS.md` now lists **one** approved additive
+  exception (`scion_receivings` Session BV; `regraft_records` was retracted in Session BX); (3) the
+  client must confirm the allowed viability window + warn-vs-block before any freshness logic is built.
+  **No operational data changed.**
+- **▶ Session BU (read-only audit — consolidation PROPOSED there, do not re-run; NOW APPLIED IN BX).**
+  Session BU had found `regraft_records` still present (0 rows) with no drop migration and the Stock
+  Ledger reading the empty table instead of `replanting_records`' 13 rows. **Resolution (Session BX,
+  commit `22ef695`):** all five proposed steps were executed — (1) `stockLedgerGrid()` repointed at
+  `ReplantingRecord` (`replanting_records.quantity` / `replanting_date`); (2) `Batch::regraftRecords()`
+  + the `App\Models\RegraftRecord` import removed; (3) `app/Models/RegraftRecord.php` deleted; (4) a
+  `down()`-safe migration `2026_09_26_000002_drop_regraft_records_table` added (the create migration
+  `2026_09_25_000009` left as history); (5) `Regraft_Record` retired in `AGENTS.md` / the ERD, leaving
+  `scion_receivings` as the only additive exception. **No operational data was changed.**
+- **▶ Session BT (DONE — Regraft display rename; commit `bd47433`):** user-facing "Replanting" is now
+  "Regraft" everywhere (sidebar, KPI cards, Stock Ledger header, PDF/CSV headers, Activity label,
+  permission label, copy); internal names unchanged; Dashboard KPIs identical (1130 / 40.00% / 385).
+  **No DB/schema/data change.** Not to be confused with the Session BU consolidation, which is about
+  the *data source* (which table the ledger reads), not the label.
+- **▶ Session BS (DONE — Gap formula corrected; commit `1744975`):** `Gap = Batch::effectiveMortalityQuantity()`.
+  The prior "Open decision #1" is **CLOSED**. The old
+  `max(0, viable_count − available_count − total_stock_out_for_batch)` was an identity that always
+  resolved to 0 (Stock Out is already netted out of `available_count`). Verified live: 9 batches, row
+  gaps sum to `totalGap = 580` = `SUM(mortality_records.quantity)`. **No DB/schema/data change**;
+  `AGENTS.md` + the Gap view/PDF/CSV updated. **Still open:** "Ready to Plant" mapping. (The former
+  `regraft_records` CRUD UI flag is **dropped** — the table was retracted in Session BX.) **NEXT is
+  unchanged: P6** (after the data-policy decision below).
+- **▶ Session BR data finding (read-only audit; decide BEFORE P6):** the live `db_capstone`
+  operational rows are all **pre-refactor residue** (batches created `2026-09-12`…`23`, all 7
+  stock-outs migrated from the OLD schema). `batches.available_count` was backfilled once from the old
+  `inventories.current_quantity`, so it equals the old ledger (`initial + stock-ins − stock-outs −
+  reversals` = 1130), **not** `viable_count − stock_out`; this fully explains the P5 Gap=0 flag and
+  the `viable − available` (40) vs stock-out (2130) mismatch. The current validated Stock Out path
+  (`StockOutController::lockAndValidateBatches` `:180/:194/:215`; `StoreStockOutRequest` has no
+  availability rule) would reject those releases, so they are not reproducible today. **Decide the P6
+  data policy:** (a) regenerate clean seed data (and reconcile `available_count`), or (b) leave the
+  live rows and build P6 seeders/tests from synthetic fixtures. **No data was changed.** See §2
+  Session BR / §3.
 - **▶ NEXT — Revised PRD/ERD refactor: P0 + P1 + P2 + P3 + P4 + P5 DONE; implement P6 (Tests/docs/verify) next.**
   **Session BP housekeeping:** P4 committed as `0803bdf` and the `AGENTS.md` banner corrected in
   `5a2a1ae` — no code/DB change, no test suite run. The revised **15-entity** `docs/CacaoTrack_PRD.md`
@@ -4632,13 +5103,14 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   modules removed, the scion-varieties CRUD view added, and Batches/Stock In/Stock Out/Inventory/
   Mortality reworked; runtime smoke test 200s). **P5 (DONE — Session BQ, checkpoint `d139286`) migrated
   the analytics/report layer**: `AnalyticsMetrics` rewritten onto the current models, Dashboard `/`
-  returns **200**, Stock Ledger is a monthly grid, PDF/CSV rebuilt, plus the one approved
-  `regraft_records` migration/model. **The seeders/tests (P6) are still the OLD model** — the feature
+  returns **200**, Stock Ledger is a monthly grid, PDF/CSV rebuilt, plus the then-approved
+  `regraft_records` migration/model (**retracted in Session BX — see the banner**). **The seeders/tests
+  (P6) are still the OLD model** — the feature
   suite still fails until P6 rewrites it (expected). (The `/activity` and user delete-guard flags were
   fixed in Session BO — see above.) Pre-P1 backup:
-  `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`. **P5 flags:** locked Gap formula
-  currently resolves to **0** (available_count already nets Stock Out); "Ready to Plant" is a
-  best-guess mapping. **P2 delivered:** added
+  `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`. **P5 flags:** the locked Gap formula
+  resolved to **0** at the time — **corrected in Session BS (DONE)** to
+  `Gap = Batch::effectiveMortalityQuantity()`; "Ready to Plant" is a best-guess mapping. **P2 delivered:** added
   `ScionVariety`/`StockOutDetail`; reworked `Batch`/`StockIn`/`StockOut`/`Inventory`/`MortalityRecord`
   (replanting unchanged); deleted `BatchMonitoring`/`Variety`/`PotType`/`Scion`/`MortalityAdjustment`/
   `StockReversal`/`ScionMetrics`; fixed `Analytic::rules()` + `ActivityLog::TYPES`; **no new table**.
@@ -4663,7 +5135,8 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   **P4 (DONE — Session BO, committed Session BP as `0803bdf`)** views/sidebar implemented (sidebar repointed to the P3 routes; dead
   modules removed; `operational/scion-varieties` CRUD view added; Batches/Stock In/Stock Out/
   Inventory/Mortality reworked; runtime smoke test returns 200s — see the Session BO entry in §2);
-  **P5 (NEXT)** analytics/reports (Gap = `viable_count − available_count`); **P6** tests/docs/verify. **All open decisions are RESOLVED:** P1-era: (a)
+  **P5 (DONE — Session BQ `d139286`; Gap corrected in Session BS `1744975`):
+  analytics/reports (Gap = `Batch::effectiveMortalityQuantity()`); **P6** tests/docs/verify. **All open decisions are RESOLVED:** P1-era: (a)
   monthly `inventories` rows are written by an explicit **"Record Monthly Inventory"** action (stored
   snapshots), not auto-derived; (b) `stock_out_details.unit` is a **fixed list**
   `seedlings`/`pieces`/`bags`; (c) `stock_ins.origin` is NOT NULL with legacy `''`. **P2-era (Session
@@ -4970,8 +5443,16 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
 
 ## 7. Constraints to keep honoring
 - Follow the ERD; do not invent/rename columns or tables without recording an explicit ERD revision.
-  The **only** approved exception is `regraft_records` + `RegraftRecord` (P5 Part B); do not extend
-  that pattern or add a Regraft CRUD UI without explicit approval.
+  There is **one approved additive exception** — `scion_receivings` + `ScionReceiving` (Session BV,
+  migration `2026_09_26_000001`, commit `33ff6b0`; receiving log only, no stock balance, freshness rule
+  not implemented). Do not extend that pattern without explicit approval. Validate with built-in
+  Laravel rules; do not add a table for validation.
+- **Regraft is not a separate entity (resolved in Session BX):** `regraft_records` / `RegraftRecord`
+  was **retracted** — it duplicated `Replanting_Record` and held 0 rows. It was dropped by migration
+  `2026_09_26_000002_drop_regraft_records_table` (commit `22ef695`), the model/relation/import were
+  removed, and the Stock Ledger's Regraft column now reads `replanting_records` (real **13 rows**,
+  grand Re Graft **195**). Do not reintroduce a separate Regraft table or CRUD UI; record a Regraft as
+  a `Replanting_Record`.
 - Real data only — no hardcoded KPIs/chart values.
 - Inventory/stock operations must be transaction-safe: Stock Out validates every line, writes the
   header + all detail lines and decrements `batches.available_count` inside one `DB::transaction`;

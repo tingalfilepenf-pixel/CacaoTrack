@@ -17,11 +17,9 @@ STOCK IN
       ↓
 ESTABLISH BATCH / GRAFT
       ↓
-REGRAFT WHEN NEEDED
-      ↓
 CHECK SCION VARIETY AVAILABILITY
       ↓
-MORTALITY / REPLANTING
+MORTALITY / REGRAFT (REPLANTING)
       ↓
 21-DAY CYCLE
       ↓
@@ -224,7 +222,9 @@ CLIENT
 | — | `Replanting_Date` |
 | — | `Remark` |
 
-**Purpose:** Records replacement/replanting activity associated with a Batch after mortality or other applicable losses.
+**Purpose:** Records replacement/replanting activity associated with a Batch after mortality or other applicable losses. **Regraft and Replanting are the same recorded procedure** — a Regraft is recorded as a `Replanting_Record`; there is no separate Regraft event table.
+
+**Retraction note (P5 Part B):** an additional `regraft_records` / `Regraft_Record` table was briefly proposed and created during the P5 analytics work, but it duplicated `Replanting_Record`. It was retracted after confirming the duplication — the table held **0 rows**, so it was dropped with **no data migration** needed. The Stock Ledger's Regraft column reads `Replanting_Record` directly.
 
 ---
 
