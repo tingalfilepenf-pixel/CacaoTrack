@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Validation\Rule;
@@ -15,6 +16,8 @@ use Illuminate\Validation\Rule;
  */
 class StockOutDetail extends Model
 {
+    use HasFactory;
+
     protected $table = 'stock_out_details';
 
     protected $primaryKey = 'stock_out_detail_id';

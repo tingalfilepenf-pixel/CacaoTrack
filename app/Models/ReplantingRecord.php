@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ReplantingRecord extends Model
 {
+    use HasFactory;
+
     protected $table = 'replanting_records';
 
     protected $primaryKey = 'replanting_id';

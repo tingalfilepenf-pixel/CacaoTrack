@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Archivable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ScionVariety extends Model
 {
     use Archivable;
+    use HasFactory;
 
     protected $table = 'scion_varieties';
 
