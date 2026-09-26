@@ -13,6 +13,9 @@
   `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md` now contain the revised content; identical
   copies are retained for provenance at `docs/CacaoTrack_PRD_REVISED.md` /
   `docs/CacaoTrack_ERD_REVISED.md`. The **canonical files (no `_REVISED` suffix) are authoritative.**
+  The `_REVISED` copies are **not frozen**: whenever a canonical PRD/ERD changes, update the matching
+  `_REVISED` copy in the same change so the pair stays **byte-identical** (SHA-256 match) — this is the
+  project's established practice (e.g. Sessions BY/BX), not an optional courtesy.
 - **P1 (schema), P2 (models), P3 (controllers/routes), P4 (views/sidebar), P5 (analytics/reports) and
   P6 (seeders/tests) are DONE.** `db_capstone` uses the revised schema, `app/Models` matches it
   (Session BM), `app/Http/Controllers` + `routes/web.php` match it (Session BN, checkpoint `3d3f9f9`),
@@ -41,6 +44,13 @@
   Stock In form as a **"Scion" tab** beside the "Seedlings" tab (one form, one table, no discriminator
   column). `/operational/scion-receivings` no longer exists; the data is under **Stock In**. **No
   stock balance** is held on `scion_varieties`; the freshness/viability rule remains NOT implemented.
+  **Live `db_capstone` was migrated** in the same session, after a fresh verified backup at
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_backup_cc_20260926_170736.sql`
+  (36,778 B, 24 tables, clean "Dump completed" trailer): `scion_receivings` **2 rows** were carried
+  into `stock_ins` (table total **2 → 4**; the 2 scion rows read `viable == quantity`) and the table was
+  dropped; `migrate:status` **0 Pending** on both `db_capstone` and `db_capstone_test`. (First live run
+  correctly failed because `users` uses Laravel's default `id` PK, not `user_id`; the migration now
+  detects the key — no data was lost.)
 - **`regraft_records` retracted (Session BX — resolved; was P5 Part B):** `RegraftRecord` was a P5
   approved schema exception that **duplicated `Replanting_Record`**; in the company's process Regraft
   and Replanting are the **same recorded procedure**. It was dropped by migration
@@ -325,19 +335,22 @@ the P1–P3 schema transition (now complete); P6 rewrites tests + docs. (For ful
   apply the delta → record Activity History → commit; roll back on any failure (revised PRD §8).
 
 ## P6 deferred items (confirmed open — DO NOT implement without sign-off)
-1. **Scion receiving linkage (traceability):** grafting/regrafting records referencing a specific
-   scion-inclusive **`Stock_In`** row so scion material can be traced. **No stock-balance deduction.**
-   The route/controller/validation/views/tests are to be added only after the workflow is confirmed
-   with the client. A scion receiving is currently just a `Stock_In` row with `scion_variety_id` set.
-2. **Freshness/viability rule for received scion:** no usable-until value, no warning, no blocking.
+1. **Stock In scion-tab UI (DELIVERED in Session CC):** scion receiving is entered through the
+   Stock In form's **"Scion" tab** (scion variety + unit price + notes; server sets `viable =
+   quantity`). This is what exists now. The former standalone **"Scion Receiving CRUD UI" item is
+   obsolete/closed** — the `/operational/scion-receivings` page, controller, request and route no
+   longer exist. **Optional unbuilt slices (client-gated, do not build unprompted):** Edit / Archive /
+   Details for a scion receipt row.
+2. **Scion receiving traceability (still open, client-gated):** grafting/regrafting records referencing
+   a specific scion-inclusive **`Stock_In`** row (one created via the Stock In "Scion" tab) so scion
+   material can be traced. **No stock-balance deduction.** The route/controller/validation/views/tests
+   are to be added only after the workflow is confirmed with the client.
+3. **Freshness/viability rule for received scion:** no usable-until value, no warning, no blocking.
    Pending client confirmation of (a) the allowed viability window and (b) whether to warn or block.
-   (The former "Scion Receiving CRUD UI" item is **closed** — Add/list/validation now live in the
-   Stock In form's "Scion" tab; see the Session CC banner. Edit/Archive/Details remain unbuilt, but the
-   entity is no longer standalone.)
-3. **Stock Ledger "Ready to Plant" mapping:** currently maps to the batch's live `available_count`,
+4. **Stock Ledger "Ready to Plant" mapping:** currently maps to the batch's live `available_count`,
    aligned to its `grafted_date`. This is an unconfirmed best-guess interpretation. **Leave the
    implementation exactly as-is** (code + PDF) until the client confirms the definition.
-4. **`db_capstone` data policy (Part F below):** **EXECUTED 2026-09-26** — `db_capstone` was backed
+5. **`db_capstone` data policy (Part F below):** **EXECUTED 2026-09-26** — `db_capstone` was backed
    up, then wiped and reseeded with fresh, schema-valid data (Session CA). See the section below.
 
 ## `db_capstone` data policy — EXECUTED (wipe + reseed, 2026-09-26)
@@ -366,3 +379,11 @@ pre-refactor residue is gone and the seeder now enforces the app's own invariant
   Tests must still point only at `db_capstone_test`; any further destructive action against the live
   DB requires fresh explicit sign-off. (The former "preserve the residue" fallback no longer
   applies — the residue is gone.)
+- **Post-policy schema change on the live DB (Session CC):** the client-confirmed Scion_Receiving →
+  Stock_In merge ran `2026_09_26_000003` + `2026_09_26_000004` against `db_capstone` **after a fresh
+  verified backup** at
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_backup_cc_20260926_170736.sql`
+  (36,778 B / 24 tables). It was **not** destructive of any receiving data: the 2 `scion_receivings`
+  rows were migrated into `stock_ins` (`stock_ins` 2 → 4; scion rows `viable == quantity`) and then the
+  empty table was dropped. `migrate:status` 0 Pending. This was an additive+data-migrating schema
+  change, not a wipe/reseed; the wipe policy above still stands.
