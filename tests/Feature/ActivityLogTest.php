@@ -4,29 +4,27 @@ namespace Tests\Feature;
 
 use App\Models\ActivityLog;
 use App\Models\Batch;
-use App\Models\PotType;
-use App\Models\Scion;
+use App\Models\ScionVariety;
 use App\Models\Supplier;
 use App\Models\User;
-use App\Models\Variety;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
 use Tests\TestCase;
 
+/**
+ * Activity History (Activity_Log) on the revised model. The centralized
+ * `ActivityLog::record()` writer is the single audit entry point (RULE 6).
+ */
 class ActivityLogTest extends TestCase
 {
     use RefreshDatabase;
 
     private function createBatch(User $user, int $viable = 100, string $code = 'B001'): Batch
     {
-        $variety = Variety::create(['variety_name' => 'Criollo']);
-        $scion = Scion::create(['scion_name' => 'ICS-1']);
-        $potType = PotType::create(['pot_name' => 'Standard Polybag']);
+        $variety = ScionVariety::create(['scion_variety_name' => 'Criollo']);
 
         return Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
+            'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => $code,
             'total_grafted' => $viable,
@@ -34,7 +32,7 @@ class ActivityLogTest extends TestCase
             'available_count' => $viable,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
-            'status' => 'active',
+            'status' => Batch::STATUS_ACTIVE,
         ]);
     }
 
@@ -96,9 +94,7 @@ class ActivityLogTest extends TestCase
         ActivityLog::record(null, ActivityLog::TYPE_TASK_COMPLETED, 'Completed task: Admin action.', $admin->id);
         ActivityLog::record(null, ActivityLog::TYPE_TASK_COMPLETED, 'Completed task: Staff action.', $other->id);
 
-        // Assert on the filtered page dataset rather than raw HTML: the navbar
-        // notification bell also renders real notification text on every page
-        // (ERD §2.19), so assertDontSee() is no longer page-scoped.
+        // Assert on the filtered page dataset rather than raw HTML.
         $response = $this->actingAs($admin)
             ->get(route('activity.index', ['user_id' => $admin->id]));
 
@@ -222,7 +218,7 @@ class ActivityLogTest extends TestCase
         $user = User::factory()->create();
         $batch = $this->createBatch($user);
 
-        $log = ActivityLog::record($batch->batch_id, ActivityLog::TYPE_REPLANTING_RECORDED, 'Recorded replanting.', $user->id);
+        $log = ActivityLog::record($batch->batch_id, ActivityLog::TYPE_REPLANTING_RECORDED, 'Recorded regraft.', $user->id);
 
         $this->assertTrue($log->user->is($user));
         $this->assertTrue($log->batch->is($batch));
@@ -248,10 +244,9 @@ class ActivityLogTest extends TestCase
         ]);
     }
 
-    public function test_recording_stock_in_writes_an_activity_log(): void
+    public function test_recording_stock_in_writes_an_unbound_activity_log(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user);
         $supplier = Supplier::create([
             'supplier_name' => 'Davao Cacao Growers',
             'contact_number' => '0917-111-2233',
@@ -260,16 +255,18 @@ class ActivityLogTest extends TestCase
 
         $this->actingAs($user)->post(route('inventory.stock-in.store'), [
             'supplier_id' => $supplier->supplier_id,
-            'batch_id' => $batch->batch_id,
             'quantity' => 100,
+            'viable' => 95,
+            'origin' => 'Calinan',
             'date_received' => '2026-09-12',
         ])->assertRedirect(route('inventory.stock-in'));
 
+        // Stock In has no batch, so the audit row is unbound (batch_id NULL).
         $this->assertDatabaseHas('activity_logs', [
             'user_id' => $user->id,
-            'batch_id' => $batch->batch_id,
+            'batch_id' => null,
             'activity_type' => ActivityLog::TYPE_STOCK_IN_RECORDED,
-            'description' => 'Received 100 trees from Davao Cacao Growers for B001.',
+            'description' => 'Received 100 seedlings from Davao Cacao Growers (origin: Calinan); viable 95.',
         ]);
     }
 

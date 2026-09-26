@@ -4,12 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\ActivityLog;
 use App\Models\Batch;
-use App\Models\Inventory;
 use App\Models\MortalityRecord;
-use App\Models\PotType;
-use App\Models\Scion;
+use App\Models\ScionVariety;
 use App\Models\User;
-use App\Models\Variety;
 use App\Support\AnalyticsMetrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -20,14 +17,10 @@ class DashboardTest extends TestCase
 
     private function makePopulation(User $user, int $grafted = 200, int $viable = 180, int $mortality = 20): Batch
     {
-        $variety = Variety::create(['variety_name' => 'Criollo', 'description' => 'Test variety']);
-        $scion = Scion::create(['scion_name' => 'ICS-1', 'description' => 'Test scion']);
-        $potType = PotType::create(['pot_name' => 'Standard Polybag', 'description' => 'Test pot']);
+        $variety = ScionVariety::create(['scion_variety_name' => 'Criollo', 'description' => 'Test variety']);
 
         $batch = Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
+            'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => 'B001',
             'total_grafted' => $grafted,
@@ -35,10 +28,8 @@ class DashboardTest extends TestCase
             'available_count' => $viable,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
-            'status' => 'active',
+            'status' => Batch::STATUS_ACTIVE,
         ]);
-
-        Inventory::syncFromBatch($batch, true);
 
         if ($mortality > 0) {
             MortalityRecord::create([
@@ -101,8 +92,9 @@ class DashboardTest extends TestCase
         $response->assertSee('survivalChart');
         $response->assertSee('inventoryVarietyChart');
         $response->assertViewHas('mortalityTrend', fn (array $trend) => $trend['total'] === 20);
-        $response->assertViewHas('inventoryByVariety', fn (array $data) => $data['values'] === [180]);
-        $response->assertViewHas('survivalVsMortality', fn (array $data) => $data['surviving'] === 180 && $data['mortality'] === 20);
+        $response->assertViewHas('inventoryByScionVariety', fn (array $data) => $data['values'] === [180]);
+        // surviving = viable 180 - recorded mortality 20
+        $response->assertViewHas('survivalVsMortality', fn (array $data) => $data['surviving'] === 160 && $data['mortality'] === 20);
     }
 
     public function test_dashboard_shows_empty_states_and_no_fabricated_charts_when_there_is_no_data(): void

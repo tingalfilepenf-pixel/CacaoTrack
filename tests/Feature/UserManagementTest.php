@@ -4,11 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\ActivityLog;
 use App\Models\Batch;
-use App\Models\PotType;
 use App\Models\Role;
-use App\Models\Scion;
+use App\Models\ScionVariety;
 use App\Models\User;
-use App\Models\Variety;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -39,14 +37,10 @@ class UserManagementTest extends TestCase
 
     private function createBatchFor(User $owner, string $code = 'B900'): Batch
     {
-        $variety = Variety::create(['variety_name' => 'Test Variety '.$code]);
-        $scion = Scion::create(['scion_name' => 'Test Scion '.$code]);
-        $potType = PotType::create(['pot_name' => 'Test Pot '.$code]);
+        $variety = ScionVariety::create(['scion_variety_name' => 'Test Variety '.$code]);
 
         return Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
+            'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $owner->id,
             'batch_code' => $code,
             'total_grafted' => 100,
@@ -54,7 +48,7 @@ class UserManagementTest extends TestCase
             'available_count' => 100,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
-            'status' => 'active',
+            'status' => Batch::STATUS_ACTIVE,
         ]);
     }
 

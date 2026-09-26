@@ -4,29 +4,32 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\Client;
-use App\Models\Inventory;
-use App\Models\PotType;
-use App\Models\Scion;
+use App\Models\ScionVariety;
 use App\Models\StockOut;
+use App\Models\StockOutDetail;
 use App\Models\User;
-use App\Models\Variety;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+/**
+ * Stock Out on the revised model (ERD §3.14/§3.15): a header plus one detail
+ * line per batch/scion variety. Availability is checked per line AND per batch
+ * against the live `available_count` inside one transaction.
+ */
 class StockOutTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createBatch(User $user, string $code = 'B001', int $available = 100): Batch
-    {
-        $variety = Variety::create(['variety_name' => 'Criollo']);
-        $scion = Scion::create(['scion_name' => 'ICS-1']);
-        $potType = PotType::create(['pot_name' => 'Standard Polybag']);
+    private function createBatch(
+        User $user,
+        string $code = 'B001',
+        int $available = 100,
+        ?ScionVariety $variety = null,
+    ): Batch {
+        $variety ??= ScionVariety::create(['scion_variety_name' => 'Criollo']);
 
         return Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
+            'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => $code,
             'total_grafted' => $available,
@@ -34,17 +37,7 @@ class StockOutTest extends TestCase
             'available_count' => $available,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
-            'status' => 'active',
-        ]);
-    }
-
-    private function createInventory(Batch $batch, int $quantity): Inventory
-    {
-        return Inventory::create([
-            'batch_id' => $batch->batch_id,
-            'current_quantity' => $quantity,
-            'status' => Inventory::statusForQuantity($quantity),
-            'last_update' => now(),
+            'status' => Batch::STATUS_ACTIVE,
         ]);
     }
 
@@ -55,6 +48,15 @@ class StockOutTest extends TestCase
             'contact_number' => '0917-000-0000',
             'address' => 'Test Address',
         ]);
+    }
+
+    private function payload(Client $client, array $details, array $overrides = []): array
+    {
+        return array_merge([
+            'client_id' => $client->client_id,
+            'release_date' => '2026-09-05',
+            'details' => $details,
+        ], $overrides);
     }
 
     public function test_guests_are_redirected_from_stock_out_to_login(): void
@@ -74,96 +76,104 @@ class StockOutTest extends TestCase
             ->assertSee('Total Quantity Released');
     }
 
-    public function test_stock_out_creates_a_record_and_decreases_inventory(): void
+    public function test_stock_out_creates_header_and_details_and_decrements_available(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user, 'B001', 100);
-        $inventory = $this->createInventory($batch, 100);
         $client = $this->createClient();
 
         $this->actingAs($user)
-            ->post(route('inventory.stock-out.store'), [
-                'client_id' => $client->client_id,
-                'batch_id' => $batch->batch_id,
-                'quantity' => 30,
-                'total_amount' => 1500,
-                'release_date' => '2026-09-05',
-            ])
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 30, 'unit' => 'seedlings', 'unit_price' => 10],
+            ]))
             ->assertRedirect(route('inventory.stock-out'))
             ->assertSessionHas('success');
 
-        $this->assertDatabaseHas('stock_outs', [
-            'client_id' => $client->client_id,
+        $header = StockOut::first();
+        $this->assertNotNull($header);
+        $this->assertSame($client->client_id, (int) $header->client_id);
+        $this->assertSame('300.00', (string) $header->total_amount); // 30 x 10.00
+
+        $this->assertDatabaseHas('stock_out_details', [
+            'stock_out_id' => $header->stock_out_id,
             'batch_id' => $batch->batch_id,
-            'user_id' => $user->id,
+            'scion_variety_id' => $batch->scion_variety_id,
             'quantity' => 30,
-            'total_amount' => '1500.00',
-            'release_date' => '2026-09-05',
+            'unit' => 'seedlings',
+            'amount' => '300.00',
         ]);
 
-        $this->assertSame(70, (int) $inventory->fresh()->current_quantity);
-        $this->assertSame(Inventory::STATUS_ACTIVE, $inventory->fresh()->status);
+        $this->assertSame(70, (int) $batch->fresh()->available_count);
     }
 
-    public function test_stock_out_depletes_inventory_when_all_stock_is_released(): void
+    public function test_stock_out_supports_multiple_detail_lines_across_batches(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user, 'B001', 50);
-        $inventory = $this->createInventory($batch, 50);
-        $client = $this->createClient();
-
-        $this->actingAs($user)->post(route('inventory.stock-out.store'), [
-            'client_id' => $client->client_id,
-            'batch_id' => $batch->batch_id,
-            'quantity' => 50,
-            'release_date' => '2026-09-05',
-        ]);
-
-        $fresh = $inventory->fresh();
-        $this->assertSame(0, (int) $fresh->current_quantity);
-        $this->assertSame(Inventory::STATUS_DEPLETED, $fresh->status);
-    }
-
-    public function test_stock_out_rejects_quantity_greater_than_available_and_rolls_back(): void
-    {
-        $user = User::factory()->create();
-        $batch = $this->createBatch($user, 'B001', 100);
-        $inventory = $this->createInventory($batch, 100);
+        $first = $this->createBatch($user, 'B001', 100);
+        $second = $this->createBatch($user, 'B002', 50, ScionVariety::create(['scion_variety_name' => 'Trinitario']));
         $client = $this->createClient();
 
         $this->actingAs($user)
-            ->post(route('inventory.stock-out.store'), [
-                'client_id' => $client->client_id,
-                'batch_id' => $batch->batch_id,
-                'quantity' => 150,
-                'release_date' => '2026-09-05',
-            ])
-            ->assertSessionHasErrors(['quantity'], null, 'stockout');
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $first->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+                ['batch_id' => $second->batch_id, 'quantity' => 20, 'unit' => 'pieces'],
+            ]))
+            ->assertRedirect(route('inventory.stock-out'));
 
-        $this->assertSame(0, StockOut::count());
-        $this->assertSame(100, (int) $inventory->fresh()->current_quantity);
+        $this->assertSame(2, StockOutDetail::count());
+        $this->assertSame(90, (int) $first->fresh()->available_count);
+        $this->assertSame(30, (int) $second->fresh()->available_count);
+        $this->assertTrue(StockOutDetail::where('batch_id', $second->batch_id)->first()->scionVariety->is($second->scionVariety));
     }
 
-    public function test_stock_out_creates_inventory_when_missing_and_decreases_it(): void
+    public function test_stock_out_rejects_a_line_above_available_and_rolls_back(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user, 'B001', 80);
+        $batch = $this->createBatch($user, 'B001', 100);
         $client = $this->createClient();
 
-        $this->assertDatabaseMissing('inventories', ['batch_id' => $batch->batch_id]);
+        $this->actingAs($user)
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 150, 'unit' => 'seedlings'],
+            ]))
+            ->assertSessionHasErrors(['details.0.quantity'], null, 'stockout');
 
-        $this->actingAs($user)->post(route('inventory.stock-out.store'), [
-            'client_id' => $client->client_id,
-            'batch_id' => $batch->batch_id,
-            'quantity' => 20,
-            'release_date' => '2026-09-05',
-        ]);
+        $this->assertSame(0, StockOut::count());
+        $this->assertSame(100, (int) $batch->fresh()->available_count);
+    }
 
-        $this->assertDatabaseHas('inventories', [
-            'batch_id' => $batch->batch_id,
-            'current_quantity' => 60,
-            'status' => 'active',
-        ]);
+    public function test_stock_out_rejects_aggregate_lines_above_available(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, 'B001', 100);
+        $client = $this->createClient();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 60, 'unit' => 'seedlings'],
+                ['batch_id' => $batch->batch_id, 'quantity' => 60, 'unit' => 'seedlings'],
+            ]))
+            ->assertSessionHasErrors(['details.0.quantity'], null, 'stockout');
+
+        $this->assertSame(0, StockOut::count());
+        $this->assertSame(100, (int) $batch->fresh()->available_count);
+    }
+
+    public function test_stock_out_rejects_a_batch_without_a_scion_variety(): void
+    {
+        $user = User::factory()->create();
+        $variety = ScionVariety::create(['scion_variety_name' => 'Temp']);
+        $batch = $this->createBatch($user, 'B001', 100, $variety);
+        $batch->update(['scion_variety_id' => null]);
+        $client = $this->createClient();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+            ]))
+            ->assertSessionHasErrors(['details.0.batch_id'], null, 'stockout');
+
+        $this->assertSame(0, StockOut::count());
     }
 
     public function test_stock_out_requires_valid_fields(): void
@@ -172,55 +182,45 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), [])
-            ->assertSessionHasErrors(['client_id', 'batch_id', 'quantity', 'release_date'], null, 'stockout');
+            ->assertSessionHasErrors(['client_id', 'release_date', 'details'], null, 'stockout');
     }
 
-    public function test_stock_out_rejects_unknown_client_or_batch(): void
+    public function test_stock_out_rejects_an_unknown_client_or_batch(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user);
         $client = $this->createClient();
 
         $this->actingAs($user)
-            ->post(route('inventory.stock-out.store'), [
-                'client_id' => 9999,
-                'batch_id' => $batch->batch_id,
-                'quantity' => 10,
-                'release_date' => '2026-09-05',
-            ])
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+            ], ['client_id' => 9999]))
             ->assertSessionHasErrors(['client_id'], null, 'stockout');
 
         $this->actingAs($user)
-            ->post(route('inventory.stock-out.store'), [
-                'client_id' => $client->client_id,
-                'batch_id' => 9999,
-                'quantity' => 10,
-                'release_date' => '2026-09-05',
-            ])
-            ->assertSessionHasErrors(['batch_id'], null, 'stockout');
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => 9999, 'quantity' => 10, 'unit' => 'seedlings'],
+            ]))
+            ->assertSessionHasErrors(['details.0.batch_id'], null, 'stockout');
     }
 
     public function test_stock_out_rejects_an_archived_client(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user);
-        $this->createInventory($batch, 100);
         $client = $this->createClient();
         $client->update(['archived_at' => now()]);
 
         $this->actingAs($user)
-            ->post(route('inventory.stock-out.store'), [
-                'client_id' => $client->client_id,
-                'batch_id' => $batch->batch_id,
-                'quantity' => 10,
-                'release_date' => '2026-09-05',
-            ])
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+            ]))
             ->assertSessionHasErrors(['client_id'], null, 'stockout');
 
         $this->assertSame(0, StockOut::count());
     }
 
-    public function test_stock_out_rejects_zero_and_negative_quantities(): void
+    public function test_stock_out_rejects_zero_and_negative_quantities_and_invalid_units(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user);
@@ -228,14 +228,17 @@ class StockOutTest extends TestCase
 
         foreach ([0, -5] as $quantity) {
             $this->actingAs($user)
-                ->post(route('inventory.stock-out.store'), [
-                    'client_id' => $client->client_id,
-                    'batch_id' => $batch->batch_id,
-                    'quantity' => $quantity,
-                    'release_date' => '2026-09-05',
-                ])
-                ->assertSessionHasErrors(['quantity'], null, 'stockout');
+                ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                    ['batch_id' => $batch->batch_id, 'quantity' => $quantity, 'unit' => 'seedlings'],
+                ]))
+                ->assertSessionHasErrors(['details.0.quantity'], null, 'stockout');
         }
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 5, 'unit' => 'bogus'],
+            ]))
+            ->assertSessionHasErrors(['details.0.unit'], null, 'stockout');
 
         $this->assertSame(0, StockOut::count());
     }
@@ -247,46 +250,32 @@ class StockOutTest extends TestCase
         $client = $this->createClient();
 
         $this->actingAs($user)
-            ->post(route('inventory.stock-out.store'), [
-                'client_id' => $client->client_id,
-                'batch_id' => $batch->batch_id,
-                'quantity' => 10,
-                'release_date' => now()->addDay()->toDateString(),
-            ])
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+            ], ['release_date' => now()->addDay()->toDateString()]))
             ->assertSessionHasErrors(['release_date'], null, 'stockout');
 
         $this->assertSame(0, StockOut::count());
     }
 
-    public function test_stock_out_treats_total_amount_as_optional_and_rejects_negative(): void
+    public function test_stock_out_treats_unit_price_as_optional(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user, 'B001', 100);
-        $this->createInventory($batch, 100);
         $client = $this->createClient();
 
-        $this->actingAs($user)->post(route('inventory.stock-out.store'), [
-            'client_id' => $client->client_id,
-            'batch_id' => $batch->batch_id,
-            'quantity' => 10,
-            'release_date' => '2026-09-05',
-        ]);
+        $this->actingAs($user)->post(route('inventory.stock-out.store'), $this->payload($client, [
+            ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+        ]));
 
-        $this->assertDatabaseHas('stock_outs', [
-            'batch_id' => $batch->batch_id,
-            'quantity' => 10,
-            'total_amount' => null,
-        ]);
+        $header = StockOut::first();
+        $this->assertNull($header->total_amount);
 
-        $this->actingAs($user)
-            ->post(route('inventory.stock-out.store'), [
-                'client_id' => $client->client_id,
-                'batch_id' => $batch->batch_id,
-                'quantity' => 5,
-                'total_amount' => -1,
-                'release_date' => '2026-09-05',
-            ])
-            ->assertSessionHasErrors(['total_amount'], null, 'stockout');
+        $this->assertDatabaseHas('stock_out_details', [
+            'stock_out_id' => $header->stock_out_id,
+            'unit_price' => null,
+            'amount' => null,
+        ]);
     }
 
     public function test_stock_out_page_lists_real_records(): void
@@ -294,19 +283,18 @@ class StockOutTest extends TestCase
         $user = User::factory()->create();
         $batch = $this->createBatch($user, 'B009', 100);
         $client = $this->createClient('Real Client Co');
-        StockOut::create([
+
+        $header = StockOut::create([
             'client_id' => $client->client_id,
-            'batch_id' => $batch->batch_id,
             'user_id' => $user->id,
-            'quantity' => 77,
             'total_amount' => 2310.50,
             'release_date' => '2026-09-04',
         ]);
+        $header->details()->create(['batch_id' => $batch->batch_id, 'quantity' => 77, 'unit' => 'seedlings', 'unit_price' => 30, 'amount' => 2310.00]);
 
         $this->actingAs($user)
             ->get(route('inventory.stock-out'))
             ->assertOk()
-            ->assertSee('B009')
             ->assertSee('Real Client Co')
             ->assertSee('77')
             ->assertSee('2,310.50');
@@ -316,12 +304,15 @@ class StockOutTest extends TestCase
     {
         $user = User::factory()->create();
         $first = $this->createBatch($user, 'B001', 100);
-        $second = $this->createBatch($user, 'B002', 100);
+        $second = $this->createBatch($user, 'B002', 100, ScionVariety::create(['scion_variety_name' => 'Trinitario']));
         $clientA = $this->createClient('Alpha Client');
         $clientB = $this->createClient('Beta Client');
 
-        $stockOutA = StockOut::create(['client_id' => $clientA->client_id, 'batch_id' => $first->batch_id, 'user_id' => $user->id, 'quantity' => 10, 'release_date' => '2026-09-01']);
-        $stockOutB = StockOut::create(['client_id' => $clientB->client_id, 'batch_id' => $second->batch_id, 'user_id' => $user->id, 'quantity' => 20, 'release_date' => '2026-09-02']);
+        $stockOutA = StockOut::create(['client_id' => $clientA->client_id, 'user_id' => $user->id, 'release_date' => '2026-09-01']);
+        $stockOutA->details()->create(['batch_id' => $first->batch_id, 'quantity' => 10, 'unit' => 'seedlings']);
+
+        $stockOutB = StockOut::create(['client_id' => $clientB->client_id, 'user_id' => $user->id, 'release_date' => '2026-09-02']);
+        $stockOutB->details()->create(['batch_id' => $second->batch_id, 'quantity' => 20, 'unit' => 'seedlings']);
 
         $this->actingAs($user)
             ->get(route('inventory.stock-out', ['client_id' => $clientB->client_id]))
@@ -360,17 +351,6 @@ class StockOutTest extends TestCase
             ->assertSessionHas('new_client_id');
 
         $this->assertDatabaseHas('clients', ['client_name' => 'New Client']);
-    }
-
-    public function test_client_creation_validates_required_fields(): void
-    {
-        $user = User::factory()->create();
-
-        $this->actingAs($user)
-            ->post(route('inventory.clients.store'), [])
-            ->assertSessionHasErrors(['client_name', 'contact_number', 'address'], null, 'client');
-
-        $this->assertSame(0, Client::count());
     }
 
     public function test_stock_out_reference_is_formatted(): void

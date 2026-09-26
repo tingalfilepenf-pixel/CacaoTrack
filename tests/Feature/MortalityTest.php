@@ -2,29 +2,30 @@
 
 namespace Tests\Feature;
 
+use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
-use App\Models\PotType;
-use App\Models\Scion;
+use App\Models\ScionVariety;
 use App\Models\User;
-use App\Models\Variety;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
+/**
+ * Mortality Tracking on the revised model: record-only (Mortality_Adjustments
+ * was removed), the cap is `max(0, viable_count - effective mortality)` and
+ * recording NEVER mutates `batches.viable_count` (locked business rule 1).
+ */
 class MortalityTest extends TestCase
 {
     use RefreshDatabase;
 
     private function createBatch(User $user, int $viable = 100): Batch
     {
-        $variety = Variety::create(['variety_name' => 'Criollo']);
-        $scion = Scion::create(['scion_name' => 'ICS-1']);
-        $potType = PotType::create(['pot_name' => 'Standard Polybag']);
+        $variety = ScionVariety::create(['scion_variety_name' => 'Criollo']);
 
         return Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
+            'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => 'B001',
             'total_grafted' => $viable,
@@ -32,7 +33,7 @@ class MortalityTest extends TestCase
             'available_count' => $viable,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
-            'status' => 'active',
+            'status' => Batch::STATUS_ACTIVE,
         ]);
     }
 
@@ -51,19 +52,21 @@ class MortalityTest extends TestCase
             ->assertSee('Mortality Tracking');
     }
 
-    public function test_user_can_record_mortality(): void
+    public function test_user_can_record_mortality_without_mutating_the_viable_count(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user);
 
-        $response = $this->actingAs($user)->post(route('operational.mortality.records.store'), [
-            'batch_id' => $batch->batch_id,
-            'quantity' => 25,
-            'cause' => 'Disease',
-            'recorded_at' => '2026-09-01',
-        ]);
+        $this->actingAs($user)
+            ->post(route('operational.mortality.records.store'), [
+                'batch_id' => $batch->batch_id,
+                'quantity' => 25,
+                'cause' => 'Disease',
+                'recorded_at' => '2026-09-01',
+            ])
+            ->assertRedirect(route('operational.mortality'))
+            ->assertSessionHas('success');
 
-        $response->assertRedirect(route('operational.mortality'));
         $this->assertDatabaseHas('mortality_records', [
             'batch_id' => $batch->batch_id,
             'user_id' => $user->id,
@@ -71,12 +74,18 @@ class MortalityTest extends TestCase
             'cause' => 'Disease',
         ]);
 
-        // Recording mortality deducts the dead plants from the batch's alive
-        // count (stored viable_count).
-        $this->assertSame(75, $batch->fresh()->alivePlants());
+        // Locked rule: `viable_count` is set once and never decremented by mortality.
+        $this->assertSame(100, (int) $batch->fresh()->viable_count);
+        $this->assertSame(25, $batch->fresh()->effectiveMortalityQuantity());
+        $this->assertSame(75, $batch->fresh()->remainingMortalityCapacity());
+
+        $this->assertDatabaseHas('activity_logs', [
+            'batch_id' => $batch->batch_id,
+            'activity_type' => ActivityLog::TYPE_MORTALITY_RECORDED,
+        ]);
     }
 
-    public function test_mortality_quantity_cannot_exceed_batch_alive_count(): void
+    public function test_mortality_quantity_cannot_exceed_batch_capacity(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user, viable: 100);
@@ -89,27 +98,25 @@ class MortalityTest extends TestCase
                 'cause' => 'Pest',
                 'recorded_at' => '2026-09-01',
             ])
-            ->assertSessionHasErrors('quantity');
+            ->assertSessionHasErrors(['quantity'], null, 'mortality');
 
         $this->assertDatabaseCount('mortality_records', 0);
-        $this->assertSame(100, $batch->fresh()->alivePlants());
     }
 
-    public function test_cumulative_mortality_cannot_exceed_batch_alive_count(): void
+    public function test_cumulative_mortality_cannot_exceed_batch_capacity(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user, viable: 100);
 
-        // First 90 deaths are recorded (alive drops to 10).
         $this->actingAs($user)->post(route('operational.mortality.records.store'), [
             'batch_id' => $batch->batch_id,
             'quantity' => 90,
             'cause' => 'Disease',
             'recorded_at' => '2026-09-01',
         ]);
-        $this->assertSame(10, $batch->fresh()->alivePlants());
 
-        // A further 20 would exceed the remaining alive count.
+        $this->assertSame(10, $batch->fresh()->remainingMortalityCapacity());
+
         $this->actingAs($user)
             ->from(route('operational.mortality'))
             ->post(route('operational.mortality.records.store'), [
@@ -118,7 +125,7 @@ class MortalityTest extends TestCase
                 'cause' => 'Pest',
                 'recorded_at' => '2026-09-02',
             ])
-            ->assertSessionHasErrors('quantity');
+            ->assertSessionHasErrors(['quantity'], null, 'mortality');
 
         $this->assertDatabaseCount('mortality_records', 1);
     }
@@ -135,7 +142,7 @@ class MortalityTest extends TestCase
                 'cause' => 'Disease',
                 'recorded_at' => '2026-09-01',
             ])
-            ->assertSessionHasErrors(['batch_id', 'quantity']);
+            ->assertSessionHasErrors(['batch_id', 'quantity'], null, 'mortality');
 
         $this->actingAs($user)
             ->from(route('operational.mortality'))
@@ -145,110 +152,32 @@ class MortalityTest extends TestCase
                 'cause' => '',
                 'recorded_at' => '2026-09-01',
             ])
-            ->assertSessionHasErrors(['batch_id', 'cause']);
+            ->assertSessionHasErrors(['batch_id', 'cause'], null, 'mortality');
     }
 
-    public function test_user_can_adjust_a_mortality_record(): void
+    public function test_the_mortality_adjustment_route_no_longer_exists(): void
     {
-        $user = User::factory()->create();
-        $batch = $this->createBatch($user);
-
-        $this->actingAs($user)->post(route('operational.mortality.records.store'), [
-            'batch_id' => $batch->batch_id,
-            'quantity' => 25,
-            'cause' => 'Disease',
-            'recorded_at' => '2026-09-01',
-        ]);
-        $this->assertSame(75, $batch->fresh()->alivePlants());
-
-        $record = MortalityRecord::where('batch_id', $batch->batch_id)->first();
-
-        $response = $this->actingAs($user)->post(route('operational.mortality.records.adjust', $record), [
-            'adjustment_quantity' => -5,
-            'reason' => 'Recount corrected the entry.',
-        ]);
-
-        $response->assertRedirect(route('operational.mortality'));
-        $this->assertDatabaseHas('mortality_adjustments', [
-            'mortality_id' => $record->mortality_id,
-            'approved_by_id' => $user->id,
-            'adjustment_quantity' => -5,
-            'reason' => 'Recount corrected the entry.',
-        ]);
-        $this->assertSame(20, $record->fresh()->effectiveQuantity());
-
-        // A negative adjustment restores those plants to the alive count.
-        $this->assertSame(80, $batch->fresh()->alivePlants());
+        // Regression guard: the removed Mortality_Adjustments entity must not
+        // reappear as a route.
+        $this->assertFalse(Route::has('operational.mortality.records.adjust'));
     }
 
-    public function test_adjustment_cannot_make_effective_mortality_negative(): void
+    public function test_cumulative_records_sum_correctly_for_the_same_batch(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user);
-        $record = MortalityRecord::create([
-            'batch_id' => $batch->batch_id,
-            'user_id' => $user->id,
-            'quantity' => 10,
-            'cause' => 'Disease',
-            'recorded_at' => '2026-09-01',
-        ]);
+        $batch = $this->createBatch($user, viable: 400);
 
-        $this->actingAs($user)
-            ->from(route('operational.mortality'))
-            ->post(route('operational.mortality.records.adjust', $record), [
-                'adjustment_quantity' => -11,
-                'reason' => 'Invalid correction.',
-            ])
-            ->assertSessionHasErrors('adjustment_quantity');
+        foreach ([207, 28] as $quantity) {
+            $this->actingAs($user)->post(route('operational.mortality.records.store'), [
+                'batch_id' => $batch->batch_id,
+                'quantity' => $quantity,
+                'cause' => 'Disease',
+                'recorded_at' => '2026-09-01',
+            ]);
+        }
 
-        $this->assertDatabaseCount('mortality_adjustments', 0);
-    }
-
-    public function test_adjustment_cannot_exceed_batch_alive_count(): void
-    {
-        $user = User::factory()->create();
-        $batch = $this->createBatch($user, viable: 100);
-
-        $this->actingAs($user)->post(route('operational.mortality.records.store'), [
-            'batch_id' => $batch->batch_id,
-            'quantity' => 90,
-            'cause' => 'Disease',
-            'recorded_at' => '2026-09-01',
-        ]);
-
-        $record = MortalityRecord::where('batch_id', $batch->batch_id)->first();
-
-        $this->actingAs($user)
-            ->from(route('operational.mortality'))
-            ->post(route('operational.mortality.records.adjust', $record), [
-                'adjustment_quantity' => 11,
-                'reason' => 'Invalid increase.',
-            ])
-            ->assertSessionHasErrors('adjustment_quantity');
-
-        $this->assertDatabaseCount('mortality_adjustments', 0);
-        $this->assertSame(10, $batch->fresh()->alivePlants());
-    }
-
-    public function test_adjustment_quantity_cannot_be_zero(): void
-    {
-        $user = User::factory()->create();
-        $batch = $this->createBatch($user);
-        $record = MortalityRecord::create([
-            'batch_id' => $batch->batch_id,
-            'user_id' => $user->id,
-            'quantity' => 10,
-            'cause' => 'Disease',
-            'recorded_at' => '2026-09-01',
-        ]);
-
-        $this->actingAs($user)
-            ->from(route('operational.mortality'))
-            ->post(route('operational.mortality.records.adjust', $record), [
-                'adjustment_quantity' => 0,
-                'reason' => 'No-op.',
-            ])
-            ->assertSessionHasErrors('adjustment_quantity');
+        $this->assertSame(235, $batch->fresh()->effectiveMortalityQuantity());
+        $this->assertSame(235, (int) MortalityRecord::where('batch_id', $batch->batch_id)->sum('quantity'));
     }
 
     public function test_mortality_page_filters_by_batch_and_date(): void
@@ -263,17 +192,10 @@ class MortalityTest extends TestCase
             'recorded_at' => '2026-09-01',
         ]);
 
-        $record = MortalityRecord::where('batch_id', $batch->batch_id)->first();
-
-        $this->actingAs($user)->post(route('operational.mortality.records.adjust', $record), [
-            'adjustment_quantity' => -5,
-            'reason' => 'Recount correction',
-        ]);
-
         $this->actingAs($user)
             ->get(route('operational.mortality', ['batch_id' => $batch->batch_id, 'date_from' => '2026-09-01', 'date_to' => '2026-09-30']))
             ->assertOk()
             ->assertSee('Disease')
-            ->assertSee('Recount correction');
+            ->assertSee('B001');
     }
 }

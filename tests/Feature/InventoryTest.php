@@ -4,45 +4,52 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\Inventory;
-use App\Models\PotType;
-use App\Models\Scion;
+use App\Models\MortalityRecord;
+use App\Models\ReplantingRecord;
+use App\Models\ScionVariety;
 use App\Models\User;
-use App\Models\Variety;
-use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+/**
+ * Inventory as monthly per-batch snapshots (revised ERD §3.12): many rows per
+ * batch, `status` frozen at creation from the live `available_count`.
+ */
 class InventoryTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createBatch(User $user, string $code = 'B001', int $available = 100, string $varietyName = 'Criollo'): Batch
-    {
-        $variety = Variety::create(['variety_name' => $varietyName]);
-        $scion = Scion::create(['scion_name' => 'ICS-1']);
-        $potType = PotType::create(['pot_name' => 'Standard Polybag']);
+    private function createBatch(
+        User $user,
+        string $code = 'B001',
+        int $viable = 100,
+        int $available = 100,
+        string $varietyName = 'Criollo',
+    ): Batch {
+        $variety = ScionVariety::create(['scion_variety_name' => $varietyName]);
 
         return Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
+            'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => $code,
-            'total_grafted' => $available,
-            'viable_count' => $available,
+            'total_grafted' => max($viable, $available),
+            'viable_count' => $viable,
             'available_count' => $available,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
-            'status' => 'active',
+            'status' => Batch::STATUS_ACTIVE,
         ]);
     }
 
-    private function createInventory(Batch $batch, int $quantity): Inventory
+    private function createSnapshot(Batch $batch, int $available, string $date = '2026-09-01'): Inventory
     {
         return Inventory::create([
             'batch_id' => $batch->batch_id,
-            'current_quantity' => $quantity,
-            'status' => Inventory::statusForQuantity($quantity),
+            'inventory_date' => $date,
+            'total_grafted' => (int) $batch->total_grafted,
+            'viable' => (int) $batch->viable_count,
+            'regraft' => $batch->totalReplanted(),
+            'mortality' => $batch->effectiveMortalityQuantity(),
             'last_update' => now(),
         ]);
     }
@@ -55,77 +62,79 @@ class InventoryTest extends TestCase
     public function test_authenticated_user_can_view_the_inventory_page(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user, 'B001', 120);
-        $this->createInventory($batch, 120);
+        $batch = $this->createBatch($user, 'B001', 120, 120);
+        $this->createSnapshot($batch, 120);
 
         $this->actingAs($user)
             ->get(route('inventory.index'))
             ->assertOk()
-            ->assertSee('Inventory Management')
-            ->assertSee('Current Inventory by Batch')
-            ->assertSee('B001')
-            ->assertSee('Total Available Inventory');
+            ->assertSee('Record Monthly Inventory')
+            ->assertSee('Total Grafted')
+            ->assertSee('B001');
     }
 
     public function test_inventory_page_shows_real_database_values(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user, 'B007', 250);
-        $this->createInventory($batch, 198);
+        $batch = $this->createBatch($user, 'B007', 250, 198);
+        $this->createSnapshot($batch, 198);
 
         $this->actingAs($user)
             ->get(route('inventory.index'))
             ->assertOk()
             ->assertSee('B007')
-            ->assertSee('198')
-            ->assertSee('250');
+            ->assertSee('Monthly Inventory Snapshots')
+            ->assertViewHas('inventories', fn ($inventories) => $inventories->total() === 1
+                && $inventories->first()->batch->batch_code === 'B007'
+                && (int) $inventories->first()->total_grafted === 250);
     }
 
     public function test_inventory_page_filters_by_batch_code(): void
     {
         $user = User::factory()->create();
-        $first = $this->createBatch($user, 'B001', 100);
-        $second = $this->createBatch($user, 'B002', 100, 'Trinitario');
-        $this->createInventory($first, 100);
-        $this->createInventory($second, 100);
+        $first = $this->createBatch($user, 'B001', 100, 100);
+        $second = $this->createBatch($user, 'B002', 100, 100, 'Trinitario');
+        $this->createSnapshot($first, 100);
+        $this->createSnapshot($second, 100);
 
+        // Assert the filtered dataset, not raw HTML: the filter dropdown also
+        // lists every active batch code.
         $this->actingAs($user)
             ->get(route('inventory.index', ['search' => 'B002']))
             ->assertOk()
-            ->assertSee('B002')
-            ->assertDontSee('B001');
+            ->assertViewHas('inventories', fn ($inventories) => $inventories->total() === 1
+                && $inventories->first()->batch->batch_code === 'B002');
     }
 
     public function test_inventory_page_filters_by_status(): void
     {
         $user = User::factory()->create();
-        $active = $this->createBatch($user, 'B001', 100);
-        $depleted = $this->createBatch($user, 'B002', 100, 'Trinitario');
-        $this->createInventory($active, 40);
-        $this->createInventory($depleted, 0);
+        $active = $this->createBatch($user, 'B001', 100, 40);
+        $depleted = $this->createBatch($user, 'B002', 100, 0, 'Trinitario');
+        $this->createSnapshot($active, 40);
+        $this->createSnapshot($depleted, 0);
 
         $this->actingAs($user)
-            ->get(route('inventory.index', ['status' => 'depleted']))
+            ->get(route('inventory.index', ['status' => Inventory::STATUS_DEPLETED]))
             ->assertOk()
-            ->assertSee('B002')
-            ->assertDontSee('B001');
+            ->assertViewHas('inventories', fn ($inventories) => $inventories->total() === 1
+                && $inventories->first()->batch->batch_code === 'B002'
+                && $inventories->first()->status === Inventory::STATUS_DEPLETED);
     }
 
-    public function test_inventory_page_filters_by_variety(): void
+    public function test_inventory_page_filters_by_scion_variety(): void
     {
         $user = User::factory()->create();
-        $criollo = $this->createBatch($user, 'B001', 100, 'Criollo');
-        $forastero = $this->createBatch($user, 'B002', 100, 'Forastero');
-        $this->createInventory($criollo, 100);
-        $this->createInventory($forastero, 100);
-
-        $varietyId = $forastero->variety_id;
+        $criollo = $this->createBatch($user, 'B001', 100, 100, 'Criollo');
+        $forastero = $this->createBatch($user, 'B002', 100, 100, 'Forastero');
+        $this->createSnapshot($criollo, 100);
+        $this->createSnapshot($forastero, 100);
 
         $this->actingAs($user)
-            ->get(route('inventory.index', ['variety_id' => $varietyId]))
+            ->get(route('inventory.index', ['scion_variety_id' => $forastero->scion_variety_id]))
             ->assertOk()
-            ->assertSee('B002')
-            ->assertDontSee('B001');
+            ->assertViewHas('inventories', fn ($inventories) => $inventories->total() === 1
+                && $inventories->first()->batch->batch_code === 'B002');
     }
 
     public function test_inventory_page_rejects_invalid_filters(): void
@@ -133,8 +142,8 @@ class InventoryTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->get(route('inventory.index', ['variety_id' => 999, 'status' => 'bogus']))
-            ->assertSessionHasErrors(['variety_id', 'status']);
+            ->get(route('inventory.index', ['scion_variety_id' => 999, 'status' => 'bogus']))
+            ->assertSessionHasErrors(['scion_variety_id', 'status']);
     }
 
     public function test_inventory_page_shows_empty_state_when_no_records(): void
@@ -144,57 +153,94 @@ class InventoryTest extends TestCase
         $this->actingAs($user)
             ->get(route('inventory.index'))
             ->assertOk()
-            ->assertSee('No inventory records found for the current filters.');
+            ->assertSee('No inventory snapshots found for the current filters.');
     }
 
-    public function test_inventory_cannot_have_duplicate_batch_rows(): void
+    public function test_record_monthly_inventory_derives_counts_server_side(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user);
-        $this->createInventory($batch, 50);
+        $batch = $this->createBatch($user, 'B001', 180, 150);
 
-        $this->expectException(QueryException::class);
+        MortalityRecord::create([
+            'batch_id' => $batch->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 20,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
 
-        $this->createInventory($batch, 50);
-    }
+        ReplantingRecord::create([
+            'batch_id' => $batch->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 10,
+            'replanting_date' => '2026-09-03',
+        ]);
 
-    public function test_inventory_status_is_derived_from_quantity(): void
-    {
-        $this->assertSame(Inventory::STATUS_ACTIVE, Inventory::statusForQuantity(10));
-        $this->assertSame(Inventory::STATUS_DEPLETED, Inventory::statusForQuantity(0));
+        $this->actingAs($user)
+            ->post(route('inventory.snapshots.store'), [
+                'batch_id' => $batch->batch_id,
+                'inventory_date' => '2026-09-15',
+            ])
+            ->assertRedirect(route('inventory.index'))
+            ->assertSessionHas('success');
 
-        $user = User::factory()->create();
-        $batch = $this->createBatch($user, 'B001', 75);
-
-        $inventory = Inventory::syncFromBatch($batch, true);
-
-        $this->assertSame(75, (int) $inventory->current_quantity);
-        $this->assertSame(Inventory::STATUS_ACTIVE, $inventory->status);
         $this->assertDatabaseHas('inventories', [
             'batch_id' => $batch->batch_id,
-            'current_quantity' => 75,
-            'status' => 'active',
+            'total_grafted' => 180,
+            'viable' => 180,
+            'regraft' => 10,
+            'mortality' => 20,
+            'status' => Inventory::STATUS_ACTIVE,
         ]);
     }
 
-    public function test_total_active_inventory_sums_only_active_records(): void
+    public function test_record_monthly_inventory_rejects_a_second_snapshot_in_the_same_month(): void
     {
         $user = User::factory()->create();
-        $active = $this->createBatch($user, 'B001', 100);
-        $depleted = $this->createBatch($user, 'B002', 100, 'Trinitario');
-        $this->createInventory($active, 30);
-        $this->createInventory($depleted, 0);
+        $batch = $this->createBatch($user, 'B001', 180, 150);
+        $this->createSnapshot($batch, 150, '2026-09-01');
 
-        $this->assertSame(30, Inventory::totalActiveQuantity());
+        $this->actingAs($user)
+            ->from(route('inventory.index'))
+            ->post(route('inventory.snapshots.store'), [
+                'batch_id' => $batch->batch_id,
+                'inventory_date' => '2026-09-20',
+            ])
+            ->assertSessionHasErrors(['batch_id'], null, 'inventory');
+
+        $this->assertSame(1, Inventory::count());
     }
 
-    public function test_batch_exposes_inventory_relationship(): void
+    public function test_inventory_status_is_frozen_from_the_batch_available_balance(): void
+    {
+        $this->assertSame(Inventory::STATUS_ACTIVE, Inventory::statusForAvailable(10));
+        $this->assertSame(Inventory::STATUS_DEPLETED, Inventory::statusForAvailable(0));
+
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, 'B001', 75, 75);
+
+        $snapshot = $this->createSnapshot($batch, 75);
+
+        $this->assertSame(Inventory::STATUS_ACTIVE, $snapshot->status);
+
+        // Draining the live balance afterwards must NOT rewrite the frozen snapshot.
+        $batch->update(['available_count' => 0]);
+
+        $this->assertSame(Inventory::STATUS_ACTIVE, $snapshot->fresh()->status);
+        $this->assertSame(Inventory::STATUS_DEPLETED, Inventory::statusForBatch($batch->fresh()));
+    }
+
+    public function test_batch_exposes_inventory_snapshots_relationship(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user);
-        $inventory = $this->createInventory($batch, 60);
+        $batch = $this->createBatch($user, 'B001', 100, 100);
+        $first = $this->createSnapshot($batch, 100, '2026-08-01');
+        $second = $this->createSnapshot($batch, 100, '2026-09-01');
 
-        $this->assertTrue($batch->inventory->is($inventory));
-        $this->assertSame($batch->batch_id, $inventory->batch->batch_id);
+        $this->assertCount(2, $batch->inventories);
+        $this->assertTrue($batch->inventories->contains($first));
+        $this->assertTrue($batch->inventories->contains($second));
+        $this->assertTrue($batch->latestInventory->is($second));
+        $this->assertSame($batch->batch_id, $first->batch->batch_id);
     }
 }

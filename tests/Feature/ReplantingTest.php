@@ -4,29 +4,28 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\MortalityRecord;
-use App\Models\PotType;
 use App\Models\ReplantingRecord;
-use App\Models\Scion;
+use App\Models\ScionVariety;
 use App\Models\User;
-use App\Models\Variety;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+/**
+ * Regraft / Replanting on the revised model. Regraft and Replanting are the same
+ * recorded procedure (the separate `regraft_records` table was retracted), so
+ * both are stored in `replanting_records`. The removed scion stock pool is no
+ * longer involved.
+ */
 class ReplantingTest extends TestCase
 {
     use RefreshDatabase;
 
     private function createBatch(User $user, int $viable = 100): Batch
     {
-        $variety = Variety::create(['variety_name' => 'Criollo']);
-        // Plenty of scion stock so replanting deductions succeed (ERD §9.10).
-        $scion = Scion::create(['scion_name' => 'Scion', 'quantity' => 1000]);
-        $potType = PotType::create(['pot_name' => 'Standard Polybag']);
+        $variety = ScionVariety::create(['scion_variety_name' => 'Criollo']);
 
         return Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
+            'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => 'B001',
             'total_grafted' => $viable,
@@ -34,7 +33,7 @@ class ReplantingTest extends TestCase
             'available_count' => $viable,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
-            'status' => 'active',
+            'status' => Batch::STATUS_ACTIVE,
         ]);
     }
 
@@ -61,7 +60,7 @@ class ReplantingTest extends TestCase
         $this->actingAs($user)
             ->get(route('operational.replanting'))
             ->assertOk()
-            ->assertSee('Replanting');
+            ->assertSee('Regraft');
     }
 
     public function test_user_can_record_replanting(): void
@@ -70,14 +69,16 @@ class ReplantingTest extends TestCase
         $batch = $this->createBatch($user);
         $this->recordMortality($batch, $user, 25);
 
-        $response = $this->actingAs($user)->post(route('operational.replanting.records.store'), [
-            'batch_id' => $batch->batch_id,
-            'quantity' => 20,
-            'replanting_date' => '2026-09-03',
-            'remark' => 'Replaced affected seedlings.',
-        ]);
+        $this->actingAs($user)
+            ->post(route('operational.replanting.records.store'), [
+                'batch_id' => $batch->batch_id,
+                'quantity' => 20,
+                'replanting_date' => '2026-09-03',
+                'remark' => 'Replaced affected seedlings.',
+            ])
+            ->assertRedirect(route('operational.replanting'))
+            ->assertSessionHas('success');
 
-        $response->assertRedirect(route('operational.replanting'));
         $this->assertDatabaseHas('replanting_records', [
             'batch_id' => $batch->batch_id,
             'user_id' => $user->id,
@@ -100,7 +101,7 @@ class ReplantingTest extends TestCase
                 'quantity' => 0,
                 'replanting_date' => '2026-09-03',
             ])
-            ->assertSessionHasErrors('quantity');
+            ->assertSessionHasErrors('quantity', null, 'replanting');
 
         $this->assertDatabaseCount('replanting_records', 0);
     }
@@ -118,7 +119,7 @@ class ReplantingTest extends TestCase
                 'quantity' => 26,
                 'replanting_date' => '2026-09-03',
             ])
-            ->assertSessionHasErrors('quantity');
+            ->assertSessionHasErrors('quantity', null, 'replanting');
 
         $this->assertDatabaseCount('replanting_records', 0);
     }
@@ -143,7 +144,7 @@ class ReplantingTest extends TestCase
                 'quantity' => 6,
                 'replanting_date' => '2026-09-03',
             ])
-            ->assertSessionHasErrors('quantity');
+            ->assertSessionHasErrors('quantity', null, 'replanting');
 
         $this->assertDatabaseCount('replanting_records', 1);
     }
@@ -159,7 +160,7 @@ class ReplantingTest extends TestCase
                 'quantity' => 5,
                 'replanting_date' => '',
             ])
-            ->assertSessionHasErrors(['batch_id', 'replanting_date']);
+            ->assertSessionHasErrors(['batch_id', 'replanting_date'], null, 'replanting');
 
         $this->assertDatabaseCount('replanting_records', 0);
     }
@@ -199,7 +200,7 @@ class ReplantingTest extends TestCase
         $this->actingAs($user)
             ->get(route('operational.replanting'))
             ->assertOk()
-            ->assertSee('Replanting Status by Batch')
+            ->assertSee('Regraft Status by Batch')
             ->assertSee('B001');
     }
 
@@ -215,7 +216,7 @@ class ReplantingTest extends TestCase
             ->assertSee('B001');
     }
 
-    public function test_batch_replanting_deficit_is_derived_from_records(): void
+    public function test_batch_replanting_deficit_is_derived_from_effective_mortality(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user);

@@ -2,40 +2,15 @@
 
 namespace Tests\Feature;
 
-use App\Models\Batch;
 use App\Models\Client;
-use App\Models\PotType;
-use App\Models\Scion;
 use App\Models\StockOut;
 use App\Models\User;
-use App\Models\Variety;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ClientTest extends TestCase
 {
     use RefreshDatabase;
-
-    private function createBatch(User $user, string $code = 'B001'): Batch
-    {
-        $variety = Variety::create(['variety_name' => 'Criollo']);
-        $scion = Scion::create(['scion_name' => 'ICS-1']);
-        $potType = PotType::create(['pot_name' => 'Standard Polybag']);
-
-        return Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
-            'user_id' => $user->id,
-            'batch_code' => $code,
-            'total_grafted' => 100,
-            'viable_count' => 100,
-            'available_count' => 100,
-            'grafted_date' => '2026-07-15',
-            'created_at' => now(),
-            'status' => 'active',
-        ]);
-    }
 
     private function createClient(string $name = 'Client A'): Client
     {
@@ -187,13 +162,10 @@ class ClientTest extends TestCase
     {
         $user = User::factory()->create();
         $client = $this->createClient('Protected Client');
-        $batch = $this->createBatch($user);
 
         StockOut::create([
             'client_id' => $client->client_id,
-            'batch_id' => $batch->batch_id,
             'user_id' => $user->id,
-            'quantity' => 10,
             'total_amount' => null,
             'release_date' => '2026-09-05',
         ]);

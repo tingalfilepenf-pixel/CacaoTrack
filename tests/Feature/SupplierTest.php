@@ -2,40 +2,15 @@
 
 namespace Tests\Feature;
 
-use App\Models\Batch;
-use App\Models\PotType;
-use App\Models\Scion;
 use App\Models\StockIn;
 use App\Models\Supplier;
 use App\Models\User;
-use App\Models\Variety;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class SupplierTest extends TestCase
 {
     use RefreshDatabase;
-
-    private function createBatch(User $user, string $code = 'B001'): Batch
-    {
-        $variety = Variety::create(['variety_name' => 'Criollo']);
-        $scion = Scion::create(['scion_name' => 'ICS-1']);
-        $potType = PotType::create(['pot_name' => 'Standard Polybag']);
-
-        return Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $potType->pot_id,
-            'user_id' => $user->id,
-            'batch_code' => $code,
-            'total_grafted' => 100,
-            'viable_count' => 100,
-            'available_count' => 100,
-            'grafted_date' => '2026-07-15',
-            'created_at' => now(),
-            'status' => 'active',
-        ]);
-    }
 
     private function createSupplier(string $name = 'Supplier A'): Supplier
     {
@@ -187,13 +162,13 @@ class SupplierTest extends TestCase
     {
         $user = User::factory()->create();
         $supplier = $this->createSupplier('Protected Supplier');
-        $batch = $this->createBatch($user);
 
         StockIn::create([
             'supplier_id' => $supplier->supplier_id,
-            'batch_id' => $batch->batch_id,
             'user_id' => $user->id,
             'quantity' => 10,
+            'viable' => 10,
+            'origin' => 'Test Origin',
             'date_received' => '2026-09-05',
         ]);
 

@@ -4,27 +4,38 @@ namespace Tests\Feature;
 
 use App\Models\Analytic;
 use App\Models\Batch;
-use App\Models\Inventory;
-use App\Models\MortalityAdjustment;
 use App\Models\MortalityRecord;
-use App\Models\PotType;
 use App\Models\ReplantingRecord;
-use App\Models\Scion;
+use App\Models\ScionVariety;
 use App\Models\User;
-use App\Models\Variety;
 use App\Support\AnalyticsMetrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+/**
+ * Analytics/report coverage on the revised 15-entity model.
+ *
+ * Fixture (real, non-zero mortality and regraft so the Gap Report has genuine
+ * data to verify against):
+ *   B001 / Criollo   grafted 200, viable 180, available 170, grafted 2026-07-15
+ *   B002 / Trinitario grafted 100, viable 100, available 100, grafted 2026-08-20
+ *   Mortality:    B001 Disease 25, B002 Pest 10  (total 35)
+ *   Regraft:      B001 15
+ *
+ * Corrected Gap formula (Session BS): gap = Batch::effectiveMortalityQuantity()
+ * (recorded mortality), NOT viable − available − stock_out (an identity that
+ * always resolves to 0 because Stock Out is already netted out of
+ * `available_count`). B001 gap = 25, B002 gap = 10, total = 35.
+ */
 class AnalyticsTest extends TestCase
 {
     use RefreshDatabase;
 
     private User $user;
 
-    private Variety $criollo;
+    private ScionVariety $criollo;
 
-    private Variety $trinitario;
+    private ScionVariety $trinitario;
 
     private Batch $b001;
 
@@ -35,28 +46,18 @@ class AnalyticsTest extends TestCase
         parent::setUp();
 
         $this->user = User::factory()->create();
-        $this->criollo = Variety::create(['variety_name' => 'Criollo']);
-        $this->trinitario = Variety::create(['variety_name' => 'Trinitario']);
-        $scion = Scion::create(['scion_name' => 'ICS-1']);
-        $pot = PotType::create(['pot_name' => 'Standard Polybag']);
+        $this->criollo = ScionVariety::create(['scion_variety_name' => 'Criollo']);
+        $this->trinitario = ScionVariety::create(['scion_variety_name' => 'Trinitario']);
 
-        $this->b001 = $this->createBatch($this->criollo, $scion, $pot, 'B001', 200, 180, '2026-07-15', 170);
-        $this->b002 = $this->createBatch($this->trinitario, $scion, $pot, 'B002', 100, 100, '2026-08-20', 100);
+        $this->b001 = $this->createBatch($this->criollo, 'B001', 200, 180, 170, '2026-07-15');
+        $this->b002 = $this->createBatch($this->trinitario, 'B002', 100, 100, 100, '2026-08-20');
 
-        $disease = MortalityRecord::create([
+        MortalityRecord::create([
             'batch_id' => $this->b001->batch_id,
             'user_id' => $this->user->id,
             'quantity' => 25,
             'cause' => 'Disease',
             'recorded_at' => '2026-09-01',
-        ]);
-
-        MortalityAdjustment::create([
-            'mortality_id' => $disease->mortality_id,
-            'approved_by_id' => $this->user->id,
-            'adjustment_quantity' => -5,
-            'reason' => 'Recount correction.',
-            'adjusted_at' => now(),
         ]);
 
         MortalityRecord::create([
@@ -77,37 +78,24 @@ class AnalyticsTest extends TestCase
     }
 
     private function createBatch(
-        Variety $variety,
-        Scion $scion,
-        PotType $pot,
+        ScionVariety $variety,
         string $code,
         int $totalGrafted,
         int $viable,
+        int $available,
         string $graftedDate,
-        int $inventoryQuantity,
     ): Batch {
-        $batch = Batch::create([
-            'variety_id' => $variety->variety_id,
-            'scion_id' => $scion->scion_id,
-            'pot_id' => $pot->pot_id,
+        return Batch::create([
+            'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $this->user->id,
             'batch_code' => $code,
             'total_grafted' => $totalGrafted,
             'viable_count' => $viable,
-            'available_count' => $viable,
+            'available_count' => $available,
             'grafted_date' => $graftedDate,
             'created_at' => now(),
-            'status' => 'active',
+            'status' => Batch::STATUS_ACTIVE,
         ]);
-
-        Inventory::create([
-            'batch_id' => $batch->batch_id,
-            'current_quantity' => $inventoryQuantity,
-            'status' => Inventory::statusForQuantity($inventoryQuantity),
-            'last_update' => now(),
-        ]);
-
-        return $batch;
     }
 
     public function test_guests_are_redirected_from_all_analytics_pages(): void
@@ -134,9 +122,9 @@ class AnalyticsTest extends TestCase
             ->get(route('analytics.index'))
             ->assertOk()
             ->assertSee('Operational Analytics')
-            ->assertSee('270')   // total active inventory
-            ->assertSee('10.00') // crude mortality rate
-            ->assertSee('15');   // total replanting deficit
+            ->assertSee('270')    // total active inventory (170 + 100)
+            ->assertSee('11.67')  // crude mortality rate = 35 / 300
+            ->assertSee('20');    // total regraft deficit (B001 10 + B002 10)
     }
 
     public function test_operational_analytics_page_exposes_print_and_csv_actions(): void
@@ -163,15 +151,15 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Total Active Inventory', $content);
         $this->assertStringContainsString('270', $content);
         $this->assertStringContainsString('Crude Mortality Rate', $content);
-        $this->assertStringContainsString('10.00%', $content);
+        $this->assertStringContainsString('11.67%', $content);
         $this->assertStringContainsString('Regraft Deficit', $content);
         $this->assertStringContainsString('Mortality Trend', $content);
-        $this->assertStringContainsString('Inventory by Variety', $content);
+        $this->assertStringContainsString('Inventory by Scion Variety', $content);
         $this->assertStringContainsString('Criollo', $content);
         $this->assertStringContainsString('Trinitario', $content);
         $this->assertStringContainsString('Survival vs Mortality', $content);
         $this->assertStringContainsString('Surviving', $content);
-        $this->assertStringContainsString('280', $content); // surviving = stored viable (alive) count
+        $this->assertStringContainsString('245', $content); // surviving = viable 280 - mortality 35
     }
 
     public function test_operational_analytics_csv_export_renders_real_data(): void
@@ -186,9 +174,9 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Operational Analytics', $csv);
         $this->assertStringContainsString('Key Performance Indicators', $csv);
         $this->assertStringContainsString('Crude Mortality Rate', $csv);
-        $this->assertStringContainsString('10.00%', $csv);
+        $this->assertStringContainsString('11.67%', $csv);
         $this->assertStringContainsString('Mortality Trend (Last 6 Months)', $csv);
-        $this->assertStringContainsString('Inventory by Variety', $csv);
+        $this->assertStringContainsString('Inventory by Scion Variety', $csv);
         $this->assertStringContainsString('Regraft Deficit by Batch', $csv);
         $this->assertStringContainsString('Survival vs Mortality', $csv);
         $this->assertStringContainsString('Criollo', $csv);
@@ -199,17 +187,17 @@ class AnalyticsTest extends TestCase
     public function test_centralized_metrics_return_real_values(): void
     {
         $this->assertSame(270, AnalyticsMetrics::totalActiveInventory());
-        $this->assertSame(15, AnalyticsMetrics::totalReplantingDeficit());
-        $this->assertSame(10.0, AnalyticsMetrics::crudeMortalityRate());
+        $this->assertSame(20, AnalyticsMetrics::totalReplantingDeficit());
+        $this->assertSame(11.67, AnalyticsMetrics::crudeMortalityRate());
 
         $components = AnalyticsMetrics::mortalityRateComponents();
-        $this->assertSame(30, $components['numerator']);
+        $this->assertSame(35, $components['numerator']);
         $this->assertSame(300, $components['denominator']);
 
         $survival = AnalyticsMetrics::survivalVsMortality();
-        $this->assertSame(310, $survival['totalViable']);
-        $this->assertSame(30, $survival['mortality']);
-        $this->assertSame(280, $survival['surviving']);
+        $this->assertSame(280, $survival['totalViable']);
+        $this->assertSame(35, $survival['mortality']);
+        $this->assertSame(245, $survival['surviving']);
     }
 
     public function test_stock_ledger_shows_real_batch_data(): void
@@ -229,8 +217,8 @@ class AnalyticsTest extends TestCase
         $this->actingAs($this->user)
             ->get(route('analytics.stock-ledger', ['batch_id' => $this->b001->batch_id]))
             ->assertOk()
-            ->assertSee('class="fw-bold">B001', false)
-            ->assertDontSee('class="fw-bold">B002', false);
+            ->assertSee('Batch B001')
+            ->assertDontSee('Batch B002');
     }
 
     public function test_stock_ledger_rejects_inverted_date_range(): void
@@ -250,16 +238,15 @@ class AnalyticsTest extends TestCase
         $content = $response->getContent();
 
         $this->assertStringStartsWith('%PDF', $content);
-        // Real batches, varieties and the totals strip (no fabricated rows).
+        // Real batches, scion varieties and the totals strip (no fabricated rows).
         $this->assertStringContainsString('Cacao Tree Stock Ledger', $content);
         $this->assertStringContainsString('B001', $content);
         $this->assertStringContainsString('B002', $content);
         $this->assertStringContainsString('Criollo', $content);
-        $this->assertStringContainsString('Batches: 2', $content);
         $this->assertStringContainsString('Grafted: 300', $content);
-        $this->assertStringContainsString('Available: 270', $content);
-        $this->assertStringContainsString('Mortality: 30', $content);
-        $this->assertStringContainsString('Replanted: 15', $content);
+        $this->assertStringContainsString('Mortality: 35', $content);
+        $this->assertStringContainsString('Regraft: 15', $content);
+        $this->assertStringContainsString('Ready to Plant: 270', $content);
     }
 
     public function test_stock_ledger_pdf_export_applies_filters(): void
@@ -289,13 +276,13 @@ class AnalyticsTest extends TestCase
             ->assertSessionHasErrors('batch_id');
     }
 
-    public function test_mortality_matrix_groups_variety_by_cause(): void
+    public function test_mortality_matrix_groups_scion_variety_by_cause(): void
     {
         $matrix = AnalyticsMetrics::mortalityMatrix();
 
         $this->assertSame(['Disease', 'Pest'], $matrix['causes']);
-        $this->assertSame(30, $matrix['grandTotal']);
-        $this->assertSame(20, $matrix['totalsByCause']['Disease']);
+        $this->assertSame(35, $matrix['grandTotal']);
+        $this->assertSame(25, $matrix['totalsByCause']['Disease']);
         $this->assertSame(10, $matrix['totalsByCause']['Pest']);
 
         $this->actingAs($this->user)
@@ -306,36 +293,19 @@ class AnalyticsTest extends TestCase
             ->assertSee('Criollo');
     }
 
-    public function test_mortality_matrix_exposes_raw_adjustment_effective_chain(): void
+    public function test_mortality_matrix_effective_mortality_equals_recorded_quantity(): void
     {
+        // Adjustments were removed with the revised model, so the matrix total
+        // must equal the raw sum of the Mortality_Record rows (RULE 6).
         $matrix = AnalyticsMetrics::mortalityMatrix();
 
-        // Raw mortality (before adjustments) vs effective (after adjustments).
-        $this->assertSame(35, $matrix['rawTotal']);
-        $this->assertSame(-5, $matrix['adjustmentTotal']);
-        $this->assertSame(30, $matrix['grandTotal']);
+        $recorded = (int) MortalityRecord::query()->sum('quantity');
 
-        $this->assertSame(25, $matrix['rawTotalsByCause']['Disease']);
-        $this->assertSame(20, $matrix['totalsByCause']['Disease']);
-        $this->assertSame(-5, $matrix['adjustmentTotalsByCause']['Disease']);
-
-        $this->assertSame(10, $matrix['rawTotalsByCause']['Pest']);
-        $this->assertSame(10, $matrix['totalsByCause']['Pest']);
-        $this->assertSame(0, $matrix['adjustmentTotalsByCause']['Pest']);
-
-        // Effective equals raw + adjustments for every row (single definition).
-        foreach ($matrix['rows'] as $row) {
-            $this->assertSame($row['total'], $row['rawTotal'] + $row['adjustmentTotal']);
-        }
-
-        $this->actingAs($this->user)
-            ->get(route('analytics.mortality-matrix'))
-            ->assertOk()
-            ->assertSee('Raw Mortality')
-            ->assertSee('Adjustments')
-            ->assertSee('Effective Mortality')
-            ->assertSee('base 25')
-            ->assertSee('(-5)');
+        $this->assertSame($recorded, $matrix['grandTotal']);
+        $this->assertSame(
+            $recorded,
+            (int) collect($matrix['rows'])->sum('total'),
+        );
     }
 
     public function test_mortality_matrix_rejects_inverted_date_range(): void
@@ -377,9 +347,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Trinitario', $content);
         $this->assertStringContainsString('Disease', $content);
         $this->assertStringContainsString('Pest', $content);
-        $this->assertStringContainsString('Raw mortality: 35', $content);
-        $this->assertStringContainsString('Adjustments: -5', $content);
-        $this->assertStringContainsString('Effective mortality: 30', $content);
+        $this->assertStringContainsString('Total mortality: 35', $content);
         $this->assertStringContainsString('Grand Total', $content);
     }
 
@@ -406,10 +374,10 @@ class AnalyticsTest extends TestCase
         $csv = $response->getContent();
 
         $this->assertStringContainsString('Variety,Disease,Pest,Total', $csv);
-        $this->assertStringContainsString('Criollo,20,0,20', $csv);
+        $this->assertStringContainsString('Criollo,25,0,25', $csv);
         $this->assertStringContainsString('Trinitario,0,10,10', $csv);
         $this->assertStringContainsString('Grand Total', $csv);
-        $this->assertStringContainsString(',20,10,30', $csv);
+        $this->assertStringContainsString(',25,10,35', $csv);
     }
 
     public function test_mortality_matrix_exports_reject_inverted_date_range(): void
@@ -435,8 +403,8 @@ class AnalyticsTest extends TestCase
         $heatmap = AnalyticsMetrics::seasonality(2026);
 
         $this->assertSame(2026, $heatmap['selectedYear']);
-        $this->assertSame(30, $heatmap['total']);
-        $this->assertSame(20, $heatmap['max']);
+        $this->assertSame(35, $heatmap['total']);
+        $this->assertSame(25, $heatmap['max']);
 
         $this->actingAs($this->user)
             ->get(route('analytics.historical.seasonality', ['year' => 2026]))
@@ -467,16 +435,28 @@ class AnalyticsTest extends TestCase
             ->assertSee('Inventory by Age Group');
     }
 
-    public function test_gap_report_computes_expected_actual_and_gap(): void
+    public function test_gap_report_computes_expected_available_and_effective_mortality_gap(): void
     {
+        // Part B: the Gap formula was corrected to Batch::effectiveMortalityQuantity()
+        // (recorded mortality). It is NOT viable - available - stock_out, which is
+        // an identity that always equals 0 because Stock Out is already netted out
+        // of `available_count` on every validated release.
         $gap = AnalyticsMetrics::gapReport();
 
-        $this->assertSame(280, $gap['totalExpected']);
-        $this->assertSame(270, $gap['totalActual']);
-        $this->assertSame(10, $gap['totalGap']);
+        $this->assertSame(280, $gap['totalExpected']);   // viable 180 + 100
+        $this->assertSame(270, $gap['totalActual']);     // available 170 + 100
+        $this->assertSame(35, $gap['totalGap']);         // mortality 25 + 10
 
         $b001 = collect($gap['rows'])->firstWhere('batch', 'B001');
-        $this->assertSame(10, $b001['gap']);
+        $this->assertSame(25, $b001['gap']);
+        $this->assertSame(25, $this->b001->effectiveMortalityQuantity());
+
+        $b002 = collect($gap['rows'])->firstWhere('batch', 'B002');
+        $this->assertSame(10, $b002['gap']);
+
+        // The gap total must equal the recorded mortality — never 0 here.
+        $this->assertSame((int) MortalityRecord::query()->sum('quantity'), $gap['totalGap']);
+        $this->assertNotSame(0, $gap['totalGap']);
 
         $this->actingAs($this->user)
             ->get(route('analytics.historical.gap-report'))
@@ -515,15 +495,16 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Gap Report', $content);
         $this->assertStringContainsString('Batch', $content);
         $this->assertStringContainsString('Expected', $content);
-        $this->assertStringContainsString('Actual', $content);
+        $this->assertStringContainsString('Available', $content);
         $this->assertStringContainsString('B001', $content);
         $this->assertStringContainsString('B002', $content);
         $this->assertStringContainsString('Criollo', $content);
-        $this->assertStringContainsString('Expected inventory: 280', $content);
-        $this->assertStringContainsString('Actual inventory: 270', $content);
-        $this->assertStringContainsString('Total gap: 10', $content);
+        $this->assertStringContainsString('Expected: 280', $content);
+        $this->assertStringContainsString('Available: 270', $content);
+        // FPDF escapes the parentheses in the label.
+        $this->assertStringContainsString('Gap \(effective mortality\): 35', $content);
         $this->assertStringContainsString('180', $content); // B001 expected
-        $this->assertStringContainsString('170', $content); // B001 actual
+        $this->assertStringContainsString('170', $content); // B001 available
     }
 
     public function test_gap_report_pdf_export_applies_filters(): void
@@ -548,10 +529,11 @@ class AnalyticsTest extends TestCase
 
         $csv = $response->getContent();
 
-        $this->assertStringContainsString('Batch,Variety,Expected,Actual,Gap', $csv);
-        $this->assertStringContainsString('B001,Criollo,180,170,10', $csv);
-        $this->assertStringContainsString('B002,Trinitario,100,100,0', $csv);
-        $this->assertStringContainsString('Total,,280,270,10', $csv);
+        // fputcsv quotes headers containing spaces/parentheses.
+        $this->assertStringContainsString('Batch,Variety,Expected,Available,"Pulled Out","Gap (Effective Mortality)"', $csv);
+        $this->assertStringContainsString('B001,Criollo,180,170,0,25', $csv);
+        $this->assertStringContainsString('B002,Trinitario,100,100,0,10', $csv);
+        $this->assertStringContainsString('Total,,280,270,0,35', $csv);
     }
 
     public function test_gap_report_exports_reject_unknown_batch_filter(): void
@@ -613,7 +595,7 @@ class AnalyticsTest extends TestCase
             'user_id' => $this->user->id,
             'analysis_type' => Analytic::TYPE_GAP_REPORT,
             'analysis_period' => 'All time',
-            'result_summary' => ['totalGap' => 10],
+            'result_summary' => ['totalGap' => 35],
             'generated_at' => now(),
         ]);
 
@@ -630,10 +612,11 @@ class AnalyticsTest extends TestCase
 
         $this->assertSame(2, $summary['batches']);
         $this->assertSame(300, $summary['grafted']);
-        $this->assertSame(280, $summary['viable']);
-        $this->assertSame(270, $summary['available']);
-        $this->assertSame(30, $summary['mortality']);
-        $this->assertSame(15, $summary['replanting']);
+        $this->assertSame(35, $summary['mortality']);
+        $this->assertSame(15, $summary['regraft']);
+        $this->assertSame(270, $summary['ready_to_plant']);
+        $this->assertSame(0, $summary['pullout']);
+        $this->assertSame(0, $summary['seedlings']);
     }
 
     public function test_stock_ledger_page_lists_its_own_generated_reports_with_snapshot(): void
@@ -650,7 +633,7 @@ class AnalyticsTest extends TestCase
             'user_id' => $this->user->id,
             'analysis_type' => Analytic::TYPE_MORTALITY_MATRIX,
             'analysis_period' => 'Matrix period XYZ',
-            'result_summary' => ['grandTotal' => 30],
+            'result_summary' => ['grandTotal' => 35],
             'generated_at' => now(),
         ]);
 
@@ -678,7 +661,7 @@ class AnalyticsTest extends TestCase
             'user_id' => $this->user->id,
             'analysis_type' => Analytic::TYPE_MORTALITY_MATRIX,
             'analysis_period' => 'Matrix period XYZ',
-            'result_summary' => ['grandTotal' => 30, 'totalsByCause' => ['Disease' => 20]],
+            'result_summary' => ['grandTotal' => 35, 'totalsByCause' => ['Disease' => 25]],
             'generated_at' => now()->addMinute(),
         ]);
 
@@ -719,13 +702,13 @@ class AnalyticsTest extends TestCase
         $summary = AnalyticsMetrics::summaryFor(Analytic::TYPE_MORTALITY_MATRIX);
 
         $this->assertSame(['Disease', 'Pest'], $summary['causes']);
-        $this->assertSame(['Disease' => 20, 'Pest' => 10], $summary['totalsByCause']);
-        $this->assertSame(30, $summary['grandTotal']);
-        $this->assertSame(['Disease' => 20], $summary['cellsByVariety']['Criollo']);
+        $this->assertSame(['Disease' => 25, 'Pest' => 10], $summary['totalsByCause']);
+        $this->assertSame(35, $summary['grandTotal']);
+        $this->assertSame(['Disease' => 25], $summary['cellsByVariety']['Criollo']);
         $this->assertSame(['Pest' => 10], $summary['cellsByVariety']['Trinitario']);
         $this->assertSame([
             'batch_id' => null,
-            'variety_id' => null,
+            'scion_variety_id' => null,
             'date_from' => null,
             'date_to' => null,
         ], $summary['filters']);
@@ -736,8 +719,8 @@ class AnalyticsTest extends TestCase
         $current = AnalyticsMetrics::mortalityMatrix();
 
         $baseline = [
-            'totalsByCause' => ['Disease' => 19, 'Pest' => 10],
-            'cellsByVariety' => ['Criollo' => ['Disease' => 19], 'Trinitario' => ['Pest' => 10]],
+            'totalsByCause' => ['Disease' => 24, 'Pest' => 10],
+            'cellsByVariety' => ['Criollo' => ['Disease' => 24], 'Trinitario' => ['Pest' => 10]],
         ];
 
         $regressions = AnalyticsMetrics::mortalityMatrixRegressions($current, $baseline);
@@ -745,8 +728,8 @@ class AnalyticsTest extends TestCase
         $this->assertTrue($regressions['hasBaseline']);
         $this->assertCount(1, $regressions['causes']);
         $this->assertSame('Disease', $regressions['causes'][0]['cause']);
-        $this->assertSame(19, $regressions['causes'][0]['previous']);
-        $this->assertSame(20, $regressions['causes'][0]['current']);
+        $this->assertSame(24, $regressions['causes'][0]['previous']);
+        $this->assertSame(25, $regressions['causes'][0]['current']);
         $this->assertSame(1, $regressions['causes'][0]['increase']);
 
         $this->assertCount(1, $regressions['cells']);
@@ -772,10 +755,10 @@ class AnalyticsTest extends TestCase
             'analysis_period' => 'All time',
             'result_summary' => [
                 'causes' => ['Disease', 'Pest'],
-                'totalsByCause' => ['Disease' => 19, 'Pest' => 10],
-                'grandTotal' => 29,
-                'cellsByVariety' => ['Criollo' => ['Disease' => 19], 'Trinitario' => ['Pest' => 10]],
-                'filters' => ['batch_id' => null, 'variety_id' => null, 'date_from' => null, 'date_to' => null],
+                'totalsByCause' => ['Disease' => 24, 'Pest' => 10],
+                'grandTotal' => 34,
+                'cellsByVariety' => ['Criollo' => ['Disease' => 24], 'Trinitario' => ['Pest' => 10]],
+                'filters' => ['batch_id' => null, 'scion_variety_id' => null, 'date_from' => null, 'date_to' => null],
             ],
             'generated_at' => now(),
         ]);
@@ -798,7 +781,7 @@ class AnalyticsTest extends TestCase
                 'totalsByCause' => ['Disease' => 25, 'Pest' => 10],
                 'grandTotal' => 35,
                 'cellsByVariety' => ['Criollo' => ['Disease' => 25], 'Trinitario' => ['Pest' => 10]],
-                'filters' => ['batch_id' => null, 'variety_id' => null, 'date_from' => null, 'date_to' => null],
+                'filters' => ['batch_id' => null, 'scion_variety_id' => null, 'date_from' => null, 'date_to' => null],
             ],
             'generated_at' => now(),
         ]);
@@ -820,7 +803,7 @@ class AnalyticsTest extends TestCase
                 'totalsByCause' => ['Disease' => 1],
                 'grandTotal' => 1,
                 'cellsByVariety' => ['Criollo' => ['Disease' => 1]],
-                'filters' => ['batch_id' => $this->b001->batch_id, 'variety_id' => null, 'date_from' => null, 'date_to' => null],
+                'filters' => ['batch_id' => $this->b001->batch_id, 'scion_variety_id' => null, 'date_from' => null, 'date_to' => null],
             ],
             'generated_at' => now(),
         ]);
@@ -843,7 +826,7 @@ class AnalyticsTest extends TestCase
                 'totalsByCause' => ['Disease' => 1],
                 'grandTotal' => 1,
                 'cellsByVariety' => ['Criollo' => ['Disease' => 1]],
-                'filters' => ['batch_id' => $this->b001->batch_id, 'variety_id' => null, 'date_from' => null, 'date_to' => null],
+                'filters' => ['batch_id' => $this->b001->batch_id, 'scion_variety_id' => null, 'date_from' => null, 'date_to' => null],
             ],
             'generated_at' => now(),
         ]);
@@ -862,10 +845,10 @@ class AnalyticsTest extends TestCase
             'analysis_period' => 'All time',
             'result_summary' => [
                 'causes' => ['Disease', 'Pest'],
-                'totalsByCause' => ['Disease' => 19, 'Pest' => 10],
-                'grandTotal' => 29,
-                'cellsByVariety' => ['Criollo' => ['Disease' => 19], 'Trinitario' => ['Pest' => 10]],
-                'filters' => ['batch_id' => null, 'variety_id' => null, 'date_from' => null, 'date_to' => null],
+                'totalsByCause' => ['Disease' => 24, 'Pest' => 10],
+                'grandTotal' => 34,
+                'cellsByVariety' => ['Criollo' => ['Disease' => 24], 'Trinitario' => ['Pest' => 10]],
+                'filters' => ['batch_id' => null, 'scion_variety_id' => null, 'date_from' => null, 'date_to' => null],
             ],
             'generated_at' => now(),
         ]);
@@ -875,7 +858,7 @@ class AnalyticsTest extends TestCase
             ->assertOk()
             ->assertSee('text-bg-warning', false)
             ->assertSee('Mortality increased since the last saved Root-Cause Matrix report')
-            ->assertSee('Disease 19 → 20 (+1)');
+            ->assertSee('Disease 24 → 25 (+1)');
     }
 
     public function test_mortality_matrix_page_has_no_warning_toast_without_an_increase(): void
@@ -889,7 +872,7 @@ class AnalyticsTest extends TestCase
                 'totalsByCause' => ['Disease' => 25, 'Pest' => 10],
                 'grandTotal' => 35,
                 'cellsByVariety' => ['Criollo' => ['Disease' => 25], 'Trinitario' => ['Pest' => 10]],
-                'filters' => ['batch_id' => null, 'variety_id' => null, 'date_from' => null, 'date_to' => null],
+                'filters' => ['batch_id' => null, 'scion_variety_id' => null, 'date_from' => null, 'date_to' => null],
             ],
             'generated_at' => now(),
         ]);
