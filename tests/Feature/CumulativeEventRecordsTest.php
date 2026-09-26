@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
 use App\Models\ReplantingRecord;
-use App\Models\ScionReceiving;
+use App\Models\ScionVariety;
 use App\Models\StockIn;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -77,15 +77,25 @@ class CumulativeEventRecordsTest extends TestCase
         $this->assertSame('2026-09-03', $replanting->replanting_date->format('Y-m-d'));
     }
 
-    public function test_stock_in_and_scion_receiving_dates_are_handled_as_dates(): void
+    public function test_stock_in_dates_are_handled_as_dates_for_seedling_and_scion_rows(): void
     {
         $stockIn = StockIn::factory()->create(['date_received' => '2026-07-01']);
-        $receiving = ScionReceiving::factory()->create(['date_received' => '2026-08-15']);
+
+        // A scion-inclusive stock-in (the former Scion_Receiving, merged into
+        // Stock_In) is identified by its scion variety and casts the date too.
+        $scionReceipt = StockIn::factory()->create([
+            'quantity' => 80,
+            'viable' => 80,
+            'scion_variety_id' => ScionVariety::factory(),
+            'unit_price' => 12.50,
+            'date_received' => '2026-08-15',
+        ]);
 
         $this->assertInstanceOf(Carbon::class, $stockIn->date_received);
         $this->assertSame('2026-07-01', $stockIn->date_received->format('Y-m-d'));
 
-        $this->assertInstanceOf(Carbon::class, $receiving->date_received);
-        $this->assertSame('2026-08-15', $receiving->date_received->format('Y-m-d'));
+        $this->assertInstanceOf(Carbon::class, $scionReceipt->date_received);
+        $this->assertSame('2026-08-15', $scionReceipt->date_received->format('Y-m-d'));
+        $this->assertTrue($scionReceipt->isScionEntry());
     }
 }

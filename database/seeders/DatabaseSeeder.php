@@ -9,7 +9,6 @@ use App\Models\Inventory;
 use App\Models\MortalityRecord;
 use App\Models\ReplantingRecord;
 use App\Models\Role;
-use App\Models\ScionReceiving;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\StockOut;
@@ -182,27 +181,43 @@ class DatabaseSeeder extends Seeder
         }
 
         // Stock In has no batch_id: it records the received vs viable count
-        // before a batch is established.
+        // before a batch is established. Scion_Receiving was merged into
+        // Stock_In (client-confirmed same real-world event), so scion receipts
+        // are seeded here too: a row with a `scion_variety_id` includes scion and
+        // sets viable = quantity (no five-day recount — scion is perishable and
+        // used immediately); a seedling row keeps its recounted viable value.
         $stockIns = [
             ['supplier_name' => 'Davao Cacao Growers', 'quantity' => 500, 'viable' => 480, 'origin' => 'Davao del Sur', 'date_received' => '2026-07-01'],
             ['supplier_name' => 'Bukidnon Seedling Supply', 'quantity' => 300, 'viable' => 300, 'origin' => 'Bukidnon', 'date_received' => '2026-08-01'],
+            ['scion_variety_name' => 'Criollo', 'supplier_name' => 'Davao Cacao Growers', 'quantity' => 120, 'unit_price' => 12.50, 'origin' => 'Davao del Sur', 'notes' => 'Premium Criollo scion bundle.', 'date_received' => '2026-08-15'],
+            ['scion_variety_name' => 'Trinitario', 'supplier_name' => null, 'quantity' => 80, 'unit_price' => null, 'origin' => null, 'notes' => null, 'date_received' => '2026-08-20'],
         ];
 
         foreach ($stockIns as $stockIn) {
-            $supplier = Supplier::where('supplier_name', $stockIn['supplier_name'])->first();
+            $isScion = isset($stockIn['scion_variety_name']);
 
-            StockIn::firstOrCreate(
-                [
-                    'supplier_id' => $supplier->supplier_id,
-                    'date_received' => $stockIn['date_received'],
-                ],
-                [
-                    'user_id' => $admin->id,
-                    'quantity' => $stockIn['quantity'],
-                    'viable' => $stockIn['viable'],
-                    'origin' => $stockIn['origin'],
-                ],
-            );
+            $supplierId = $stockIn['supplier_name'] === null
+                ? null
+                : Supplier::where('supplier_name', $stockIn['supplier_name'])->value('supplier_id');
+
+            $scionVarietyId = $isScion
+                ? ScionVariety::where('scion_variety_name', $stockIn['scion_variety_name'])->value('scion_variety_id')
+                : null;
+
+            $keys = $isScion
+                ? ['scion_variety_id' => $scionVarietyId, 'date_received' => $stockIn['date_received']]
+                : ['supplier_id' => $supplierId, 'date_received' => $stockIn['date_received']];
+
+            StockIn::firstOrCreate($keys, [
+                'supplier_id' => $supplierId,
+                'scion_variety_id' => $scionVarietyId,
+                'user_id' => $admin->id,
+                'quantity' => $stockIn['quantity'],
+                'viable' => $isScion ? $stockIn['quantity'] : $stockIn['viable'],
+                'unit_price' => $stockIn['unit_price'] ?? null,
+                'origin' => $stockIn['origin'] ?? '',
+                'notes' => $stockIn['notes'] ?? null,
+            ]);
         }
 
         // Stock Out: header + one detail line per batch/scion variety. The
@@ -264,33 +279,9 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // Scion Receiving: a receiving/cost-tracking log ONLY. It carries no
-        // stock balance and has no freshness/viability column (deliberately not
-        // implemented pending client confirmation).
-        $receivings = [
-            ['scion_variety_id' => $criollo->scion_variety_id, 'supplier_name' => 'Davao Cacao Growers', 'quantity' => 120, 'unit_price' => 12.50, 'date_received' => '2026-08-15', 'origin' => 'Davao del Sur', 'notes' => 'Premium Criollo scion bundle.'],
-            ['scion_variety_id' => $trinitario->scion_variety_id, 'supplier_name' => null, 'quantity' => 80, 'unit_price' => null, 'date_received' => '2026-08-20', 'origin' => null, 'notes' => null],
-        ];
-
-        foreach ($receivings as $receiving) {
-            $supplierId = $receiving['supplier_name'] === null
-                ? null
-                : Supplier::where('supplier_name', $receiving['supplier_name'])->value('supplier_id');
-
-            ScionReceiving::firstOrCreate(
-                [
-                    'scion_variety_id' => $receiving['scion_variety_id'],
-                    'date_received' => $receiving['date_received'],
-                ],
-                [
-                    'supplier_id' => $supplierId,
-                    'quantity' => $receiving['quantity'],
-                    'unit_price' => $receiving['unit_price'],
-                    'origin' => $receiving['origin'],
-                    'notes' => $receiving['notes'],
-                ],
-            );
-        }
+        // Scion Receiving: removed. Scion receipts are now seeded as
+        // scion-inclusive Stock In rows above (see the Stock In block); the
+        // standalone scion_receivings table was retired in the merge.
 
         $this->call(ActivityLogSeeder::class);
     }

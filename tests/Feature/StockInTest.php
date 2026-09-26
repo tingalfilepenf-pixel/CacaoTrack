@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Batch;
+use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\Supplier;
 use App\Models\User;
@@ -13,7 +14,9 @@ use Tests\TestCase;
 /**
  * Stock In on the revised model (ERD §3.7): it records the received vs the
  * five-day recounted viable quantity and has NO `batch_id` and no inventory
- * side effect.
+ * side effect. Since the client-confirmed merge of Scion_Receiving into
+ * Stock_In, a single form/list handles both seedling-only rows and
+ * scion-inclusive rows (identified by a non-null `scion_variety_id`).
  */
 class StockInTest extends TestCase
 {
@@ -26,6 +29,11 @@ class StockInTest extends TestCase
             'contact_number' => '0917-000-0000',
             'address' => 'Test Address',
         ]);
+    }
+
+    private function createScionVariety(string $name = 'Criollo'): ScionVariety
+    {
+        return ScionVariety::create(['scion_variety_name' => $name]);
     }
 
     public function test_guests_are_redirected_from_stock_in_to_login(): void
@@ -72,6 +80,115 @@ class StockInTest extends TestCase
 
         // Stock In is a standalone received-vs-viable record; it never mutates a batch.
         $this->assertDatabaseCount('inventories', 0);
+
+        // A pure-seedling submission never sets the optional scion fields.
+        $this->assertNull(StockIn::first()->scion_variety_id);
+        $this->assertNull(StockIn::first()->unit_price);
+    }
+
+    public function test_scion_stock_in_sets_viable_equal_to_quantity_and_persists_scion_fields(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety('Criollo');
+
+        // No `viable` is submitted: the Scion tab hides/relies on the server to
+        // set it, because scion has no five-day recount.
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'supplier_id' => $supplier->supplier_id,
+                'scion_variety_id' => $variety->scion_variety_id,
+                'quantity' => 120,
+                'unit_price' => 12.50,
+                'origin' => 'Davao del Sur',
+                'notes' => 'Premium bundle.',
+                'date_received' => '2026-09-05',
+            ])
+            ->assertRedirect(route('inventory.stock-in'))
+            ->assertSessionHas('success', 'Scion receiving recorded successfully.');
+
+        $stockIn = StockIn::first();
+
+        $this->assertNotNull($stockIn);
+        $this->assertSame($variety->scion_variety_id, (int) $stockIn->scion_variety_id);
+        $this->assertSame('12.50', $stockIn->unit_price);
+        $this->assertSame(120, (int) $stockIn->quantity);
+        $this->assertSame(120, (int) $stockIn->viable);
+        $this->assertTrue($stockIn->isScionEntry());
+        $this->assertTrue($stockIn->scionVariety->is($variety));
+    }
+
+    public function test_scion_variety_and_unit_price_must_be_provided_together(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        // Scion variety without a unit price.
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'supplier_id' => $supplier->supplier_id,
+                'scion_variety_id' => $variety->scion_variety_id,
+                'quantity' => 10,
+                'origin' => 'Davao',
+                'date_received' => '2026-09-05',
+            ])
+            ->assertSessionHasErrors(['unit_price'], null, 'stockin');
+
+        // Unit price without a scion variety.
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'supplier_id' => $supplier->supplier_id,
+                'quantity' => 10,
+                'unit_price' => 5.00,
+                'origin' => 'Davao',
+                'date_received' => '2026-09-05',
+            ])
+            ->assertSessionHasErrors(['scion_variety_id'], null, 'stockin');
+
+        $this->assertSame(0, StockIn::count());
+    }
+
+    public function test_stock_in_list_shows_scion_variety_for_scion_rows_and_dash_for_seedlings(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety('Trinitario');
+
+        StockIn::create([
+            'supplier_id' => $supplier->supplier_id,
+            'user_id' => $user->id,
+            'quantity' => 50,
+            'viable' => 50,
+            'origin' => 'Seedling Origin',
+            'date_received' => '2026-09-01',
+        ]);
+
+        StockIn::create([
+            'supplier_id' => $supplier->supplier_id,
+            'scion_variety_id' => $variety->scion_variety_id,
+            'user_id' => $user->id,
+            'quantity' => 80,
+            'viable' => 80,
+            'unit_price' => 12.50,
+            'origin' => 'Scion Origin',
+            'date_received' => '2026-09-02',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-in'))
+            ->assertOk()
+            ->assertSee('Trinitario')
+            ->assertSee('Scion');
+    }
+
+    public function test_stock_in_schema_carries_optional_scion_fields(): void
+    {
+        // The merged scion columns are nullable so a pure-seedling row is
+        // unchanged; presence of scion_variety_id is the only "type" signal.
+        $this->assertTrue(Schema::hasColumn('stock_ins', 'scion_variety_id'));
+        $this->assertTrue(Schema::hasColumn('stock_ins', 'unit_price'));
+        $this->assertFalse(Schema::hasColumn('stock_ins', 'entry_type'));
     }
 
     public function test_stock_in_requires_valid_fields(): void

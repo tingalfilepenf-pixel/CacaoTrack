@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\ScionVariety;
 use App\Models\Supplier;
+use Illuminate\Validation\Rule;
 
 class StoreStockInRequest extends AppFormRequest
 {
@@ -13,6 +15,14 @@ class StoreStockInRequest extends AppFormRequest
      * happens before a batch is established. `viable <= quantity` is enforced
      * here as the user-facing validation layer on top of the model guard.
      *
+     * `scion_variety_id` and `unit_price` are a matched pair (client-confirmed
+     * merge of Scion_Receiving into Stock_In): both present for a scion-
+     * inclusive row, both absent for a pure-seedling row. `required_with` each
+     * way expresses "both or neither" using built-in rules — there is no
+     * discriminator column, the scion variety id is the signal. `viable` is
+     * required only for the seedling path because the scion path sets it to the
+     * received quantity server-side (scion has no five-day recount).
+     *
      * @return array<string, array<int, mixed>>
      */
     public function rules(): array
@@ -20,8 +30,14 @@ class StoreStockInRequest extends AppFormRequest
         return [
             'supplier_id' => ['required', 'integer', Supplier::activeExistsRule('supplier_id')],
             'quantity' => ['required', 'integer', 'min:1'],
-            'viable' => ['required', 'integer', 'min:0', 'lte:quantity'],
+            'viable' => [
+                Rule::requiredIf(fn () => blank($this->input('scion_variety_id'))),
+                'nullable', 'integer', 'min:0', 'lte:quantity',
+            ],
+            'scion_variety_id' => ['nullable', 'integer', ScionVariety::activeExistsRule('scion_variety_id'), 'required_with:unit_price'],
+            'unit_price' => ['nullable', 'numeric', 'min:0', 'required_with:scion_variety_id'],
             'origin' => ['required', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:1000'],
             'date_received' => ['required', 'date', 'before_or_equal:today'],
         ];
     }
@@ -38,7 +54,13 @@ class StoreStockInRequest extends AppFormRequest
             'viable.required' => 'The viable count after the five-day recount is required.',
             'viable.min' => 'The viable count cannot be negative.',
             'viable.lte' => 'Viable count cannot exceed the ordered quantity.',
+            'scion_variety_id.exists' => 'The selected scion variety is not available.',
+            'scion_variety_id.required_with' => 'Select a scion variety and enter a unit price together, or leave both blank for a seedling-only stock-in.',
+            'unit_price.required_with' => 'Select a scion variety and enter a unit price together, or leave both blank for a seedling-only stock-in.',
+            'unit_price.numeric' => 'Unit price must be a number.',
+            'unit_price.min' => 'Unit price cannot be negative.',
             'origin.required' => 'The seedling origin is required.',
+            'notes.max' => 'The notes are too long.',
             'date_received.required' => 'The date received is required.',
             'date_received.before_or_equal' => 'The date received cannot be in the future.',
         ];

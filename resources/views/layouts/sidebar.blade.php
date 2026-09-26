@@ -65,10 +65,6 @@
                     <i class="bi bi-tags"></i>
                     <span>Scion Variety</span>
                 </a>
-                <a href="{{ route('operational.scion-receivings') }}" class="nav-link {{ request()->routeIs('operational.scion-receivings') ? 'active' : '' }}">
-                    <i class="bi bi-box-arrow-in-down"></i>
-                    <span>Scion Receiving</span>
-                </a>
             @endif
         @endif
 

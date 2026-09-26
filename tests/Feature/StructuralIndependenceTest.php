@@ -66,13 +66,22 @@ class StructuralIndependenceTest extends TestCase
     {
         $this->assertTrue(Schema::hasTable('scion_varieties'));
         $this->assertTrue(Schema::hasTable('stock_out_details'));
-        $this->assertTrue(Schema::hasTable('scion_receivings'));
 
         $this->assertTrue(Schema::hasColumn('batches', 'scion_variety_id'));
         $this->assertTrue(Schema::hasColumn('batches', 'available_count'));
         $this->assertTrue(Schema::hasColumn('stock_ins', 'viable'));
         $this->assertTrue(Schema::hasColumn('stock_ins', 'origin'));
         $this->assertTrue(Schema::hasColumn('inventories', 'inventory_date'));
-        $this->assertTrue(Schema::hasColumn('scion_receivings', 'supplier_id'));
+    }
+
+    public function test_scion_receiving_was_merged_into_stock_ins(): void
+    {
+        // Client-confirmed: Scion_Receiving is the same real-world receiving
+        // event as Stock In, so its columns live on stock_ins and the separate
+        // table is retired (see migration 2026_09_26_000003/000004).
+        $this->assertFalse(Schema::hasTable('scion_receivings'));
+
+        $this->assertTrue(Schema::hasColumn('stock_ins', 'scion_variety_id'));
+        $this->assertTrue(Schema::hasColumn('stock_ins', 'unit_price'));
     }
 }

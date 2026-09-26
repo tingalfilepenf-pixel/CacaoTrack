@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreStockInRequest;
 use App\Http\Requests\StoreSupplierRequest;
 use App\Models\ActivityLog;
+use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\Supplier;
 use App\Support\DuplicateSubmissionGuard;
@@ -17,8 +18,11 @@ use Illuminate\View\View;
 class StockInController extends Controller
 {
     /**
-     * FR-09 Stock In listing. Stock In records the usable seedlings after the
-     * five-day count; it has no `batch_id` (ERD §3.7).
+     * FR-09 Stock In listing. Stock In records a receiving event and has no
+     * `batch_id` (ERD §3.7). Since the client-confirmed merge of Scion_Receiving
+     * into Stock_In, a single list shows both seedling-only and scion-inclusive
+     * rows: rows with a `scion_variety_id` are the scion ones (see
+     * `StockIn::isScionEntry()`), surfaced via the scion-variety column.
      */
     public function index(Request $request): View
     {
@@ -34,6 +38,8 @@ class StockInController extends Controller
                 $query->where(function ($subQuery) use ($search): void {
                     $subQuery->whereHas('supplier', fn ($supplierQuery) => $supplierQuery
                         ->where('supplier_name', 'like', "%{$search}%"))
+                        ->orWhereHas('scionVariety', fn ($varietyQuery) => $varietyQuery
+                            ->where('scion_variety_name', 'like', "%{$search}%"))
                         ->orWhere('origin', 'like', "%{$search}%");
                 });
             })
@@ -45,7 +51,7 @@ class StockInController extends Controller
                 ->whereDate('date_received', '<=', $dateTo));
 
         $stockIns = (clone $base)
-            ->with(['supplier', 'user'])
+            ->with(['supplier', 'scionVariety', 'user'])
             ->orderByDesc('date_received')
             ->orderByDesc('stock_in_id')
             ->paginate(10)
@@ -54,6 +60,7 @@ class StockInController extends Controller
         return view('inventory.stock-in.index', [
             'stockIns' => $stockIns,
             'suppliers' => Supplier::active()->orderBy('supplier_name')->get(),
+            'scionVarieties' => ScionVariety::query()->active()->orderBy('scion_variety_name')->get(),
             'filters' => $filters,
             'totalReceived' => (int) (clone $base)->sum('quantity'),
             'totalViable' => (int) (clone $base)->sum('viable'),
@@ -66,27 +73,48 @@ class StockInController extends Controller
     {
         $validated = $request->validated();
 
+        // A row includes scion when `scion_variety_id` is present (there is no
+        // "type" column). Scion is perishable and used immediately, so it has
+        // NO five-day recount: the usable (viable) quantity is set equal to the
+        // received quantity server-side rather than taken from the form. A
+        // seedling row keeps its separately counted viable value.
+        $isScion = ! empty($validated['scion_variety_id']);
+        $viable = $isScion ? $validated['quantity'] : $validated['viable'];
+
         $fingerprint = DuplicateSubmissionGuard::assertFresh('stock_in', $validated, 'stockin');
 
         try {
-            DB::transaction(function () use ($validated): void {
+            DB::transaction(function () use ($validated, $isScion, $viable): void {
                 StockIn::create([
                     'supplier_id' => $validated['supplier_id'],
+                    'scion_variety_id' => $validated['scion_variety_id'] ?? null,
                     'user_id' => Auth::id(),
                     'quantity' => $validated['quantity'],
-                    'viable' => $validated['viable'],
+                    'viable' => $viable,
+                    'unit_price' => $validated['unit_price'] ?? null,
                     'origin' => $validated['origin'],
+                    'notes' => $validated['notes'] ?? null,
                     'date_received' => $validated['date_received'],
                 ]);
 
                 $supplier = Supplier::find($validated['supplier_id']);
 
+                if ($isScion) {
+                    $scionVariety = ScionVariety::find($validated['scion_variety_id']);
+                    $description = "Received {$validated['quantity']} scion of "
+                        .($scionVariety?->scion_variety_name ?? 'scion variety')
+                        .' from '.($supplier?->supplier_name ?? 'supplier')
+                        ." (origin: {$validated['origin']}).";
+                } else {
+                    $description = "Received {$validated['quantity']} seedlings from "
+                        .($supplier?->supplier_name ?? 'supplier')
+                        ." (origin: {$validated['origin']}); viable {$viable}.";
+                }
+
                 ActivityLog::record(
                     null,
                     ActivityLog::TYPE_STOCK_IN_RECORDED,
-                    "Received {$validated['quantity']} seedlings from "
-                        .($supplier?->supplier_name ?? 'supplier')
-                        ." (origin: {$validated['origin']}); viable {$validated['viable']}.",
+                    $description,
                     null,
                     $validated['date_received'],
                 );
@@ -97,9 +125,13 @@ class StockInController extends Controller
             throw $exception;
         }
 
+        $message = $isScion
+            ? 'Scion receiving recorded successfully.'
+            : 'Stock-in transaction recorded successfully.';
+
         return redirect()
             ->route('inventory.stock-in')
-            ->with('success', 'Stock-in transaction recorded successfully.');
+            ->with('success', $message);
     }
 
     public function storeSupplier(StoreSupplierRequest $request): RedirectResponse

@@ -1,6 +1,60 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session BZ; **P6 DONE — refactor P0–P6 complete**)
+> ### ▶ Continue here (latest: Session CC — **`Scion_Receiving` merged into `Stock_In` (client-confirmed); refactor P0–P6 still DONE**)
+> - **▶ Session CC (DONE — `scion_receivings` merged into `stock_ins`; commit below):** the client
+>   confirmed seedling Stock In and Scion Receiving are the **same real-world receiving event**, so the
+>   short-lived `Scion_Receiving` entity (Session BV/CB) was retired — mirroring the earlier
+>   Regraft/Replanting consolidation. **Migrations:** `2026_09_26_000003_add_scion_columns_to_stock_ins_table`
+>   adds nullable `scion_variety_id` (FK → `scion_varieties`, restrictOnDelete), `unit_price`
+>   decimal(12,2) and `notes` to `stock_ins`, and makes `stock_ins.supplier_id` nullable (needed to
+>   preserve scion rows with no formal Supplier); `2026_09_26_000004_merge_scion_receivings_into_stock_ins_table`
+>   **data-migrates** every `scion_receivings` row into `stock_ins` (`viable = quantity`, `origin`/`notes`
+>   preserved, attributed to the earliest user) then **drops** the table. Create migration
+>   `2026_09_26_000001` kept as history. **Retired:** `ScionReceiving` model, factory, feature test,
+>   controller, form request, view, the `/operational/scion-receivings` routes and the sidebar link.
+>   **Stock In UI:** one "Add Stock In" modal now has a **Seedlings / Scion** Bootstrap nav-tabs pair
+>   (shared supplier/quantity/origin/date; the Scion tab adds scion variety + unit price + notes and the
+>   server sets `viable = quantity`); the single list shows a **Scion Variety** column ("—" for
+>   seedling rows). Conditional validation lives in `StoreStockInRequest` (`required_with` pair +
+>   `Rule::requiredIf` for viable). **No discriminator column** — `scion_variety_id` presence is the
+>   signal (`StockIn::isScionEntry()`). **Docs:** AGENTS.md + canonical ERD updated (§3.7/§3.16/§6).
+>   Full suite green **278 passed / 1163 assertions**; Pint + `php -l` clean; `migrate:status` 0
+>   Pending on `db_capstone_test`; `db_capstone` migrated after a fresh backup. **Still open
+>   (client-gated):** scion-receiving traceability to graft/regraft (no balance deduction) and the
+>   freshness/viability rule.
+> - **▶ Session CB (DONE — Scion Receiving "Add" modal + backing route/controller/validation; commit `6cd5d75`) — RETIRED in Session CC (merged into Stock In):**
+>   built the first slice of the deferred **Scion Receiving CRUD UI** (the `scion_receivings` / `ScionReceiving`
+>   entity was schema + model only since Session BV). Added `App\Http\Controllers\ScionReceivingController`
+>   (`index` lists receivings newest-first, paginated 10, eager-loads variety + nullable supplier; `store`
+>   creates + flashes "Scion receiving recorded successfully."), `App\Http\Requests\StoreScionReceivingRequest`
+>   (error bag `scion_receiving`, rules from `ScionReceiving::rules()`, **field-specific messages** e.g.
+>   "Quantity must be greater than zero."), the route group **`/operational/scion-receivings`** (GET index +
+>   POST store) gated by `permission:manage_inventory`, a sidebar link (**Operational → Scion Receiving**), and
+>   `resources/views/operational/scion-receivings/index.blade.php` (log table: Date / Scion Variety / Supplier
+>   or "—" / Quantity / Unit Price or "—" / Origin or "—"; **no balance or amount column**; empty state "No
+>   scion receiving records found."; Add modal mirroring the Suppliers `addSupplierModal` markup). **Scope kept
+>   deliberately narrow:** Add-only — **no** Edit/Archive/Details modals, **no** grafting/regrafting traceability
+>   link, **no** freshness/viability field/warning/blocking. **Verified:** throwaway HTTP test (then deleted)
+>   confirmed GET 200, create + success flash, per-field validation messages, zero-quantity message, and 403
+>   without `manage_inventory`; full MySQL suite **280 passed / 1170 assertions**; `pint --test` passed;
+>   `php -l` clean; `route:list` **71 routes**; grep/git diff confirm only the 3 new files + `routes/web.php`
+>   (2 routes) + `sidebar.blade.php` (1 link) changed. **No schema/DB change** (test DB only).
+>   **Still deferred (client-gated):** Scion Receiving **Edit/Archive/Details** modals and the
+>   **traceability link** to Regraft/Replanting (see `AGENTS.md` §"P6 deferred items").
+> - **▶ Session CA (DONE — `db_capstone` data policy EXECUTED; wipe + reseed, 2026-09-26):** the P6
+>   recommendation was **executed**, not just recommended. **Backup first** (before any change):
+>   `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql`
+>   — 47,596 bytes, 24 tables / 16 INSERTs, `--single-transaction`, verified; left untouched outside
+>   the git repo. Then `php artisan migrate:fresh --seed --force` against **connection `mysql` /
+>   database `db_capstone`** (the one explicitly approved destructive action on the live DB) using the
+>   P6 `DatabaseSeeder` + `ActivityLogSeeder`. **Before → after:** batches 9→3, stock_outs 7→1,
+>   stock_out_details 7→1, mortality_records 17→3, replanting_records 13→3, stock_ins 8→2,
+>   scion_receivings 0→2. **The pre-refactor anomaly is gone** (no batch with
+>   `available_count > viable_count`; old B005 had 600 > 100). Fresh KPIs: **Active Inventory 395 /
+>   Crude Mortality 11.11% / Regraft Deficit 16 / Gap 50**; Dashboard `/`, Operational Analytics,
+>   Stock Ledger, Gap Report and Matrix all **200**; `migrate:status` 0 Pending. Standing rule
+>   unchanged (tests only against `db_capstone_test`; no further destructive action without fresh
+>   sign-off). Full detail: `AGENTS.md` §"`db_capstone` data policy — EXECUTED".
 > - **▶ Session BZ (DONE — P6 seeders/tests/docs/verify; commit checkpoints below):** migrated the
 >   whole test suite to the revised model and made it green. **Deleted** the five legacy tests for
 >   removed entities (`BatchMonitoringTest`, `VarietyTest`, `PotTypeTest`, `ScionTest`,
@@ -16,10 +70,11 @@
 >   suite **280 passed / 1170 assertions**, Pint + `php -l` clean, `migrate:status` 0 Pending,
 >   seeders clean + idempotent on `db_capstone_test`, no removed-entity references left in `tests/`.
 >   **Docs:** P6-deferred items + the `db_capstone` data-policy recommendation were added to
->   `AGENTS.md` (no destructive action taken — explicit sign-off still required).
+>   `AGENTS.md` and this handoff. (The recommendation was later **executed in Session CA** — see above.)
 > - **P0–P6 DONE. Prior commits: BY ERD terminology fix (`9bd3c8a`), BX regraft_records consolidation
 >   (`22ef695`) + its docs sync (`bff2c26`).** Prior: BS Gap fix (`1744975`), BT display rename
->   (`bd47433`), BV Scion_Receiving (`33ff6b0`). Two untracked `docs/*.csv` sample exports remain.
+>   (`bd47433`), BV Scion_Receiving (`33ff6b0`), **CB Scion Receiving "Add" UI (`6cd5d75`)**. Two
+>   untracked `docs/*.csv` sample exports remain.
 > - **▶ Session BY (DONE — handoff refresh + ERD user-facing terminology; doc-only):** renamed the last
 >   two user-facing "Replanting" labels to **"Regraft"** in `docs/CacaoTrack_ERD.md` + `_REVISED.md`
 >   (§7 sidebar list, §8 Design Principle) to match the executed display rename (`bd47433`).
@@ -54,30 +109,42 @@
 > - **Session BU (historical — read-only audit; RESOLVED in BX):** it found the "consolidation fix"
 >   had never been applied (`regraft_records` present with 0 rows; no drop migration; Stock Ledger
 >   reading the empty table). Session BX then **applied** it (see above). **No further action.**
-> - **Still open (non-blocking):** `Scion_Receiving` has **no CRUD UI and no defined usage/traceability
+> - **Still open (non-blocking):** `Scion_Receiving` has an **Add + list UI now (Session CB, `6cd5d75`)**
+>   but **no Edit/Archive/Details modals and no defined usage/traceability
 >   link yet** (flagged); Stock Ledger "Ready to Plant" best-guess mapping. **`AGENTS.md` + both ERD
 >   docs now list one approved additive exception (`scion_receivings`, Session BV); the
 >   `regraft_records` CRUD UI flag is dropped (table retracted).**
-> - **▶ NEXT = P6 (seeders/tests/docs/verify).** First settle the **Session BR data policy** —
->   regenerate clean seed data (and reconcile `available_count`) **vs** leave the live pre-refactor
->   rows and build synthetic fixtures. Then rewrite the affected seeders/tests, run the MySQL suite
->   (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`) + Pint +
->   `view:cache` + `migrate:status` + live spot-checks, and update this file + `AGENTS.md`.
+> - **▶ NEXT UP / where to pick up (vibecoding resume point):** there is **no remaining phase work** —
+>   the revised-model refactor is complete (P0–P6), `db_capstone` holds clean, schema-valid
+>   seed data, and the Scion Receiving **Add** slice is shipped. Pick one of:
+>   - **A. Optional quality-of-life:** enable `pdo_sqlite` in `php.ini` so plain `php artisan test`
+>     works without the MySQL env override (see §5).
+>   - **B. New feature work (product decision needed):** the only known deferred items are
+>     **client-sign-off gated** — do **not** implement them unprompted: (1) Scion_Receiving
+>     linkage/traceability (graft/regraft referencing a receiving row; **no** stock-balance deduction);
+>     (2) Scion_Receiving **Edit/Archive/Details** modals (Add is done; the confirmed fields are scion
+>     variety, origin?, supplier?, quantity, date, price?, notes?); (3) Stock Ledger "Ready to Plant"
+>     mapping (**leave as `available_count`** — do not change). See §6 and `AGENTS.md` §"P6 deferred
+>     items".
+>   - **C. Verify current state first** before touching anything (command below).
+> - **Standing rules:** tests only against `db_capstone_test` (never `db_capstone`); the Session CA
+>   wipe + reseed was the **only** approved destructive action on the live DB — any further one needs
+>   fresh explicit sign-off. Keep this backup untouched:
+>   `...\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql`.
 > - **Verify quickly:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->   (never point tests at `db_capstone`). Full detail: §2 Session BY/BX/BV/BU/BT/BS/BR/BQ, §3, §5, §6.
+>   (never point tests at `db_capstone`). Full detail: §2 Session CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ, §3, §5, §6.
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session BY** (a handoff-refresh + doc-only pass that renamed the two remaining
-user-facing "Replanting" labels to "Regraft" in the ERD sidebar/design principle; right before it,
-**Session BX APPLIED** the long-pending `regraft_records` consolidation: the duplicate table was
-dropped — 0 rows, no data migration — the model/relation/import removed, and the Stock Ledger's Regraft
-column repointed at `replanting_records`; `AGENTS.md` + both ERD docs now record **one** remaining
-approved additive exception, `scion_receivings`, Session BV). Before that: Phase 5
-(Analytics/reports) was **implemented in Session BQ**; the Gap formula was corrected in Session BS; the
-Replanting→Regraft display rename landed in Session BT; Session BU audited the still-unapplied
-`regraft_records` consolidation; Session BV added the **`Scion_Receiving`** entity as additive schema +
-model only, with no freshness/viability logic yet; and Session BW synced the docs to the then-current
-reality): the
+project after **Session CB (2026-09-26)** — **the refactor is complete (P0–P6), `db_capstone` has
+been wiped + reseeded with clean, schema-valid data, and the Scion Receiving "Add" CRUD slice is
+live**: the schema, models, controllers/routes, views,
+analytics and seeders/tests all match the revised 15-entity model, and the full MySQL suite is
+**green (280 passed / 1170 assertions)**. The next session starts from the **"NEXT UP" bullet in the
+banner above** and §6. (Historical context follows: Phase 5 (Analytics/reports) was
+**implemented in Session BQ**; the Gap formula was corrected in Session BS; the Replanting→Regraft
+display rename landed in Session BT; Session BU audited the consolidation; Session BV added the
+**`Scion_Receiving`** entity as additive schema + model only; Session BW synced the docs; and Session BY
+renamed the last user-facing ERD labels to "Regraft".): the
 **analytic/report layer was migrated onto the revised model** —
 `App\Support\AnalyticsMetrics` was rewritten (no `Variety`/`adjustments`/`current_quantity`/
 `inventory` references), the **Dashboard `/` returns 200**, and the **Stock Ledger is now a monthly
@@ -85,12 +152,11 @@ grid** with dynamic per-Scion-Variety columns in both the Blade view and the FPD
 schema exception** landed at the time: migration `2026_09_25_000009` created `regraft_records` +
 `App\Models\RegraftRecord` + `Batch::regraftRecords()` (Part B) — **retracted in Session BX** (it
 duplicated `Replanting_Record`; dropped with 0 rows). All seven analytics pages and all
-seven PDF/CSV exports return **200**; `php artisan view:cache` is clean and Pint passes. **The
-seeders/tests were NOT touched (P6).** P5 is committed as its own checkpoint (`d139286`, "feat(analytics):
+seven PDF/CSV exports return **200**; `php artisan view:cache` is clean and Pint passes. P5 is committed as its own checkpoint (`d139286`, "feat(analytics):
 implement P5 revised-model analytics, dashboard and stock ledger"). See the Session BQ entry in
-§2/§5/§6. The refactor is now **P0–P5 DONE / P6 next**: the DB (P1), models (P2), controllers/routes
-(P3), views/sidebar (P4) **and analytics/reports (P5)** match the revised model, but the
-**seeders/tests still target the OLD model**, so the feature suite fails until P6 rewrites them.
+§2/§5/§6. The refactor is now **P0–P6 DONE**: the DB (P1), models (P2), controllers/routes
+(P3), views/sidebar (P4), analytics/reports (P5) **and seeders/tests/factories (P6)** all match the
+revised model, and the full MySQL suite is **green**.
 One P5 flag remains: Stock Ledger "Ready to Plant" is a flagged best-guess mapping. (The second P5
 flag — the Gap formula resolving to 0 — was **corrected in Session BS** to
 `Gap = Batch::effectiveMortalityQuantity()`; see the Session BS entry.) Before that, Session BN implemented Phase 3
@@ -505,44 +571,37 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ Session BU (read-only audit — do this first): the consolidation fix was NEVER applied.**
-  `regraft_records` still exists (0 rows) next to `replanting_records` (13 rows); **no drop migration
-  exists**; `app/Models/RegraftRecord.php` + `Batch::regraftRecords()` remain; the Stock Ledger's
-  Regraft column still reads `RegraftRecord` (`AnalyticsMetrics::stockLedgerGrid():579`), so it shows
-  0. **Next action = apply the consolidation for real** (repoint the ledger at `ReplantingRecord`,
-  remove the model/relation, add a drop migration, retire `Regraft_Record` in the docs) — pending your
-  go-ahead. Full detail: §2 Session BU / §6.
+- **▶ Current quick start (latest: Session CB, 2026-09-26):** the revised-model refactor is **DONE
+  (P0–P6)**, `db_capstone` was **wiped + reseeded** with clean, schema-valid data (backup:
+  `...\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql`), and the **Scion Receiving
+  "Add" CRUD slice is live** (commit `6cd5d75`; `index`/`store` only). Fresh live data: 3 batches
+  (B001 180/180, B002 140/120, B003 95/95), 2 stock-ins, 1 stock-out + 1 detail, 3 mortality,
+  3 regraft, 2 scion receivings, 3 inventories, 9 activity_logs. Live KPIs: Active Inventory **395**,
+  Crude Mortality **11.11%**, Regraft Deficit **16**, Gap **50**; Dashboard + analytics pages **200**.
+  Full suite **280/1170**, Pint clean, **71 routes**. **No remaining phase work** — see the top banner
+  for the resume options and the client-gated deferred items (Scion Receiving
+  Edit/Archive/Details + traceability; Stock Ledger "Ready to Plant" mapping).
 - **▶ Session BT (DONE — display rename, commit `bd47433`):** every user-visible "Replanting" is now
   "Regraft" (sidebar, KPI cards, Stock Ledger "Re Graft" header, PDF/CSV headers, Activity History
   label, `record_operations` permission label, validation/toast copy). Internal names stay
   `Replanting`. Dashboard KPIs verified identical (1130 / 40.00% / 385). **No DB/schema/data change.**
   Full detail: §2 Session BT.
-- **Working tree note:** `session.handoff.md` itself is **uncommitted** (the BS/BR documentation
-  additions plus this update), and `docs/cacao-operational-analytics-2026-09-25.csv` +
-  `docs/cacao-stock-ledger.csv` are **untracked** sample exports. Commit or clean up as desired.
+- **Working tree note:** `AGENTS.md` + `session.handoff.md` are **modified and uncommitted** (the
+  Session CA/CB docs updates — the Scion Receiving code was committed separately as `6cd5d75`), and
+  `docs/cacao-operational-analytics-2026-09-25.csv` + `docs/cacao-stock-ledger.csv` are **untracked**
+  sample exports. Commit or clean up as desired.
 - **▶ Session BS (DONE — Gap formula corrected, commit `1744975`):** `Gap = Batch::effectiveMortalityQuantity()`.
-  No DB/schema/data change; `AGENTS.md` + Gap view/PDF/CSV updated. Verified live: 9 batches, gaps
-  B001 125 / B002 20 / B003 45 / B004 300 / B005 50 / B006 30 / B007 0 / TAB007 10 / TAB008 0 →
-  `totalGap = 580 = SUM(mortality_records.quantity)`. **The prior Gap "Open decision #1" is CLOSED.**
-  Still open: "Ready to Plant" mapping; `regraft_records` CRUD UI. Full detail: Session BS entry in §2/§5/§6.
-- **▶ Session BR (read-only DB audit — do this first):** before writing P6 seeders/tests, note that
-  the live `db_capstone` operational data is **pre-refactor residue**. All 9 batches were created
-  `2026-09-12`…`2026-09-23` (< P1); all 7 stock-outs are the migrated legacy headers. `available_count`
-  is the backfilled OLD `inventories.current_quantity` ledger (`initial + stock-ins − stock-outs −
-  reversals` = 1130), not `viable_count − stock_out`; `SUM(viable)=1170`, `SUM(stock_out)=2130`. The
-  current Stock Out validation cannot reproduce it. **Decide the P6 data policy:** regenerate clean
-  seed data (and reconcile `available_count`) vs leave live rows and use synthetic fixtures. **No
-  data was changed.** Full detail: Session BR entry in §2/§5/§6.
-- **▶ NEXT: revised-PRD/ERD refactor — P0/P1/P2/P3/P4/P5 DONE; implement P6 (Tests/docs/verify) next.**
-  `db_capstone` has the revised schema (P1: eight reversible migrations
-  `2026_09_25_000001..000008`; **P5 added the one approved exception `2026_09_25_000009`
-  `regraft_records`** → 24 tables incl. framework), `app/Models` matches it (**P2 — Session BM**),
-  `app/Http/Controllers` + `routes/web.php` match it (**P3 — Session BN, checkpoint `3d3f9f9`**;
-  66 routes), the **views/sidebar match it** (**P4 — Session BO, committed `0803bdf`**) and the
-  **analytics/report layer matches it** (**P5 — Session BQ, checkpoint `d139286`**; `AnalyticsMetrics`
-  rewritten, Dashboard `/` returns **200**, Stock Ledger is a monthly grid, PDF/CSV rebuilt). **The
-  seeders/tests still target the OLD model**, so the feature suite fails until **P6** rewrites them.
-  Pre-P1 backup: `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`.
+  No DB/schema/data change; `AGENTS.md` + Gap view/PDF/CSV updated. **The prior Gap "Open decision #1"
+  is CLOSED.** The only surviving P5 flag is the Stock Ledger "Ready to Plant" best-guess mapping
+  (leave as `available_count`). Full detail: Session BS entry in §2/§5/§6.
+- **▶ Session BR (historical audit — RESOLVED in Session CA):** it found the live `db_capstone` was
+  pre-refactor residue (`available_count` = old ledger, not `viable − stock_out`; `Σviable` 1170 /
+  `Σavailable` 1130). **Session CA executed the wipe + reseed** — the residue is gone. No further
+  action. Full detail: Session BR entry in §2/§5/§6 + Session CA in the top banner.
+- **▶ Refactor status:** P0–P6 are **all DONE** (P6 completed in Session BZ). `db_capstone` has the
+  revised schema and the seeders/tests match it, so the suite is green. (Pre-refactor context: the
+  pre-P1 backup is `...\Temp\opencode\db_capstone_pre_p1_20260925_142909.sql`; the P5 `regraft_records`
+  exception was retracted in Session BX.)
 - **P5 (DONE — Session BQ, checkpoint `d139286`; see the Session BQ entry in §2/§5/§6):** fixed the two
   narrow `AnalyticsMetrics` bugs (`totalActiveInventory` → `Batch::totalAvailableQuantity()`; false
   PRD §12.2 citation removed) and removed every other stale `Variety`/`adjustments`/
@@ -715,7 +774,15 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
    duplicate table via migration `2026_09_26_000002`, deleted the model/relation/import, repointed the
    Stock Ledger's Regraft column at `replanting_records`; commit `22ef695`; no test suite run — P6) and
    BY (handoff-refresh + ERD user-facing "Replanting"→"Regraft" labels in §7/§8; docs only; commit
-   `9bd3c8a`))
+   `9bd3c8a`)) and BZ (P6 — seeders/tests/factories migrated to the revised model; five legacy entity
+   tests deleted; `AnalyticsTest` Gap assertions corrected; new Part D coverage; suite green
+   **280/1170**; commits `da59091`/`5182a31`/`c48de04`) and CA (the `db_capstone` data policy
+   **EXECUTED** — backed up then wiped + reseeded via `migrate:fresh --seed` against `db_capstone`;
+   before→after counts; fresh KPIs 395 / 11.11% / 16 / Gap 50; docs-only commit — see the top banner)
+   and CB (Scion Receiving **"Add" CRUD UI** — index + store route group, `ScionReceivingController`,
+   `StoreScionReceivingRequest` with field-specific messages, sidebar link and
+   `operational/scion-receivings/index.blade.php`; suite green **280/1170**; commit `6cd5d75`;
+   Add-only — Edit/Archive/Details + grafting/regrafting traceability still deferred)
 
 ### Session A — Daily Checklist (previous session)
 The Operational → **Daily Checklist** page (`/operational/checklist`) was converted from a static
@@ -4305,6 +4372,31 @@ A repo-wide grep for `regraft_records|RegraftRecord|regraftRecords` leaves **no 
 
 ## 3. Current database state (`db_capstone`)
 
+**Session CA (2026-09-26) — the wipe + reseed was EXECUTED (the one approved destructive action on
+the live DB).** `db_capstone` was backed up first
+(`...\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql`) then rebuilt with
+`php artisan migrate:fresh --seed --force` (connection `mysql`, database `db_capstone`) using the P6
+`DatabaseSeeder` + `ActivityLogSeeder`. The pre-refactor residue is **gone**: now **3** batches (B001
+180/180, B002 140/120, B003 95/95; `Σviable` 415 / `Σavailable` 395), 2 stock-ins, 1 stock-out + 1
+detail, 3 mortality, 3 regraft, **2 scion_receivings**, 3 inventories, 9 activity_logs, 3
+scion_varieties, 3 suppliers, 3 clients, 1 user, 4 activity_tasks. **No batch has
+`available_count > viable_count`.** Fresh KPIs: Active Inventory **395**, Crude Mortality **11.11%**,
+Regraft Deficit **16**, Gap **50**; `migrate:status` 0 Pending. Any further destructive action on the
+live DB needs fresh explicit sign-off.
+
+**No schema and no data change in Session CB (Scion Receiving "Add" CRUD UI).** Only app code/routes/views
+changed (`ScionReceivingController`, `StoreScionReceivingRequest`, the new
+`operational/scion-receivings/index.blade.php`, 2 routes in `routes/web.php`, 1 sidebar link). No
+migration was run and `db_capstone` was not modified — the full suite and the throwaway HTTP test ran
+against `db_capstone_test` only. `scion_receivings` still holds the **2** seeded rows from Session CA.
+
+**No schema and no data change in Session BZ (P6).** P6 touched only test files, factories and the
+seeders (`DatabaseSeeder`/`ActivityLogSeeder`) — it did **not** run against `db_capstone` (all seeding
+and the full suite ran on the dedicated `db_capstone_test` DB). At the time the live `db_capstone`
+still contained the pre-refactor operational residue described in the Session BR paragraph; the
+`AGENTS.md` §"`db_capstone` data policy" wipe + reseed it recommended was later **EXECUTED in Session
+CA** (see above) — the residue is gone.
+
 **Schema changed in Session BX (`regraft_records` dropped — the Session BU consolidation, APPLIED):**
 migration `2026_09_26_000002_drop_regraft_records_table` **dropped `regraft_records`** (it held **0
 rows** — no data migration needed; the create migration `2026_09_25_000009` is kept intact as
@@ -4770,7 +4862,33 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
     - There is **no Record Monitoring update, no monitoring history and no survival rate**.
       `Batch_Monitoring` is retained for history but is never written.
 
+25. Scion Receiving at `http://localhost:8000/operational/scion-receivings` (approved additive entity
+    ERD §3.16; **Session CB**, Add + list only):
+    - A **receiving log** for scion material: **Date | Scion Variety | Supplier (or "—") | Quantity |
+      Unit Price (or "—") | Origin (or "—")**; newest first, paginated 10; empty state "No scion
+      receiving records found.".
+    - Click **Add Scion Receiving** → modal: scion variety (required, active only), supplier
+      (optional / "None"), quantity (required, > 0), unit price (optional `decimal(12,2)`), date
+      received (required, not in the future), origin (optional, e.g. `RU`/`banban`), notes (optional).
+    - **Log only — no stock balance and no amount/ledger column**; nothing is added to
+      `scion_varieties` and Regraft/Replanting is untouched. No freshness/viability field (deferred).
+      Gated by `manage_inventory`. **Edit/Archive/Details modals are not built yet.**
+
 ## 5. Verification status
+- **Session CB (Scion Receiving "Add" CRUD UI): full suite run and GREEN.** MySQL suite
+  (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **280 passed / 1170 assertions, 0 failures** (unchanged count — this session added **no** permanent
+  test file; a throwaway feature test was written, run, and deleted). The throwaway test verified: GET
+  `/operational/scion-receivings` **200** with the empty state; POST valid data creates a
+  `scion_receivings` row + flashes "Scion receiving recorded successfully."; POST missing fields
+  returns the **specific** per-field messages in the `scion_receiving` bag (`Please select a scion
+  variety.`, `The quantity received is required.`, `The date received is required.`); quantity `0` →
+  `Quantity must be greater than zero.`; a user without `manage_inventory` gets **403**.
+  `vendor\bin\pint --test` **passed**; `php -l` clean on both new PHP files + `routes/web.php`;
+  `php artisan route:list` boots with **71 routes** (the 2 new scion-receiving routes) and the expected
+  `permission:manage_inventory` middleware. `git diff` scope check: only the 3 new files plus
+  `routes/web.php` (2 routes) and `resources/views/layouts/sidebar.blade.php` (1 link) changed — no
+  other controller/route/view touched. **No migration run; no schema/data change. Committed `6cd5d75`.**
 - **Session BZ (P6 seeders/tests/docs/verify): full suite run and GREEN.** MySQL suite
   (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
   **280 passed / 1170 assertions, 0 failures**. `vendor\bin\pint` clean (one import tidy-up on
@@ -5077,12 +5195,34 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
+- **▶ Session CC (DONE — `Scion_Receiving` merged into `Stock_In`; commit below):** client confirmed
+  seedling Stock In and Scion Receiving are the same real-world receiving event. Migrations
+  `2026_09_26_000003` (add nullable `scion_variety_id`/`unit_price`/`notes` to `stock_ins`; make
+  `supplier_id` nullable) and `2026_09_26_000004` (data-migrate `scion_receivings` rows into
+  `stock_ins` with `viable = quantity` and `origin`/`notes` preserved, then drop the table; create
+  migration `2026_09_26_000001` kept as history). Removed the `ScionReceiving` model/factory/test/
+  controller/request/view, its 2 routes and the sidebar link; the Stock In modal now has a
+  **Seedlings/Scion** tab pair and the list a **Scion Variety** column. Suite **278/1163**, Pint +
+  `php -l` clean, `migrate:status` 0 Pending on `db_capstone_test`, `db_capstone` migrated after a
+  fresh backup. **Still open (client-gated):** receiving traceability (graft/regraft → Stock_In) and
+  the freshness/viability rule.
+- **▶ Session CB (DONE — Scion Receiving "Add" CRUD UI; commit `6cd5d75`) — RETIRED in Session CC:** shipped the first slice of
+  the deferred **Scion Receiving CRUD UI** — the **Add** modal + its `index`/`store` route group
+  (`/operational/scion-receivings`, `permission:manage_inventory`), `ScionReceivingController`,
+  `StoreScionReceivingRequest` (field-specific messages), the sidebar link and the log view
+  (`resources/views/operational/scion-receivings/index.blade.php`). Suite green **280/1170**;
+  Pint/`php -l` clean; **71 routes**; no schema/DB change. **Still deferred (client-gated — do not
+  build unprompted):** the Scion Receiving **Edit/Archive/Details** modals and the
+  **grafting/regrafting traceability link** (no stock-balance deduction); the Stock Ledger
+  "Ready to Plant" mapping (**leave as `available_count`**).
 - **▶ Session BZ (DONE — P6 seeders/tests/docs/verify; refactor P0–P6 complete):** the test suite,
   factories and seeders now target the revised 15-entity model and pass (**280/1170**). See the
   Session BZ entry in the banner and §5. **P6 deferred items (confirmed open, DO NOT build without
   sign-off):** (1) Scion Receiving linkage/traceability (graft/regraft referencing a
-  `Scion_Receiving` row; **no** stock-balance deduction); (2) Scion Receiving CRUD UI (scion variety,
-  origin nullable, supplier nullable, quantity, date received, price, notes); (3) Stock Ledger
+  `Scion_Receiving` row; **no** stock-balance deduction); (2) Scion Receiving CRUD UI — **Add + list
+  SLICED IN Session CB (`6cd5d75`): only `index`/`store` are built**; the **Edit/Archive/Details**
+  modals remain unbuilt (fields: scion variety, origin nullable, supplier nullable, quantity, date
+  received, price, notes); (3) Stock Ledger
   "Ready to Plant" mapping — leave as `available_count` (unconfirmed), do not change. **`db_capstone`
   data policy (decided, NOT executed):** recommend **wipe + reseed** with fresh schema-valid data
   after a fresh backup, because the live rows are pre-refactor residue (`available_count` = old

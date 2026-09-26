@@ -144,18 +144,21 @@ CLIENT
 | Key | Attribute |
 |---|---|
 | PK | `Stock_In_ID` |
-| FK | `Supplier_ID` |
+| FK | `Supplier_ID` *(nullable for a scion receipt without a formal supplier)* |
+| FK | `Scion_Variety_ID` *(nullable — set only when the receiving includes scion)* |
 | FK | `User_ID` |
 | — | `Quantity` |
 | — | `Viable` |
+| — | `Unit_Price` *(nullable — scion only)* |
 | — | `Origin` |
+| — | `Notes` *(nullable — scion receipt notes)* |
 | — | `Date_Received` |
 
-**Purpose:** Records seedlings received through the company's Stock In process.
+**Purpose:** Records a receiving event. It covers both seedling Stock In and scion receiving, because the client confirmed these are the same real-world event (see §3.16).
 
-**Business rule:** `Quantity` is the ordered/received quantity; `Viable` is recorded after the five-day recount and does not have to equal `Quantity`.
+**Business rule:** `Quantity` is the ordered/received quantity; for a **seedling** row `Viable` is recorded after the five-day recount and does not have to equal `Quantity`. For a **scion-inclusive** row (`Scion_Variety_ID` set, with `Unit_Price`) `Viable` is set equal to `Quantity` at entry — scion is perishable and used immediately, so it has no five-day recount.
 
-`Stock_In` does **not** require a `Batch_ID` because the five-day viability count occurs before seedlings are established as a Batch.
+`Stock_In` does **not** require a `Batch_ID` because the five-day viability count occurs before seedlings are established as a Batch. There is **no** "type"/discriminator column: the presence of `Scion_Variety_ID` is itself the signal that a row includes scion.
 
 ---
 
@@ -299,24 +302,11 @@ This supports multiple Scion Varieties in one Pull Out, matching the company's e
 
 ---
 
-### 3.16 `Scion_Receiving`
+### 3.16 `Scion_Receiving` — REMOVED (merged into `Stock_In`)
 
-| Key | Attribute |
-|---|---|
-| PK | `Scion_Receiving_ID` |
-| FK | `Scion_Variety_ID` |
-| FK | `Supplier_ID` *(nullable)* |
-| — | `Quantity` |
-| — | `Unit_Price` *(nullable)* |
-| — | `Date_Received` |
-| — | `Origin` *(nullable)* |
-| — | `Notes` *(nullable)* |
+`Scion_Receiving` was introduced as an additive receiving log and has now been **retired**: the client confirmed seedling Stock In and Scion Receiving are the **same real-world receiving event**, so scion receiving was merged into `Stock_In` (§3.7) rather than kept as a separate table — avoiding the same duplication the project already resolved once for Regraft/Replanting. A receiving is therefore recorded as a `Stock_In` row with `Scion_Variety_ID` (and `Unit_Price`) set; a pure-seedling delivery leaves those columns null. There is no separate entity, no separate UI page, and no discriminator column.
 
-**Purpose:** Records the receipt of scion material for a given Scion Variety. `Supplier_ID` is nullable because scions are not always tied to a formal Supplier record.
-
-This is a standalone, **additive** record. It does **not** hold any stock balance on `Scion_Variety`, and it does **not** replace or alter the existing Regraft/Replanting records.
-
-**Freshness/viability rule — PLANNED, NOT YET IMPLEMENTED:** a freshness/viability check for received scions is planned, but has deliberately **not** been implemented. There is no usable-until value, no warning, and no blocking yet. Implementation is pending client confirmation of (a) the allowed viability window and (b) whether the rule should warn or block.
+**Freshness/viability rule — still NOT implemented:** no usable-until value, no warning, and no blocking. This remains pending client confirmation of (a) the allowed viability window and (b) whether the rule should warn or block.
 
 ---
 
@@ -334,16 +324,16 @@ Users
  └──< Stock_Out
 
 Supplier
- ├──< Stock_In
- └──< Scion_Receiving
+ └──< Stock_In
 
 Stock_In
- └── records the usable/Viable seedling supply before Batch establishment
+ ├── records the received vs usable/Viable supply before Batch establishment
+ └── when Scion_Variety_ID is set, records a scion receiving (no stock balance)
 
 Scion_Variety
  ├──< Batch
  ├──< Stock_Out_Detail
- └──< Scion_Receiving
+ └──< Stock_In
 
 Batch
  ├──< Activity_Log
@@ -446,6 +436,7 @@ The following structures are intentionally removed because they are no longer pa
 - `Pot_Type`
 - `Mortality_Adjustments`
 - `Stock_Reversal`
+- `Scion_Receiving` (merged into `Stock_In`, §3.7)
 - Batch `Monitoring_Start_Date`
 - Scion stock receiving/used/unused inventory logic
 - Separate Batch Monitoring status/history logic

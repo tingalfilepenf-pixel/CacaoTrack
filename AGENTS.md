@@ -22,10 +22,25 @@
   and the **seeders/tests/factories now match it** (P6 — see the P6 note in the plan below). The
   five legacy test files for removed entities were deleted and the suite is green.
 - Until P6 lands: **do not** reintroduce removed tables/columns or add new features without checking
-  the plan. New schema/business-logic work must follow the revised ERD. There is **one approved
-  additive schema addition** beyond the 15 entities — `scion_receivings` + `ScionReceiving` (Session
-  BV), documented below; do not extend that pattern. Validate new records with built-in Laravel rules
-  (e.g. `ScionReceiving::rules()`); do **not** create an additional table for validation.
+  the plan. New schema/business-logic work must follow the revised ERD. **There is no longer any
+  approved additive schema exception** — the short-lived `scion_receivings` exception (Session BV) was
+  **merged into `stock_ins` in Session CC** (see the banner). Validate new records with built-in
+  Laravel rules; do **not** create an additional table for validation.
+- **Session CC — `scion_receivings` merged into `stock_ins` (client-confirmed; additive columns):**
+  the client confirmed seedling Stock In and Scion Receiving are the **same real-world receiving
+  event**, so (mirroring the earlier Regraft/Replanting consolidation) the separate `Scion_Receiving`
+  entity was retired. Migration `2026_09_26_000003_add_scion_columns_to_stock_ins_table` adds
+  **nullable** `scion_variety_id` (FK → `scion_varieties`, restrictOnDelete), `unit_price`
+  (decimal 12,2) and `notes` to `stock_ins`, and makes `stock_ins.supplier_id` **nullable** (scion
+  receipts may have no formal Supplier, and real rows existed with a NULL supplier). Migration
+  `2026_09_26_000004_merge_scion_receivings_into_stock_ins_table` **data-migrates** the existing
+  `scion_receivings` rows into `stock_ins` (attributed to the earliest user; `viable = quantity`;
+  `origin`/`notes` preserved) then **drops** `scion_receivings`. The create migration
+  `2026_09_26_000001` is left intact as history. `App\Models\ScionReceiving`, its factory, controller,
+  request, view, routes and sidebar link were deleted; the scion-receipt fields now live on the
+  Stock In form as a **"Scion" tab** beside the "Seedlings" tab (one form, one table, no discriminator
+  column). `/operational/scion-receivings` no longer exists; the data is under **Stock In**. **No
+  stock balance** is held on `scion_varieties`; the freshness/viability rule remains NOT implemented.
 - **`regraft_records` retracted (Session BX — resolved; was P5 Part B):** `RegraftRecord` was a P5
   approved schema exception that **duplicated `Replanting_Record`**; in the company's process Regraft
   and Replanting are the **same recorded procedure**. It was dropped by migration
@@ -35,7 +50,8 @@
   Regraft column now reads `replanting_records` directly. **This resolves the Session BU proposal,
   which (contrary to an earlier report) had never been applied.** `Regraft_Record` is no longer an
   approved schema exception.
-- **Session BV approved schema addition — `scion_receivings` (additive only; commit `33ff6b0`):**
+- **Session BV approved schema addition — `scion_receivings` (additive only; commit `33ff6b0`) —
+  RETIRED in Session CC (merged into `stock_ins`; see the banner):**
   migration `2026_09_26_000001_create_scion_receivings_table` created `scion_receivings` (ERD §3.16)
   plus `App\Models\ScionReceiving` — a **receiving log only** for scion material (`scion_variety_id`
   required FK, `supplier_id` nullable FK, `quantity`, `unit_price` nullable, `date_received`, `origin`
@@ -67,8 +83,9 @@
   and `routes/web.php` now match the revised model; see `session.handoff.md` §2 Session BN for the
   route/permission map and the P3 flags. No migration, model, view, seeder or test file was touched.
 - **Do not invent, rename, or add tables, columns, FKs, or relationships** beyond the revised ERD.
-  The one remaining approved additive exception is `scion_receivings` (Session BV), documented in the
-  banner above. Validate with built-in Laravel rules; do not add extra tables for validation.
+  There are **no approved additive exceptions** (`scion_receivings` was merged into `stock_ins` in
+  Session CC; `regraft_records` was retracted in Session BX). Validate with built-in Laravel rules;
+  do not add extra tables for validation.
 
 ## Source-of-truth docs (read before schema or business-logic changes)
 - `docs/CacaoTrack_PRD.md` — revised PRD: what the system must do (FR-01…FR-13, validation,
@@ -87,7 +104,7 @@
 | 4 | `Activity_Task` | `task_id` | `task_name`, `description`, `priority`, `archived_at` (nullable) |
 | 5 | `Task_Complete` | `completion_id` | `task_id`, `user_id`, `verified_by_id`, `completion_date`, `verified_at`, `remark` |
 | 6 | `Supplier` | `supplier_id` | `supplier_name`, `contact_number`, `address`, `archived_at` (nullable) |
-| 7 | `Stock_In` | `stock_in_id` | `supplier_id`, `user_id`, `quantity`, **`viable`**, **`origin`**, `date_received` |
+| 7 | `Stock_In` | `stock_in_id` | `supplier_id` (nullable), **`scion_variety_id` (nullable)**, `user_id`, `quantity`, **`viable`**, `unit_price` (nullable), **`origin`**, `notes` (nullable), `date_received` |
 | 8 | `Batch` | `batch_id` | **`scion_variety_id` (nullable)**, `user_id`, `batch_code`, `total_grafted`, `viable_count`, `available_count`, `grafted_date`, `created_at`, `status`, `archived_at` (nullable) |
 | 9 | `Scion_Variety` | `scion_variety_id` | `scion_variety_name`, `description`, `archived_at` (nullable) |
 | 10 | `Mortality_Record` | `mortality_id` | `batch_id`, `user_id`, `quantity`, `cause`, `recorded_at` |
@@ -102,12 +119,13 @@ the five-day recounted usable quantity (they need not be equal); Stock In has **
 `Batch` has **no** `variety_id`, `pot_id`, or `monitoring_start_date`. `Inventory` is a **monthly
 snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` row is gone).
 `Stock_Out` is a header; each variety/batch quantity is a `Stock_Out_Detail` line. `Stock_In` has
-**no** `scion_quantity` and there is no scion stock pool. **Approved additive exception (1):**
-`Scion_Receiving` (`scion_receivings`, Session BV) logs scion-material receipts with no stock balance.
-It does not belong to the 15 entities; it is approved and documented in the banner. `Regraft` is not a
-separate entity — **Regraft and Replanting are the same recorded procedure**, recorded in
-`replanting_records` (the short-lived `regraft_records` exception was retracted; see the banner).
-`inventories.regraft` (monthly aggregate) is unchanged.
+**no** `scion_quantity` and there is no scion stock pool. **Scion receiving is merged into
+`Stock_In`** (Session CC): a scion-inclusive row has `scion_variety_id` + `unit_price` set (and
+`viable = quantity`, no recount); a pure-seedling row leaves them null. There is **no** separate
+`Scion_Receiving` entity/table and **no** discriminator column — the presence of `scion_variety_id`
+is the signal. `Regraft` is not a separate entity — **Regraft and Replanting are the same recorded
+procedure**, recorded in `replanting_records` (the short-lived `regraft_records` exception was
+retracted; see the banner). `inventories.regraft` (monthly aggregate) is unchanged.
 
 ## Removed from the model/process (do NOT reintroduce)
 - Tables: `Batch_Monitoring`, `Variety`, generic `Scions` stock pool, `Pot_Type`,
@@ -177,8 +195,9 @@ P5 open-flags note above).
   the stale `AnalyticsTest` Gap assertions were rewritten to the corrected formula
   (`Gap = Batch::effectiveMortalityQuantity()`) and the whole old-model feature suite was migrated to
   the revised schema; **factories** were added for `ScionVariety`/`Batch`/`MortalityRecord`/
-  `ReplantingRecord`/`StockIn`/`StockOut`/`StockOutDetail`/`ScionReceiving`/`Inventory`/`Supplier`/
-  `Client` (with `HasFactory` added to those models); `DatabaseSeeder` + `ActivityLogSeeder` were
+  `ReplantingRecord`/`StockIn`/`StockOut`/`StockOutDetail`/`Inventory`/`Supplier`/
+  `Client` (with `HasFactory` added to those models; the `ScionReceiving` factory was later deleted in
+  Session CC when the entity was merged into `Stock_In`); `DatabaseSeeder` + `ActivityLogSeeder` were
   rewritten to the current schema (idempotent; B001 carries genuine mortality **and** regraft; seeded
   Stock Out respects `available_count`); and new Part D tests cover relationships, validation,
   cumulative event records, date handling, the corrected Gap formula, Mortality↔Replanting
@@ -306,33 +325,44 @@ the P1–P3 schema transition (now complete); P6 rewrites tests + docs. (For ful
   apply the delta → record Activity History → commit; roll back on any failure (revised PRD §8).
 
 ## P6 deferred items (confirmed open — DO NOT implement without sign-off)
-1. **Scion Receiving linkage (traceability):** grafting/regrafting records referencing a specific
-   `Scion_Receiving` row so scion material can be traced. **No stock-balance deduction.** The
-   route/controller/validation/views/tests are to be added only after the workflow is confirmed with
-   the client. `ScionReceiving` is currently a standalone receiving log.
-2. **Scion Receiving CRUD UI:** create/view/edit/delete for `scion_receivings`. Confirmed fields:
-   scion variety, origin (nullable), supplier (nullable), quantity, date received, price, notes.
-   Not built (schema + model only).
+1. **Scion receiving linkage (traceability):** grafting/regrafting records referencing a specific
+   scion-inclusive **`Stock_In`** row so scion material can be traced. **No stock-balance deduction.**
+   The route/controller/validation/views/tests are to be added only after the workflow is confirmed
+   with the client. A scion receiving is currently just a `Stock_In` row with `scion_variety_id` set.
+2. **Freshness/viability rule for received scion:** no usable-until value, no warning, no blocking.
+   Pending client confirmation of (a) the allowed viability window and (b) whether to warn or block.
+   (The former "Scion Receiving CRUD UI" item is **closed** — Add/list/validation now live in the
+   Stock In form's "Scion" tab; see the Session CC banner. Edit/Archive/Details remain unbuilt, but the
+   entity is no longer standalone.)
 3. **Stock Ledger "Ready to Plant" mapping:** currently maps to the batch's live `available_count`,
    aligned to its `grafted_date`. This is an unconfirmed best-guess interpretation. **Leave the
    implementation exactly as-is** (code + PDF) until the client confirms the definition.
-4. **`db_capstone` data policy (Part F below):** the decision is recorded; any wipe/reseed action
-   requires separate explicit approval before execution.
+4. **`db_capstone` data policy (Part F below):** **EXECUTED 2026-09-26** — `db_capstone` was backed
+   up, then wiped and reseeded with fresh, schema-valid data (Session CA). See the section below.
 
-## `db_capstone` data policy — RECOMMENDATION (decided, NOT executed)
-**Recommendation: wipe + reseed `db_capstone` with fresh, schema-valid data (after a fresh backup),
-pending explicit sign-off.** Reasoning: every operational row currently in `db_capstone` is
-pre-refactor residue (Session BR). All 9 batches were created before P1 (`2026-09-12`…`2026-09-23`),
-all 7 stock-outs are migrated legacy headers, and `batches.available_count` was backfilled once from
-the old `inventories.current_quantity` (`SUM = 1130`), so it tracks
-`initial + stock-ins − stock-outs − reversals` and **not** `viable_count − stock_out`. Consequences:
-at least one batch has `available_count` greater than its own `viable_count` (B005: available 600 >
-viable 100), and the seeded releases cannot be reproduced by the current validated Stock Out path
-(`StoreStockOutRequest` + `StockOutController` reject `quantity > available_count`). This residue
-therefore undermines the very metrics P5/P6 rely on (Total Active Inventory = the stale 1130;
-Stock Ledger "Ready to Plant" = the stale `available_count`). Fresh seed data removes the
-inconsistency and gives a clean, reproducible demo state; the seeder now enforces the app's own
-invariants. **Fallback if the residue must be preserved:** keep it as historical/demo data with a
-documented caveat that `available_count` is the old ledger (not `viable − stock_out`) and that
-dashboard/ledger figures for those rows are stale — but analytics correctness is then not guaranteed.
-**No destructive command may be run against `db_capstone` until the user explicitly approves.**
+## `db_capstone` data policy — EXECUTED (wipe + reseed, 2026-09-26)
+**Status: executed 2026-09-26 (Session CA).** The live `db_capstone` (connection `mysql`, database
+`db_capstone`) was backed up, then wiped and reseeded with fresh, schema-valid data via
+`php artisan migrate:fresh --seed --force`, using the P6 `DatabaseSeeder` + `ActivityLogSeeder`.
+This was the **one explicitly approved destructive action** against the live DB. The old
+pre-refactor residue is gone and the seeder now enforces the app's own invariants.
+- **Backup (taken before the wipe — left untouched, outside the git repo):**
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql`
+  — 47,596 bytes, 24 `CREATE TABLE` + 16 `INSERT INTO`, dumped with `--single-transaction`, clean
+  "Dump completed" trailer. Do not delete or modify it.
+- **Before → after row counts (`db_capstone`):** batches 9 → 3, stock_outs 7 → 1,
+  stock_out_details 7 → 1, mortality_records 17 → 3, replanting_records 13 → 3, stock_ins 8 → 2,
+  scion_receivings 0 → 2. Also after: users 1, scion_varieties 3, suppliers 3, clients 3,
+  inventories 3, activity_logs 9, activity_tasks 4.
+- **Anomaly eliminated:** previously `Σviable` 1170 / `Σavailable` 1130 with B005 `available_count`
+  600 > `viable_count` 100; now **no batch has `available_count > viable_count`**
+  (B001 180/180, B002 140/120 after a 20-seedling release, B003 95/95; `Σviable` 415 /
+  `Σavailable` 395).
+- **Verified live after reseed:** Dashboard `/` = **200**; Operational Analytics, Stock Ledger,
+  Gap Report and Root-Cause Matrix all **200**. KPIs from the new data: Total Active Inventory
+  **395**, Crude Mortality Rate **11.11%**, Regraft Deficit **16**, Gap **50** (= Σ recorded
+  mortality). `migrate:status` 0 Pending.
+- **Standing rule unchanged:** this was the ONLY approved destructive command against `db_capstone`.
+  Tests must still point only at `db_capstone_test`; any further destructive action against the live
+  DB requires fresh explicit sign-off. (The former "preserve the residue" fallback no longer
+  applies — the residue is gone.)

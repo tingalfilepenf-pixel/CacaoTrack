@@ -53,7 +53,7 @@
         <div class="card border-0 shadow-sm h-100 border-start border-4 border-success">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Total Quantity Received</div>
-                <div class="fs-3 fw-bold text-success">{{ number_format($totalReceived) }} <span class="fs-6 fw-normal text-muted">seedlings</span></div>
+                <div class="fs-3 fw-bold text-success">{{ number_format($totalReceived) }} <span class="fs-6 fw-normal text-muted">units</span></div>
                 <div class="text-muted small">Sum of the current filters</div>
             </div>
         </div>
@@ -62,8 +62,8 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Total Viable</div>
-                <div class="fs-3 fw-bold">{{ number_format($totalViable) }} <span class="fs-6 fw-normal text-muted">seedlings</span></div>
-                <div class="text-muted small">Usable after the five-day count</div>
+                <div class="fs-3 fw-bold">{{ number_format($totalViable) }} <span class="fs-6 fw-normal text-muted">units</span></div>
+                <div class="text-muted small">Usable (recounted for seedlings; immediate for scion)</div>
             </div>
         </div>
     </div>
@@ -141,6 +141,7 @@
                     <tr>
                         <th class="ps-4">STOCK ID</th>
                         <th>SUPPLIER</th>
+                        <th>SCION VARIETY</th>
                         <th class="text-end">QUANTITY</th>
                         <th class="text-end">VIABLE</th>
                         <th>ORIGIN</th>
@@ -157,16 +158,33 @@
                                 'supplier' => $stockIn->supplier?->supplier_name ?? '—',
                                 'contact_number' => $stockIn->supplier?->contact_number ?? '—',
                                 'address' => $stockIn->supplier?->address ?? '—',
+                                'scion_variety' => $stockIn->scionVariety?->scion_variety_name ?? '—',
+                                'unit_price' => $stockIn->unit_price !== null
+                                    ? '₱'.number_format((float) $stockIn->unit_price, 2)
+                                    : '—',
                                 'quantity' => (int) $stockIn->quantity,
                                 'viable' => (int) $stockIn->viable,
                                 'origin' => $stockIn->origin ?: '—',
+                                'notes' => $stockIn->notes ?: '—',
                                 'date_received' => $formatDate($stockIn->date_received),
                                 'recorded_by' => $stockIn->user?->name ?? '—',
                             ];
                         @endphp
                         <tr>
-                            <td class="ps-4 fw-medium text-primary">{{ $stockIn->reference() }}</td>
+                            <td class="ps-4 fw-medium text-primary">
+                                {{ $stockIn->reference() }}
+                                @if ($stockIn->isScionEntry())
+                                    <span class="badge bg-info-subtle text-info-emphasis ms-1">Scion</span>
+                                @endif
+                            </td>
                             <td>{{ $stockIn->supplier?->supplier_name ?? '—' }}</td>
+                            <td>
+                                @if ($stockIn->isScionEntry())
+                                    {{ $stockIn->scionVariety?->scion_variety_name ?? '—' }}
+                                @else
+                                    <span class="text-muted">—</span>
+                                @endif
+                            </td>
                             <td class="text-end"><span class="badge bg-success">{{ number_format((int) $stockIn->quantity) }}</span></td>
                             <td class="text-end"><span class="badge bg-primary">{{ number_format((int) $stockIn->viable) }}</span></td>
                             <td>{{ $stockIn->origin ?: '—' }}</td>
@@ -181,7 +199,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-5">
+                            <td colspan="9" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 No stock-in transactions found for the current filters.
                             </td>
@@ -210,6 +228,40 @@
             <form id="stockInForm" method="POST" action="{{ route('inventory.stock-in.store') }}">
                 @csrf
                 <div class="modal-body">
+                    @php
+                        $activeEntry = old('scion_variety_id') ? 'scion' : 'seedling';
+                    @endphp
+
+                    <!--
+                        Two tabs, one form, one table (stock_ins) — reflects the client's
+                        confirmed single real-world event while keeping data entry unambiguous
+                        for staff (ERD note; migration
+                        2026_09_26_000003_add_scion_columns_to_stock_ins_table). Supplier,
+                        quantity, origin and date received are shared because they apply to
+                        either kind of receiving; the tabs only switch the mode-specific fields
+                        — "Seedlings" shows the five-day viable recount, "Scion" shows the
+                        scion variety + unit price, whose viable quantity is set equal to the
+                        received quantity server-side (scion has no recount). The inactive
+                        tab's fields are disabled so only the chosen entry type is submitted.
+                    -->
+                    <ul class="nav nav-tabs mb-3" id="stockInTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link {{ $activeEntry === 'seedling' ? 'active' : '' }}" id="seedlingsTab" data-bs-toggle="tab"
+                                data-bs-target="#seedlingsPane" data-entry-type="seedling" type="button" role="tab"
+                                aria-controls="seedlingsPane" aria-selected="{{ $activeEntry === 'seedling' ? 'true' : 'false' }}">
+                                <i class="bi bi-tree me-1"></i> Seedlings
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link {{ $activeEntry === 'scion' ? 'active' : '' }}" id="scionTab" data-bs-toggle="tab"
+                                data-bs-target="#scionPane" data-entry-type="scion" type="button" role="tab"
+                                aria-controls="scionPane" aria-selected="{{ $activeEntry === 'scion' ? 'true' : 'false' }}">
+                                <i class="bi bi-flower1 me-1"></i> Scion
+                            </button>
+                        </li>
+                    </ul>
+
+                    <!-- Shared receiving fields (apply to both seedlings and scion) -->
                     <div class="mb-3">
                         <div class="d-flex justify-content-between align-items-center">
                             <label class="form-label text-muted small fw-bold mb-0" for="stockInSupplier">Supplier <span class="text-danger">*</span></label>
@@ -236,21 +288,8 @@
                             @error('quantity', 'stockin')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
-                            <div class="form-text">The ordered/received quantity.</div>
+                            <div class="form-text">The received quantity.</div>
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="stockInViable">Viable <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control @error('viable', 'stockin') is-invalid @enderror" id="stockInViable"
-                                name="viable" min="0" step="1" required placeholder="e.g. 460" value="{{ old('viable') }}">
-                            @error('viable', 'stockin')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                            <div class="form-text text-danger d-none" id="viableHint">Viable count cannot exceed the ordered quantity.</div>
-                            <div class="form-text">Usable count after the five-day recount.</div>
-                        </div>
-                    </div>
-
-                    <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label text-muted small fw-bold" for="stockInOrigin">Origin <span class="text-danger">*</span></label>
                             <input type="text" class="form-control @error('origin', 'stockin') is-invalid @enderror" id="stockInOrigin"
@@ -259,6 +298,9 @@
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
+                    </div>
+
+                    <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label text-muted small fw-bold" for="stockInDate">Date Received <span class="text-danger">*</span></label>
                             <input type="date" class="form-control @error('date_received', 'stockin') is-invalid @enderror" id="stockInDate"
@@ -269,10 +311,62 @@
                         </div>
                     </div>
 
-                    <div class="alert alert-light border small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>
-                        Stock In records the usable seedlings after the five-day count. It is not linked to a batch — batches are
-                        established from the viable seedlings afterwards.
+                    <div class="tab-content">
+                        <div class="tab-pane fade {{ $activeEntry === 'seedling' ? 'show active' : '' }}" id="seedlingsPane" role="tabpanel" aria-labelledby="seedlingsTab">
+                            <div class="mb-2">
+                                <label class="form-label text-muted small fw-bold" for="stockInViable">Viable <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control @error('viable', 'stockin') is-invalid @enderror" id="stockInViable"
+                                    name="viable" min="0" step="1" required placeholder="e.g. 460" value="{{ old('viable') }}">
+                                @error('viable', 'stockin')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                                <div class="form-text text-danger d-none" id="viableHint">Viable count cannot exceed the ordered quantity.</div>
+                                <div class="form-text">Usable count after the five-day recount.</div>
+                            </div>
+                            <div class="alert alert-light border small mb-0" id="seedlingInfo">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Stock In records the usable seedlings after the five-day count. It is not linked to a batch — batches are
+                                established from the viable seedlings afterwards.
+                            </div>
+                        </div>
+
+                        <div class="tab-pane fade {{ $activeEntry === 'scion' ? 'show active' : '' }}" id="scionPane" role="tabpanel" aria-labelledby="scionTab">
+                            <div class="mb-3">
+                                <label class="form-label text-muted small fw-bold" for="stockInScionVariety">Scion Variety <span class="text-danger">*</span></label>
+                                <select class="form-select @error('scion_variety_id', 'stockin') is-invalid @enderror" id="stockInScionVariety" name="scion_variety_id" required>
+                                    <option value="" disabled {{ old('scion_variety_id') ? '' : 'selected' }}>Select a scion variety...</option>
+                                    @foreach ($scionVarieties as $scionVariety)
+                                        <option value="{{ $scionVariety->scion_variety_id }}" @selected(old('scion_variety_id') == $scionVariety->scion_variety_id)>
+                                            {{ $scionVariety->scion_variety_name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('scion_variety_id', 'stockin')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label text-muted small fw-bold" for="stockInUnitPrice">Unit Price <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control @error('unit_price', 'stockin') is-invalid @enderror" id="stockInUnitPrice"
+                                    name="unit_price" min="0" step="0.01" required placeholder="e.g. 12.50" value="{{ old('unit_price') }}">
+                                @error('unit_price', 'stockin')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label text-muted small fw-bold" for="stockInNotes">Notes <span class="text-muted fw-normal">(optional)</span></label>
+                                <textarea class="form-control @error('notes', 'stockin') is-invalid @enderror" id="stockInNotes" name="notes"
+                                    rows="2" maxlength="1000" placeholder="e.g. Premium bundle">{{ old('notes') }}</textarea>
+                                @error('notes', 'stockin')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="alert alert-light border small mb-0" id="scionInfo">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Scion is perishable and used immediately, so it has no five-day recount: the viable quantity is recorded
+                                equal to the received quantity.
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -350,6 +444,10 @@
                     <div class="col-5 text-muted small fw-bold">Address:</div>
                     <div class="col-7" id="detailsAddress">&mdash;</div>
                 </div>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Scion Variety:</div>
+                    <div class="col-7" id="detailsScionVariety">&mdash;</div>
+                </div>
                 <hr>
                 <div class="row mb-2">
                     <div class="col-5 text-muted small fw-bold">Quantity:</div>
@@ -360,8 +458,16 @@
                     <div class="col-7 text-primary fw-bold" id="detailsViable">&mdash;</div>
                 </div>
                 <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Unit Price:</div>
+                    <div class="col-7" id="detailsUnitPrice">&mdash;</div>
+                </div>
+                <div class="row mb-2">
                     <div class="col-5 text-muted small fw-bold">Origin:</div>
                     <div class="col-7" id="detailsOrigin">&mdash;</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Notes:</div>
+                    <div class="col-7" id="detailsNotes">&mdash;</div>
                 </div>
                 <div class="row mb-2">
                     <div class="col-5 text-muted small fw-bold">Date Received:</div>
@@ -394,6 +500,63 @@
             new bootstrap.Modal(supplierModalEl).show();
         @endif
 
+        // Two-tab entry: "Seedlings" and "Scion" share one form/one submit action,
+        // but only the active tab's mode-specific fields are enabled, so the
+        // payload is never ambiguous (viable for seedlings; scion_variety_id +
+        // unit_price for scion). Mirrors the conditional validation in
+        // StoreStockInRequest — scion's `viable` is filled server-side.
+        const entryFields = {
+            seedling: ['stockInViable'],
+            scion: ['stockInScionVariety', 'stockInUnitPrice', 'stockInNotes'],
+        };
+        const seedlingInfo = document.getElementById('seedlingInfo');
+        const scionInfo = document.getElementById('scionInfo');
+
+        const setEntryType = function (type) {
+            const isScion = type === 'scion';
+
+            entryFields.seedling.forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.disabled = isScion;
+                }
+            });
+
+            entryFields.scion.forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.disabled = !isScion;
+                }
+            });
+
+            if (seedlingInfo) {
+                seedlingInfo.classList.toggle('d-none', isScion);
+            }
+            if (scionInfo) {
+                scionInfo.classList.toggle('d-none', !isScion);
+            }
+
+            if (isScion) {
+                const scionViableInput = document.getElementById('stockInViable');
+                if (scionViableInput) {
+                    scionViableInput.setCustomValidity('');
+                }
+                const scionViableHint = document.getElementById('viableHint');
+                if (scionViableHint) {
+                    scionViableHint.classList.add('d-none');
+                }
+            }
+        };
+
+        document.querySelectorAll('#stockInTabs [data-entry-type]').forEach(function (tab) {
+            tab.addEventListener('shown.bs.tab', function (event) {
+                setEntryType(event.target.getAttribute('data-entry-type'));
+            });
+        });
+
+        const initialEntryTab = document.querySelector('#stockInTabs .nav-link.active');
+        setEntryType(initialEntryTab ? initialEntryTab.getAttribute('data-entry-type') : 'seedling');
+
         const switchBtn = document.getElementById('switchToSupplierBtn');
         if (switchBtn) {
             switchBtn.addEventListener('click', function () {
@@ -409,6 +572,13 @@
 
         const validateViable = function () {
             if (!quantityInput || !viableInput || !viableHint) {
+                return true;
+            }
+
+            // Scion entries have no recount: the viable field is disabled and the
+            // server records viable = quantity, so there is nothing to validate.
+            if (viableInput.disabled) {
+                viableInput.setCustomValidity('');
                 return true;
             }
 
@@ -464,9 +634,12 @@
                 setText('detailsSupplier', details.supplier);
                 setText('detailsContact', details.contact_number);
                 setText('detailsAddress', details.address);
+                setText('detailsScionVariety', details.scion_variety);
                 setText('detailsQuantity', Number(details.quantity || 0).toLocaleString());
                 setText('detailsViable', Number(details.viable || 0).toLocaleString());
+                setText('detailsUnitPrice', details.unit_price);
                 setText('detailsOrigin', details.origin);
+                setText('detailsNotes', details.notes);
                 setText('detailsDate', details.date_received);
                 setText('detailsRecordedBy', details.recorded_by);
             });

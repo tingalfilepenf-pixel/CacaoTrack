@@ -11,7 +11,6 @@ use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MortalityController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReplantingController;
-use App\Http\Controllers\ScionReceivingController;
 use App\Http\Controllers\ScionVarietyController;
 use App\Http\Controllers\StockInController;
 use App\Http\Controllers\StockOutController;
@@ -64,14 +63,6 @@ Route::prefix('operational')->middleware(['auth', 'permission:manage_inventory']
     Route::put('/scion-varieties/{scion_variety}', [ScionVarietyController::class, 'update'])->name('operational.scion-varieties.update');
     Route::post('/scion-varieties/{scion_variety}/archive', [ScionVarietyController::class, 'archive'])->name('operational.scion-varieties.archive');
     Route::post('/scion-varieties/{scion_variety}/restore', [ScionVarietyController::class, 'restore'])->name('operational.scion-varieties.restore');
-});
-
-// Scion Receiving log (approved additive entity, ERD §3.16). Sits in the
-// Operational area but keeps `manage_inventory`: it is reference-adjacent data
-// entry, not routine day-to-day recording (same reasoning as Scion Variety).
-Route::prefix('operational')->middleware(['auth', 'permission:manage_inventory'])->group(function () {
-    Route::get('/scion-receivings', [ScionReceivingController::class, 'index'])->name('operational.scion-receivings');
-    Route::post('/scion-receivings', [ScionReceivingController::class, 'store'])->name('operational.scion-receivings.store');
 });
 
 // Inventory Routes
