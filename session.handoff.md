@@ -1,6 +1,28 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CF — **Phase 7B: regraft / sub-batch flow**)
+> ### ▶ Continue here (latest: Session CG — **Phase 7C: nested parent/sub-batch display + Stock Ledger / analytics alignment**)
+> - **▶ Session CG (DONE — Phase 7C: parent batches and regraft sub-batches are now shown clearly
+>   everywhere; commits `7c84843`, `59488db`, `cc89669`):** new single tree helper
+>   **`App\Support\BatchTree`** (RULE 6) orders/annotates a batch collection (roots by `grafted_date`
+>   then `batch_code`, children by `batch_code`, depth 3+, orphan child kept at depth 0 flagged
+>   `parent_missing`, one batched parent-lookup — no N+1). **Batches** page nests families (paginated
+>   one-per-page so a family never splits) with `↳` indentation, a **Sub-batch** badge, the existing
+>   Parent Batch column and a per-parent collapse. **Inventory** nests snapshots with a Parent Batch
+>   column and the select label `↳ B001-R1 (Toledo, parent B001)`. **Stock Ledger** keeps the monthly
+>   grid: Grafted now only counts root batches, sub-batch plants appear only under Regraft
+>   (`Regraft {source} → {sub}` using the sub-batch's variety), Seedlings now counts only
+>   `scion_variety_id IS NULL` Stock In rows (fixes scion rows inflating it), plus a footnote and a
+>   computed **Batch summary (nested)** table below the grid; new server-side CSV route
+>   `analytics.stock-ledger.export.csv` and the PDF mirror it. **Age Profile** and **Gap Report** nest
+>   sub-batch rows with a Parent column (Gap formula unchanged). **Filters:** batch dropdowns list
+>   sub-batches (`↳ B001-R1 (parent B001, Toledo)`) and match that exact batch only (a parent does
+>   **not** include its sub-batches) — documented in each page's help text. Seeder regrafts 30 from
+>   B001-R1 into **B001-R1-R1** (Criollo) via `RegraftBatch` and snapshots the whole family.
+>   **Verified:** full MySQL suite **328 passed / 1406 assertions**, Pint + `php -l` clean,
+>   `view:cache` clean, `migrate:status` **0 Pending** on `db_capstone_test`. **No migration**
+>   (schema final). **`db_capstone` is still on the OLD schema and was NOT touched** (the four
+>   `2026_09_27_*` migrations remain Pending there). **Out of scope:** analytics formulas/`OD-n`,
+>   `Plant_Condition`, `Sub_Batch_ID`, corrections policy, Ready to Plant mapping.
 > - **▶ Session CF (DONE — Phase 7B: the client-approved regraft / sub-batch flow; commits below):**
 >   a regraft now moves a quantity **out of a source batch into a linked sub-batch** in one atomic
 >   transaction through the single action **`App\Actions\RegraftBatch`** (the controller, seeders and
@@ -176,9 +198,10 @@
 >   graft/regraft to a scion-inclusive Stock In row; the freshness/viability rule; and the Stock Ledger
 >   "Ready to Plant" best-guess mapping. **There are no approved additive exceptions**
 >   (`scion_receivings` merged into `stock_ins`; `regraft_records` retracted).
-> - **▶ NEXT UP / where to pick up (vibecoding resume point):** the Phase 7A **and** Phase 7B code +
->   test work are **DONE**; `db_capstone` is still on the **OLD schema** (the four `2026_09_27_*`
->   migrations are **Pending** there and were deliberately not run). The client-approved PRD/ERD are
+> - **▶ NEXT UP / where to pick up (vibecoding resume point):** the Phase 7A, **Phase 7B and
+>   Phase 7C** code + test work are **DONE**; `db_capstone` is still on the **OLD schema** (the four
+>   `2026_09_27_*` migrations are **Pending** there and were deliberately not run). The
+>   client-approved PRD/ERD are
 >   the corrected v2.0 docs (`docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md`; the `_UPDATED` files
 >   are the untouched v1.0 baseline/provenance; `_REVISED` copies must stay byte-identical — SHA-256
 >   match). Pick one of:
@@ -187,8 +210,8 @@
 >     **only** the four `2026_09_27_*` migrations (do **not** `migrate:fresh`), then verify the
 >     Dashboard and the Stock In / Batches / Regraft / Inventory pages. Until then the live app still
 >     shows the old viability columns and has no sub-batches.
->   - **B. Phase 7C — Stock Ledger / Inventory nested display** of parent/sub-batch rows (the Phase 7B
->     flow that creates the linked sub-batches is **DONE** — see the Session CF bullet above).
+>   - **B. Phase 7C — DONE (Session CG).** The Stock Ledger / Inventory nested display and the
+>     analytics alignment are implemented (see the Session CG bullet above); no remaining 7C work.
 >   - **C. Confirm the Open Decisions with the client** (PRD §19, `OD-1`…`OD-14`; each marked
 >     **[PROPOSED — pending client confirmation]** — do not implement unprompted). Suggested order:
 >     `OD-3` (re-confirm `Available_Count` + Gap), `OD-5` (corrections policy), `OD-2` (mortality

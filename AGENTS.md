@@ -98,6 +98,58 @@
   changes, `Plant_Condition`, `Sub_Batch_ID`, and any correction/edit policy. The Regraft Deficit and
   Gap formulas were **not** changed (`OD-10`/`OD-3` remain open).
 
+## PHASE 7C DONE — parent/sub-batch nesting + Stock Ledger / analytics alignment (2026-09-28)
+- **Baseline = the client-approved v1.0 docs** `docs/CacaoTrack_PRD_UPDATED.md` (§9.3, FR-08) /
+  `docs/CacaoTrack_ERD_UPDATED.md`. **No PRD/ERD file was edited**, and no `[PROPOSED]` v2.0 item was
+  implemented beyond the Phase 7A/7B provisional defaults already recorded. **No migration** — the
+  schema is final.
+- **One tree helper — `App\Support\BatchTree`** (RULE 6) is the single ordered parent→children view.
+  `flatten()` returns depth-tagged nodes (`batch`, `depth`, `parent_code`, `parent_missing`,
+  `ancestors`); `groups()` returns one entry per root family. Roots sort by `grafted_date` then
+  `batch_code`, children by `batch_code`; sub-batches of sub-batches are supported (depth 3+). A
+  batch whose parent is filtered out is shown at depth 0, flagged `parent_missing` (never dropped),
+  with the parent code resolved in **one batched query** (no N+1). Every nested view reads its
+  ordering/depth from this helper only.
+- **Batches page:** families paginate one-per-page so a parent and its sub-batches are never split;
+  nested rows are indented with `↳`, carry a **Sub-batch** badge and the existing **Parent Batch**
+  column, and each parent has a Bootstrap collapse (expanded by default; a parent's toggle hides its
+  whole subtree through `child-of-{id}` classes).
+- **Inventory page:** snapshots are nested through the helper (each batch's snapshots newest-first)
+  with a **Parent Batch** column and a Sub-batch badge. The "Record Monthly Inventory" batch select
+  labels sub-batches `↳ B001-R1 (Toledo, parent B001)`. No family subtotal rows.
+- **Stock Ledger (monthly grid kept):** the **Grafted** column now only includes root batches
+  (`parent_batch_id IS NULL`); sub-batch plants appear only under **Regraft**. Ready to Plant is
+  unchanged (still each batch's live `available_count`, sub-batches included). **Regraft** rows read
+  `replanting_records` with the description `Regraft {source} → {sub-batch}`, the **sub-batch's**
+  scion variety and `replanting_date`. **Seedlings** now counts only `stock_ins` rows with
+  `scion_variety_id IS NULL` (scion receipts no longer inflate it). A footnote under the grid explains
+  the no-cross-column-total rule, and a **Batch summary (nested)** table (Batch/sub-batch, Parent,
+  Scion Variety, Total Grafted, Available, Regraft, Mortality, Stock Out, Date Grafted — all computed)
+  renders below the grid. A new server-side **`GET /analytics/stock-ledger/export/csv`**
+  (`analytics.stock-ledger.export.csv`) replaces the old client-side scrape; `StockLedgerPdf` carries
+  the same footnote + nested summary.
+- **Age Profile:** sub-batches are their own rows (own `grafted_date`) with a **Parent Batch** column;
+  the chart/KPIs are unchanged (a sub-batch's available is counted once, in its own age bucket).
+- **Gap Report:** sub-batch rows nested under their parent with a Parent column (page, PDF and CSV);
+  the formula is **unchanged** (`gap = Batch::effectiveMortalityQuantity()`).
+- **Filter semantics (recorded):** every analytics batch dropdown lists sub-batches as separate
+  options (`↳ B001-R1 (parent B001, Toledo)`); filtering by a batch matches that **exact** batch only —
+  selecting a parent does **not** include its sub-batches. This is stated in each page's help text.
+- **Seeder:** the regraft scenario now also regrafts 30 from **B001-R1** into **B001-R1-R1** (Criollo,
+  seeded only through `RegraftBatch`, idempotent), and the current month's Inventory snapshot is
+  written for the parent and both sub-batches through the app logic.
+- **Verified:** full MySQL suite **328 passed / 1406 assertions**, Pint clean, `php -l` clean,
+  `view:cache` clean, `migrate:status` **0 Pending** on `db_capstone_test`. Seeded invariants: SUM
+  available **730** == Total Active Inventory; SUM total_grafted **750** == Crude Mortality Rate
+  denominator; B001 family total_grafted **500** conserved; `Σregraft` **130** ==
+  `Σ(replanting_records.quantity)` **130**; Seedlings **800** (seedling-only) vs **1000** all Stock In;
+  ledger grafted **650** / ready_to_plant **730**.
+- **`db_capstone` is still on the OLD schema and was NOT touched** — the four `2026_09_27_*`
+  migrations remain **Pending** there; applying them (and any reseed) is a separate, explicitly
+  approved step with a fresh verified backup.
+- **Out of scope (unchanged):** analytics formulas / `OD-n` decisions, `Plant_Condition`,
+  `Sub_Batch_ID`, correction/edit policy, and the Ready to Plant mapping (still a best guess).
+
 ## REFACTOR IN PROGRESS — READ THIS FIRST
 - The source-of-truth PRD and ERD were **replaced with the revised 15-entity model**. Canonical
   `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md` now contain the revised content; identical
