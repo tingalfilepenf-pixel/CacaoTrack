@@ -4,24 +4,20 @@ namespace App\Http\Requests;
 
 use App\Models\ScionVariety;
 use App\Models\Supplier;
-use Illuminate\Validation\Rule;
 
 class StoreStockInRequest extends AppFormRequest
 {
     protected $errorBag = 'stockin';
 
     /**
-     * Stock In has no `batch_id` (ERD §3.7): the five-day viability count
-     * happens before a batch is established. `viable <= quantity` is enforced
-     * here as the user-facing validation layer on top of the model guard.
+     * Stock In has no `batch_id` (ERD §3.7): the received `quantity` is
+     * recorded immediately, with no separate seedling viability count.
      *
      * `scion_variety_id` and `unit_price` are a matched pair (client-confirmed
      * merge of Scion_Receiving into Stock_In): both present for a scion-
      * inclusive row, both absent for a pure-seedling row. `required_with` each
      * way expresses "both or neither" using built-in rules — there is no
-     * discriminator column, the scion variety id is the signal. `viable` is
-     * required only for the seedling path because the scion path sets it to the
-     * received quantity server-side (scion has no five-day recount).
+     * discriminator column, the scion variety id is the signal.
      *
      * @return array<string, array<int, mixed>>
      */
@@ -30,10 +26,6 @@ class StoreStockInRequest extends AppFormRequest
         return [
             'supplier_id' => ['required', 'integer', Supplier::activeExistsRule('supplier_id')],
             'quantity' => ['required', 'integer', 'min:1'],
-            'viable' => [
-                Rule::requiredIf(fn () => blank($this->input('scion_variety_id'))),
-                'nullable', 'integer', 'min:0', 'lte:quantity',
-            ],
             'scion_variety_id' => ['nullable', 'integer', ScionVariety::activeExistsRule('scion_variety_id'), 'required_with:unit_price'],
             'unit_price' => ['nullable', 'numeric', 'min:0', 'required_with:scion_variety_id'],
             'origin' => ['required', 'string', 'max:255'],
@@ -49,11 +41,8 @@ class StoreStockInRequest extends AppFormRequest
     {
         return [
             'supplier_id.required' => 'Please select a supplier.',
-            'quantity.required' => 'The ordered seedling quantity is required.',
-            'quantity.min' => 'The ordered quantity must be at least 1.',
-            'viable.required' => 'The viable count after the five-day recount is required.',
-            'viable.min' => 'The viable count cannot be negative.',
-            'viable.lte' => 'Viable count cannot exceed the ordered quantity.',
+            'quantity.required' => 'The received seedling quantity is required.',
+            'quantity.min' => 'The received quantity must be at least 1.',
             'scion_variety_id.exists' => 'The selected scion variety is not available.',
             'scion_variety_id.required_with' => 'Select a scion variety and enter a unit price together, or leave both blank for a seedling-only stock-in.',
             'unit_price.required_with' => 'Select a scion variety and enter a unit price together, or leave both blank for a seedling-only stock-in.',

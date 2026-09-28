@@ -121,7 +121,7 @@ class AnalyticsController extends Controller
         fputcsv($handle, ['Survival vs Mortality', 'Trees']);
         fputcsv($handle, ['Surviving', $data['survivalVsMortality']['surviving']]);
         fputcsv($handle, ['Mortality', $data['survivalVsMortality']['mortality']]);
-        fputcsv($handle, ['Total Viable', $data['survivalVsMortality']['totalViable']]);
+        fputcsv($handle, ['Total Grafted', $data['survivalVsMortality']['totalGrafted']]);
 
         rewind($handle);
         $csv = (string) stream_get_contents($handle);

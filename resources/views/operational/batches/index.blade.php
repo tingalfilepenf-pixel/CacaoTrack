@@ -156,7 +156,6 @@
                         <th>SCION VARIETY</th>
                         <th>GRAFTED</th>
                         <th class="text-end">TOTAL</th>
-                        <th class="text-end">VIABLE</th>
                         <th class="text-end">AVAILABLE</th>
                         <th>STATUS</th>
                         <th class="text-end pe-4">ACTION</th>
@@ -174,7 +173,6 @@
                                 'created_by' => $batch->user?->name,
                                 'created_at' => $batch->created_at?->format('M d, Y H:i'),
                                 'total_grafted' => (int) $batch->total_grafted,
-                                'viable_count' => (int) $batch->viable_count,
                                 'available_count' => (int) $batch->available_count,
                                 'status' => $batch->status,
                                 'mortality' => (int) $batch->mortality_records_count,
@@ -195,7 +193,6 @@
                             <td>{{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}</td>
                             <td class="text-muted">{{ $batch->grafted_date?->format('M d, Y') ?? '—' }}</td>
                             <td class="text-end">{{ number_format($batch->total_grafted) }}</td>
-                            <td class="text-end">{{ number_format($batch->viable_count) }}</td>
                             <td class="text-end fw-bold text-success">{{ number_format($batch->available_count) }}</td>
                             <td>
                                 @if ($batch->status === \App\Models\Batch::STATUS_ACTIVE)
@@ -214,7 +211,6 @@
                                     data-batch-code="{{ $batch->batch_code }}"
                                     data-scion-variety-id="{{ $batch->scion_variety_id }}"
                                     data-total-grafted="{{ $batch->total_grafted }}"
-                                    data-viable-count="{{ $batch->viable_count }}"
                                     data-grafted-date="{{ $batch->grafted_date?->format('Y-m-d') }}"
                                     data-status="{{ $batch->status }}"
                                     data-used="{{ $used ? '1' : '0' }}" title="Edit">
@@ -238,7 +234,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-5">
+                            <td colspan="7" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 @if ($status === 'archived')
                                     No archived batches. Archived batches appear here and can be restored.
@@ -319,15 +315,6 @@
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="addViableCount">Viable Count <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control @error('viable_count', 'batch') is-invalid @enderror" id="addViableCount"
-                                name="viable_count" min="0" step="1" required value="{{ old('viable_count') }}">
-                            @error('viable_count', 'batch')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                            <div class="form-text">Cannot exceed total grafted. Available count is set to this value.</div>
-                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -353,7 +340,7 @@
                 <div class="modal-body">
                     <div class="alert alert-warning small" id="editCountsLockedNotice" style="display: none;">
                         <i class="bi bi-lock me-1"></i>
-                        This batch already has operational records, so total grafted and viable count are locked.
+                        This batch already has operational records, so total grafted is locked.
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -402,15 +389,6 @@
                             @error('total_grafted', 'batch')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="editViableCount">Viable Count</label>
-                            <input type="number" class="form-control @error('viable_count', 'batch') is-invalid @enderror" id="editViableCount"
-                                name="viable_count" min="0" step="1" value="{{ old('viable_count') }}">
-                            @error('viable_count', 'batch')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                            <div class="form-text">Available count and inventory follow this value while the batch is unused.</div>
                         </div>
                     </div>
                 </div>
@@ -467,10 +445,6 @@
                                 <div class="row mb-2">
                                     <div class="col-6 text-muted small fw-bold">Total Grafted:</div>
                                     <div class="col-6" id="detailsTotal">&mdash;</div>
-                                </div>
-                                <div class="row mb-2">
-                                    <div class="col-6 text-muted small fw-bold">Viable:</div>
-                                    <div class="col-6" id="detailsViable">&mdash;</div>
                                 </div>
                                 <div class="row mb-2">
                                     <div class="col-6 text-muted small fw-bold">Available:</div>
@@ -588,11 +562,8 @@
                 document.getElementById('editStatus').value = button.getAttribute('data-status') || 'active';
 
                 const totalInput = document.getElementById('editTotalGrafted');
-                const viableInput = document.getElementById('editViableCount');
                 totalInput.value = button.getAttribute('data-total-grafted') || '';
-                viableInput.value = button.getAttribute('data-viable-count') || '';
                 totalInput.disabled = used;
-                viableInput.disabled = used;
                 document.getElementById('editCountsLockedNotice').style.display = used ? 'block' : 'none';
             });
         }
@@ -630,7 +601,6 @@
                 setText('detailsCreatedAt', details.created_at);
                 setText('detailsStatus', details.status ? details.status.charAt(0).toUpperCase() + details.status.slice(1) : '');
                 setText('detailsTotal', Number(details.total_grafted || 0).toLocaleString());
-                setText('detailsViable', Number(details.viable_count || 0).toLocaleString());
                 setText('detailsAvailable', Number(details.available_count || 0).toLocaleString());
                 setText('detailsMortality', Number(details.mortality || 0).toLocaleString());
                 setText('detailsReplanting', Number(details.replanting || 0).toLocaleString());

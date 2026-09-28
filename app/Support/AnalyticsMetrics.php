@@ -190,14 +190,13 @@ class AnalyticsMetrics
     }
 
     /**
-     * Surviving vs mortality split based on viable counts.
+     * Surviving vs mortality split based on the grafted population.
      *
-     * `viable_count` is set once at batch establishment and is never decremented
-     * by mortality (revised rule), so surviving = viable - recorded mortality
-     * (floored at 0) and the two slices sum to the original viable population
-     * (RULE 6).
+     * Mortality never mutates `available_count`, so surviving =
+     * max(0, total_grafted - recorded mortality) and the two slices sum to the
+     * original grafted population (RULE 6).
      *
-     * @return array{surviving:int,mortality:int,totalViable:int}
+     * @return array{surviving:int,mortality:int,totalGrafted:int}
      */
     public static function survivalVsMortality(
         ?int $batchId = null,
@@ -205,13 +204,13 @@ class AnalyticsMetrics
         ?string $from = null,
         ?string $to = null,
     ): array {
-        $viable = (int) self::batchQuery($batchId, $scionVarietyId)->sum('viable_count');
+        $totalGrafted = (int) self::batchQuery($batchId, $scionVarietyId)->sum('total_grafted');
         $mortality = self::effectiveMortality($batchId, $scionVarietyId, $from, $to);
 
         return [
-            'surviving' => max(0, $viable - $mortality),
+            'surviving' => max(0, $totalGrafted - $mortality),
             'mortality' => $mortality,
-            'totalViable' => $viable,
+            'totalGrafted' => $totalGrafted,
         ];
     }
 
@@ -423,7 +422,7 @@ class AnalyticsMetrics
      * the data. Mortality is the only quantity currently unreflected in
      * `available_count`, so it is the actual gap: how much of the live
      * "available" balance is potentially overstated because recorded deaths have
-     * not been reconciled out of it yet. `expected` (viable_count), `actual`
+     * not been reconciled out of it yet. `expected` (total_grafted), `actual`
      * (available_count) and `pulled_out` (summed Stock_Out_Detail quantity) are
      * retained as context columns only.
      *
@@ -443,7 +442,7 @@ class AnalyticsMetrics
             ->pluck('total', 'batch_id');
 
         $rows = $batches->map(function (Batch $batch) use ($stockOutByBatch) {
-            $expected = (int) $batch->viable_count;
+            $expected = (int) $batch->total_grafted;
             $actual = (int) $batch->available_count;
             $pulledOut = (int) ($stockOutByBatch[$batch->batch_id] ?? 0);
 

@@ -49,7 +49,7 @@
 
 <!-- Summary -->
 <div class="row g-3 mb-4">
-    <div class="col-md-3">
+    <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100 border-start border-4 border-success">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Total Grafted</div>
@@ -58,16 +58,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="text-muted small fw-bold text-uppercase">Total Viable</div>
-                <div class="fs-3 fw-bold">{{ number_format($totalViable) }}</div>
-                <div class="text-muted small">Sum across the current snapshots</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Active Snapshots</div>
@@ -76,7 +67,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Depleted Snapshots</div>
@@ -156,7 +147,6 @@
                         <th>BATCH</th>
                         <th>SCION VARIETY</th>
                         <th class="text-end">TOTAL GRAFTED</th>
-                        <th class="text-end">VIABLE</th>
                         <th class="text-end">RE-GRAFT</th>
                         <th class="text-end">MORTALITY</th>
                         <th>STATUS</th>
@@ -175,7 +165,6 @@
                             <td class="fw-medium">{{ $batch?->batch_code ?? '—' }}</td>
                             <td>{{ $batch?->scionVariety?->scion_variety_name ?? 'Not assigned' }}</td>
                             <td class="text-end">{{ number_format((int) $inventory->total_grafted) }}</td>
-                            <td class="text-end fw-bold">{{ number_format((int) $inventory->viable) }}</td>
                             <td class="text-end text-warning fw-bold">{{ number_format((int) $inventory->regraft) }}</td>
                             <td class="text-end text-danger">{{ number_format((int) $inventory->mortality) }}</td>
                             <td><span class="badge {{ $statusClass }}">{{ $statusText }}</span></td>
@@ -183,7 +172,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center text-muted py-5">
+                            <td colspan="8" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 No inventory snapshots found for the current filters.
                             </td>
@@ -237,7 +226,7 @@
                     </div>
                     <div class="alert alert-light border small mb-0">
                         <i class="bi bi-info-circle me-1"></i>
-                        Total Grafted, Viable, Re-graft and Mortality are captured from the batch's live operational
+                        Total Grafted, Re-graft and Mortality are captured from the batch's live operational
                         records when the snapshot is recorded.
                     </div>
                 </div>

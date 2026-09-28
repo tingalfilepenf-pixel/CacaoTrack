@@ -26,8 +26,6 @@ class StoreBatchRequest extends AppFormRequest
             'batch_code.unique' => 'This batch code is already in use.',
             'total_grafted.required' => 'The total grafted count is required.',
             'total_grafted.min' => 'The total grafted count must be at least 1.',
-            'viable_count.required' => 'The viable count is required.',
-            'viable_count.lte' => 'The viable count cannot exceed the total grafted count.',
             'grafted_date.required' => 'The grafted date is required.',
             'grafted_date.before_or_equal' => 'The grafted date cannot be in the future.',
         ];

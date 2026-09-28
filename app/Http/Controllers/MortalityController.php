@@ -62,8 +62,9 @@ class MortalityController extends Controller
 
     /**
      * Record mortality. This action only ever creates a Mortality_Record row —
-     * it never writes `batches.viable_count` (locked business rule 1). The
-     * remaining capacity comes from the model's own cap logic.
+     * it never writes `batches.available_count` (mortality does not change the
+     * live available balance or the regraft counter). The remaining capacity
+     * comes from the model's own cap logic.
      */
     public function store(StoreMortalityRecordRequest $request): RedirectResponse
     {

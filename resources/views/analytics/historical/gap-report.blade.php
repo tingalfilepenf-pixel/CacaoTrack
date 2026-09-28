@@ -64,9 +64,9 @@
             </div>
         </form>
         <small class="text-muted d-block mt-2">
-            Expected = batch viable count; Available = live available balance; Pulled Out = stock-out quantity for the batch.
+            Expected = batch total grafted; Available = live available balance; Pulled Out = stock-out quantity for the batch.
             <strong>Gap = effective mortality for the batch.</strong> Stock Out is already netted out of the live available
-            balance on every validated release, so <em>viable − available − pulled out</em> always equals zero; recorded
+            balance on every validated release, so <em>total grafted − available − pulled out</em> is not a gap by itself; recorded
             mortality is the only quantity still unreflected in Available, i.e. how much of the live balance may be
             overstated until those deaths are reconciled.
         </small>

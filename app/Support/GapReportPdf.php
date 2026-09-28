@@ -7,7 +7,7 @@ use FPDF;
 /**
  * Printable "Gap Report" PDF (FPDF, landscape).
  *
- * Historical deliverable (PRD §9.5): per batch, expected = `viable_count`,
+ * Historical deliverable (PRD §9.5): per batch, expected = `total_grafted`,
  * actual = `available_count`, pulled out = summed Stock_Out_Detail quantity, and
  * gap = `Batch::effectiveMortalityQuantity()` (recorded mortality still
  * unreflected in `available_count`). The old `expected − actual − pulled out`

@@ -63,7 +63,7 @@ class StockInController extends Controller
             'scionVarieties' => ScionVariety::query()->active()->orderBy('scion_variety_name')->get(),
             'filters' => $filters,
             'totalReceived' => (int) (clone $base)->sum('quantity'),
-            'totalViable' => (int) (clone $base)->sum('viable'),
+            'totalReceivedSeedlings' => (int) (clone $base)->whereNull('scion_variety_id')->sum('quantity'),
             'totalTransactions' => (clone $base)->count(),
             'totalSuppliers' => (clone $base)->distinct()->count('supplier_id'),
         ]);
@@ -74,23 +74,19 @@ class StockInController extends Controller
         $validated = $request->validated();
 
         // A row includes scion when `scion_variety_id` is present (there is no
-        // "type" column). Scion is perishable and used immediately, so it has
-        // NO five-day recount: the usable (viable) quantity is set equal to the
-        // received quantity server-side rather than taken from the form. A
-        // seedling row keeps its separately counted viable value.
+        // "type" column). The received `quantity` is recorded immediately for
+        // both kinds of receiving — there is no five-day viability recount.
         $isScion = ! empty($validated['scion_variety_id']);
-        $viable = $isScion ? $validated['quantity'] : $validated['viable'];
 
         $fingerprint = DuplicateSubmissionGuard::assertFresh('stock_in', $validated, 'stockin');
 
         try {
-            DB::transaction(function () use ($validated, $isScion, $viable): void {
+            DB::transaction(function () use ($validated, $isScion): void {
                 StockIn::create([
                     'supplier_id' => $validated['supplier_id'],
                     'scion_variety_id' => $validated['scion_variety_id'] ?? null,
                     'user_id' => Auth::id(),
                     'quantity' => $validated['quantity'],
-                    'viable' => $viable,
                     'unit_price' => $validated['unit_price'] ?? null,
                     'origin' => $validated['origin'],
                     'notes' => $validated['notes'] ?? null,
@@ -108,7 +104,7 @@ class StockInController extends Controller
                 } else {
                     $description = "Received {$validated['quantity']} seedlings from "
                         .($supplier?->supplier_name ?? 'supplier')
-                        ." (origin: {$validated['origin']}); viable {$viable}.";
+                        ." (origin: {$validated['origin']}).";
                 }
 
                 ActivityLog::record(

@@ -87,10 +87,12 @@ class BatchController extends Controller
         $validated = $request->validated();
 
         DB::transaction(function () use ($validated): void {
+            // Provisional default 1 (pending PRD `OD-3`): a new batch starts
+            // with its full grafted population available.
             $batch = Batch::create([
                 ...$validated,
                 'user_id' => Auth::id(),
-                'available_count' => $validated['viable_count'],
+                'available_count' => $validated['total_grafted'],
                 'created_at' => now(),
             ]);
 
@@ -116,7 +118,9 @@ class BatchController extends Controller
             $batch->fill($validated);
 
             if (! $used) {
-                $batch->available_count = $validated['viable_count'];
+                // Provisional default 1 (pending PRD `OD-3`): while the batch has
+                // no operational records, its available balance tracks total grafted.
+                $batch->available_count = $validated['total_grafted'];
             }
 
             $batch->save();

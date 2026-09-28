@@ -94,7 +94,7 @@
                     <h6 class="m-0 fw-bold text-dark">Survival vs Mortality</h6>
                 </div>
                 <div class="card-body">
-                    @if ($survivalVsMortality['totalViable'] > 0)
+                    @if ($survivalVsMortality['totalGrafted'] > 0)
                         <div id="survivalChart" style="height: 300px; width: 100%;"></div>
                     @else
                         <p class="text-muted text-center my-5">No data available for the selected period.</p>
@@ -189,7 +189,7 @@
         });
         @endif
 
-        @if ($survivalVsMortality['totalViable'] > 0)
+        @if ($survivalVsMortality['totalGrafted'] > 0)
         render('survivalChart', {
             tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
             legend: { bottom: '0%', left: 'center' },

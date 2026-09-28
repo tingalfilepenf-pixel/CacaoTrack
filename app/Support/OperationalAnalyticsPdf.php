@@ -45,7 +45,7 @@ class OperationalAnalyticsPdf extends FPDF
      * @param  array{labels:array<int,string>,values:array<int,int>,total:int}  $mortalityTrend
      * @param  array{labels:array<int,string>,values:array<int,int>}  $inventoryByVariety
      * @param  array{labels:array<int,string>,values:array<int,int>}  $replantingDeficitByBatch
-     * @param  array{surviving:int,mortality:int,totalViable:int}  $survivalVsMortality
+     * @param  array{surviving:int,mortality:int,totalGrafted:int}  $survivalVsMortality
      */
     public function __construct(
         private readonly string $generatedBy,
@@ -156,7 +156,7 @@ class OperationalAnalyticsPdf extends FPDF
         $this->sectionTable('Survival vs Mortality', 'Metric', [
             ['Surviving', $this->survivalVsMortality['surviving']],
             ['Mortality', $this->survivalVsMortality['mortality']],
-            ['Total Viable', $this->survivalVsMortality['totalViable']],
+            ['Total Grafted', $this->survivalVsMortality['totalGrafted']],
         ], 'Trees');
     }
 
