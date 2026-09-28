@@ -36,6 +36,68 @@
   Phase 7B), Stock Ledger nesting (7C), `Plant_Condition`, `Sub_Batch_ID`, and any correction/edit
   policy.
 
+## PHASE 7B DONE — regraft / sub-batch flow (2026-09-28)
+- **Baseline = the client-approved docs** `docs/CacaoTrack_PRD_UPDATED.md` (§2.4, §8 "Regrafting /
+  Sub-Batch Creation") / `docs/CacaoTrack_ERD_UPDATED.md` (§2 rules 5-8, §3.8, §3.10, §3.11).
+  **No PRD/ERD file was edited.** Only the provisional defaults below implement behavior the v2.0
+  `[PROPOSED]` set leaves open; each is flagged `provisional — pending PRD OD-n` in the code.
+- **One action — `App\Actions\RegraftBatch`** is the single place the regraft steps live (RULE 6);
+  the controller, the seeders and the tests all call `execute()`. One DB transaction: (1) lock the
+  source `batches` row, (2) re-check not-archived + quantity, (3) form-request validates the shape;
+  action re-checks not-archived source, `1 ≤ q ≤ regraftableQuantity()`, active scion variety, date
+  not before the source's `grafted_date`; (4) source `total_grafted -= q`, `available_count -= q`,
+  `regraft += q`; (5) create the sub-batch (`parent_batch_id = source`, `batch_code =
+  nextSubBatchCode()`, `total_grafted = available_count = q`, `regraft = 0`, `grafted_date` = regraft
+  date, status active, chosen variety, actor user); (6) create the `ReplantingRecord`
+  (`batch_id = NEW sub-batch`, `parent_batch_id = source`); (7) `ActivityLog::record` (existing
+  `replanting_recorded` type) attributed to the actor. Any failure rolls all of it back.
+- **Model changes:** `Batch` gained `regraftableQuantity()`, `nextSubBatchCode()` and
+  `regraftRecordsAsParent()`; `totalReplanted()` now returns the cached `batches.regraft` counter;
+  `remainingReplantingCapacity()` was **removed**; `subBatches` was added to
+  `Batch::OPERATIONAL_RELATIONS` so a parent's counts lock once it has been regrafted.
+  `ReplantingRecord` gained `parent()` / `subBatch()` relations and `totalRegraftedFromBatch($id)`.
+- **Controller/request/views:** `ReplantingController` now delegates to `RegraftBatch` inside the
+  `DuplicateSubmissionGuard`; `StoreReplantingRecordRequest` requires `batch_id`, `quantity`,
+  `scion_variety_id` (active) and `replanting_date` (not future); the Regraft page shows summary
+  cards (Regraft Deficit / Total Regrafted / Total Mortality / Batches With Deficit), a per-batch
+  table (Total Grafted / Regraft / Mortality / Deficit), a **Regraft History** table
+  (date / source batch / new sub-batch / sub-batch variety / quantity / remark / user) and a
+  source-prefilled Record Regraft modal (JS max = regraftable, default variety = source's). The
+  Batches list gained a **Parent Batch** column. Success message: `Regraft recorded; sub-batch {code}
+  created.`
+- **Provisional defaults (each flagged `provisional — pending PRD OD-n`):**
+  1. **`OD-6`** — regraftable cap `max(0, min(available_count, total_grafted − effective mortality))`
+     (a dead root stock cannot be regrafted).
+  2. **`OD-6`** — sub-batch code = source `batch_code` + `-R` + first free sequence (`B001-R1`,
+     `B001-R2`, …); nested (`B001-R1-R1`) when a sub-batch is itself regrafted.
+  3. **ERD §3.11 reading** — the `ReplantingRecord` stores `batch_id` = the new sub-batch and
+     `parent_batch_id` = the source batch.
+  4. **`OD-12`** — `Batch::totalReplanted()` = the cached `batches.regraft` counter (reconciled in
+     tests against `ReplantingRecord::totalRegraftedFromBatch()`).
+- **Seeders** (`DatabaseSeeder`) now seed the regraft scenario **only through `RegraftBatch`**:
+  B001 Batangas 500 / mortality 25 → regraft 100 into **B001-R1** using Toledo → mortality 5 on
+  B001-R1 → one Stock Out (20) from B001-R1. Idempotent (guarded on `b001.regraft < 100`);
+  `ActivityLogSeeder` reproduces the action's description so re-running does not duplicate the row.
+- **Tests:** new `tests/Feature/RegraftFlowTest.php` (happy path exact before/after + code + parent +
+  record fields + Activity Log; `-R2` and nested `-R1-R1` sequencing; validation for 0/negative/
+  non-numeric/over-cap/dead-stock/archived variety/archived source/future date/date-before-grafted;
+  atomic rollback via a forced `ActivityLog` failure; duplicate-submission guard; 403 without
+  `record_operations`; invariants `0 ≤ available ≤ total_grafted` + family conservation + counter
+  reconciliation; parent/sub-batch independence; counts locked after regraft; Stock Out and Inventory
+  snapshots on a sub-batch; the page no longer shows the deficit cap). `ReplantingTest`,
+  `BatchRelationshipsTest`, `CumulativeEventRecordsTest`, `AnalyticsTest`, `InventoryTest` updated to
+  the Phase 7B semantics. **Verified:** full MySQL suite **299 passed / 1278 assertions**, Pint +
+  `php -l` clean, `migrate:status` **0 Pending** on `db_capstone_test`, seeders clean + idempotent.
+  Seeded invariants: `available_count > total_grafted` = **0**, `available_count < 0` = **0**,
+  family totals conserve (B001 400 + B001-R1 100 = original 500), `Σregraft` **100** ==
+  `Σ(records where parent_batch_id)` **100**.
+- **`db_capstone` is still on the OLD schema and was NOT migrated/touched** (the four
+  `2026_09_27_*` migrations remain Pending there; it still has `batches.viable_count` and
+  `stock_ins.viable`). No destructive command was run.
+- **Out of scope (unchanged):** Stock Ledger / Inventory **nested display** (Phase 7C), analytics
+  changes, `Plant_Condition`, `Sub_Batch_ID`, and any correction/edit policy. The Regraft Deficit and
+  Gap formulas were **not** changed (`OD-10`/`OD-3` remain open).
+
 ## REFACTOR IN PROGRESS — READ THIS FIRST
 - The source-of-truth PRD and ERD were **replaced with the revised 15-entity model**. Canonical
   `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md` now contain the revised content; identical

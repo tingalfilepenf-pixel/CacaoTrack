@@ -1,8 +1,34 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CE — **Phase 7A: viability count removed / schema aligned**)
+> ### ▶ Continue here (latest: Session CF — **Phase 7B: regraft / sub-batch flow**)
+> - **▶ Session CF (DONE — Phase 7B: the client-approved regraft / sub-batch flow; commits below):**
+>   a regraft now moves a quantity **out of a source batch into a linked sub-batch** in one atomic
+>   transaction through the single action **`App\Actions\RegraftBatch`** (the controller, seeders and
+>   tests all call it — RULE 6). Source `total_grafted -= q`, `available_count -= q`, `regraft += q`;
+>   a new sub-batch is created (`parent_batch_id = source`, `batch_code = B001-R1`, its own 21-day
+>   cycle, its own scion variety) plus a `ReplantingRecord` (`batch_id` = sub-batch,
+>   `parent_batch_id` = source) and an Activity Log row. `Batch` gained `regraftableQuantity()`,
+>   `nextSubBatchCode()`, `regraftRecordsAsParent()`; `totalReplanted()` is now the cached
+>   `batches.regraft` counter; `remainingReplantingCapacity()` was removed; `subBatches` joined
+>   `OPERATIONAL_RELATIONS` (a parent's counts lock once regrafted). `ReplantingRecord` gained
+>   `parent()`/`subBatch()` + `totalRegraftedFromBatch()`. The Regraft page was rebuilt (summary
+>   cards, per-batch table, Regraft History, source-prefilled modal); the Batches list gained a
+>   **Parent Batch** column. **Baseline = the client-approved `_UPDATED` docs; no PRD/ERD file was
+>   edited.** **Provisional defaults** (each flagged in code): `OD-6` regraftable cap
+>   `min(available_count, total_grafted − effective mortality)`; `OD-6` sub-batch code rule;
+>   ERD §3.11 reading (`batch_id` = sub-batch / `parent_batch_id` = source); `OD-12` regraft counter =
+>   `totalReplanted()`. **Seeders** seed the regraft scenario **only via `RegraftBatch`** (B001
+>   Batangas 500 / mortality 25 → regraft 100 into B001-R1 using Toledo → mortality 5 on B001-R1 →
+>   Stock Out 20 from B001-R1). **Verified:** full MySQL suite **299 passed / 1278 assertions**, Pint
+>   + `php -l` clean, `migrate:status` **0 Pending** on `db_capstone_test`, seeders clean + idempotent;
+>   seeded invariants `available > total_grafted` = **0**, `available < 0` = **0**, family totals
+>   conserve (400 + 100 = 500), `Σregraft` **100** == `Σ(records where parent_batch_id)` **100**.
+>   **`db_capstone` is still on the OLD schema and was NOT migrated/touched** (the four
+>   `2026_09_27_*` migrations remain Pending there). **Out of scope:** Stock Ledger / Inventory nested
+>   display (7C), analytics, `Plant_Condition`, `Sub_Batch_ID`, corrections policy; the Regraft Deficit
+>   and Gap formulas were not changed.
 > - **▶ Session CE (DONE — Phase 7A: align schema + Stock In / Batch / Inventory with the
->   client-approved ERD; commits `…`, see `git log`):** the client-approved baseline
+>   client-approved ERD; commits `24e6e7f`, `cdddacf`, `8569017`, `54e286f`):** the client-approved baseline
 >   (`docs/CacaoTrack_PRD_UPDATED.md` / `_ERD_UPDATED.md`) has **no seedling viability count**; only
 >   the two provisional defaults below were taken from the v2.0 `[PROPOSED]` set — **no other `OD-n`
 >   item was implemented and no PRD/ERD file was edited.** Four new **reversible** migrations
@@ -150,25 +176,32 @@
 >   graft/regraft to a scion-inclusive Stock In row; the freshness/viability rule; and the Stock Ledger
 >   "Ready to Plant" best-guess mapping. **There are no approved additive exceptions**
 >   (`scion_receivings` merged into `stock_ins`; `regraft_records` retracted).
-> - **▶ NEXT UP / where to pick up (vibecoding resume point):** no refactor phase work remains
->   (P0–P6 DONE). The **client-approved PRD/ERD are now the corrected v2.0 docs**
->   (`docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md`; the `_UPDATED` files are the untouched
->   v1.0 baseline/provenance; `_REVISED` copies must stay byte-identical — SHA-256 match). The live
->   open work is **14 Open Decisions pending client sign-off** (PRD §19, `OD-1`…`OD-14`); each is
->   marked **[PROPOSED — pending client confirmation]** and **must not be implemented unprompted**.
->   Pick one of:
->   - **A. Confirm the Open Decisions with the client** (PRD §19), then implement the approved ones
->     (docs + code + tests) **one at a time**. Suggested order by value: `OD-3` (`Available_Count`
->     definition + Gap Report re-confirmation), `OD-5` (corrections policy), `OD-2` (mortality
->     `Plant_Condition`), `OD-10` (Dashboard KPIs / Regraft Deficit), then the rest.
->   - **B. Optional quality-of-life:** enable `pdo_sqlite` in `php.ini` so plain `php artisan test`
+> - **▶ NEXT UP / where to pick up (vibecoding resume point):** the Phase 7A **and** Phase 7B code +
+>   test work are **DONE**; `db_capstone` is still on the **OLD schema** (the four `2026_09_27_*`
+>   migrations are **Pending** there and were deliberately not run). The client-approved PRD/ERD are
+>   the corrected v2.0 docs (`docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md`; the `_UPDATED` files
+>   are the untouched v1.0 baseline/provenance; `_REVISED` copies must stay byte-identical — SHA-256
+>   match). Pick one of:
+>   - **A. Apply Phase 7A + 7B to live `db_capstone`** — needs **fresh explicit sign-off** (a migration
+>     is a schema change, not a wipe/reseed). First take a fresh verified `mysqldump` backup, then run
+>     **only** the four `2026_09_27_*` migrations (do **not** `migrate:fresh`), then verify the
+>     Dashboard and the Stock In / Batches / Regraft / Inventory pages. Until then the live app still
+>     shows the old viability columns and has no sub-batches.
+>   - **B. Phase 7C — Stock Ledger / Inventory nested display** of parent/sub-batch rows (the Phase 7B
+>     flow that creates the linked sub-batches is **DONE** — see the Session CF bullet above).
+>   - **C. Confirm the Open Decisions with the client** (PRD §19, `OD-1`…`OD-14`; each marked
+>     **[PROPOSED — pending client confirmation]** — do not implement unprompted). Suggested order:
+>     `OD-3` (re-confirm `Available_Count` + Gap), `OD-5` (corrections policy), `OD-2` (mortality
+>     `Plant_Condition`), `OD-10` (Dashboard KPIs / Regraft Deficit), then the rest — plus the Phase 7B
+>     provisional defaults (`OD-6` cap + sub-batch code; ERD §3.11 reading; `OD-12` counter).
+>   - **D. Optional quality-of-life:** enable `pdo_sqlite` in `php.ini` so plain `php artisan test`
 >     works without the MySQL env override (see §5).
->   - **C. Other client-gated feature work (do not build unprompted):** scion-receipt
+>   - **E. Other client-gated feature work (do not build unprompted):** scion-receipt
 >     **Edit/Archive/Details**; scion-receipt **traceability** (graft/regraft referencing a
 >     scion-inclusive `Stock_In` row; **no** stock-balance deduction); the scion freshness/viability
 >     rule (`OD-13`); Stock Ledger "Ready to Plant" mapping (**leave as `available_count`**). See §6
 >     and `AGENTS.md` §"P6 deferred items".
->   - **D. Verify current state first** before touching anything (command below).
+>   - **F. Verify current state first** before touching anything (command below).
 > - **Standing rules:** tests only against `db_capstone_test` (never `db_capstone`); the Session CA
 >   wipe + reseed was the **only** approved destructive action on the live DB — any further one needs
 >   fresh explicit sign-off. Keep this backup untouched:
@@ -177,12 +210,13 @@
 >   (never point tests at `db_capstone`). Full detail: §2 Session CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ, §3, §5, §6.
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session CE (2026-09-28)** — **Phase 7A is done: the seedling viability count is
-removed and the schema/Stock In/Batch/Inventory code match the client-approved ERD; `db_capstone`
-is still on the OLD schema (not migrated), and the two provisional defaults (`OD-3`/`OD-4`) await
-sign-off.** The schema, models, controllers/routes, views, analytics and
-seeders/tests all match the revised 15-entity model; the full MySQL suite was last fully verified
-green (**280 passed / 1173 assertions**, Session CE). The next session starts from the **"NEXT UP"
+project after **Session CF (2026-09-28)** — **Phase 7A and Phase 7B are done: the seedling viability
+count is removed and the regraft / sub-batch flow (`App\Actions\RegraftBatch`) now moves a quantity
+from a source batch into a linked sub-batch, with the schema/Stock In/Batch/Inventory/Regraft code
+matching the client-approved ERD. `db_capstone` is still on the OLD schema (not migrated), and the
+provisional defaults (`OD-3`/`OD-4` from 7A; `OD-6`/`OD-12` and the ERD §3.11 reading from 7B) await
+sign-off.** The full MySQL suite was last fully verified green (**299 passed / 1278 assertions**,
+Session CF). The next session starts from the **"NEXT UP"
 bullet in the banner above** and §6. (Historical context follows: Phase 5 (Analytics/reports) was
 **implemented in Session BQ**; the Gap formula was corrected in Session BS; the Replanting→Regraft
 display rename landed in Session BT; Session BU audited the consolidation; Session BV added the
@@ -4940,6 +4974,25 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
       viability and scion-receipt Edit/Archive/Details remain unbuilt (client-gated, deferred).
 
 ## 5. Verification status
+- **Session CF (Phase 7B regraft / sub-batch flow): full suite run and GREEN.** MySQL suite
+  (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`) **299 passed /
+  1278 assertions, 0 failures** (was 280/1173; new `RegraftFlowTest` plus the reworked
+  `ReplantingTest` and updated `BatchRelationshipsTest`/`CumulativeEventRecordsTest`/`AnalyticsTest`/
+  `InventoryTest`). `vendor\bin\pint --test` **passed** (whole repo); `php -l` clean on every changed
+  PHP file; `migrate:status` **0 Pending** on `db_capstone_test`. Seeders (`migrate:fresh --seed`,
+  then a re-run `db:seed`) completed cleanly and **idempotently** against `db_capstone_test`; the
+  regraft scenario is seeded **only** through `RegraftBatch` (B001 Batangas 500 / mortality 25 →
+  regraft 100 into B001-R1 using Toledo → mortality 5 on B001-R1 → Stock Out 20 from B001-R1). Seeded
+  invariant queries (tinker, literal output): `available_count > total_grafted` **0**,
+  `available_count < 0` **0**, rows B001 400/400/regraft 100/mortality 25, B001-R1 100/80/regraft 0/
+  mortality 5 (parent B001); family totals conserve (`Σ` 400 + 100 = original 500);
+  `Σ batches.regraft` **100** == `Σ replanting_records.quantity WHERE parent_batch_id IS NOT NULL`
+  **100**; per-source reconciliation (`counter == totalRegraftedFromBatch`) all OK. A repo grep finds
+  **no** `remainingReplantingCapacity` and **no** old deficit-cap validation in `app/` (only the
+  unchanged `replantingDeficit()` formula and the test that asserts the phrase is gone). **`db_capstone`
+  was NOT touched**: its `2026_09_27_*` migrations remain **Pending** and it still has
+  `batches.viable_count` / `stock_ins.viable` (no destructive command run). Committed as
+  `0f8195a` (action + models), `a82c513` (controller/request/views), `e266412` (seeders + tests).
 - **Session CC (`Scion_Receiving` merged into `Stock_In`): full suite run and GREEN.** MySQL suite
   (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`) **278 passed /
   1163 assertions, 0 failures** (was 280/1170: the 7-test `ScionReceivingTest` was deleted; 4 new
