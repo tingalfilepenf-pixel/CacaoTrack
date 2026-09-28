@@ -64,7 +64,7 @@ class DatabaseSeeder extends Seeder
             ['scion_variety_name' => 'Toledo'],
             ['description' => 'High-yielding scion variety used for regrafting.'],
         );
-        ScionVariety::firstOrCreate(
+        $criollo = ScionVariety::firstOrCreate(
             ['scion_variety_name' => 'Criollo'],
             ['description' => 'Fine-flavor cacao variety, relatively disease-sensitive.'],
         );
@@ -201,6 +201,24 @@ class DatabaseSeeder extends Seeder
             );
         }
 
+        // Phase 7C nested scenario — a sub-batch is itself regrafted: 30 plants
+        // move out of B001-R1 into B001-R1-R1 using a third variety (Criollo).
+        // Seeded ONLY through the RegraftBatch action, guarded for idempotency.
+        $b001r1r1 = null;
+
+        if ($b001r1 !== null && (int) $b001r1->fresh()->regraft < 30) {
+            $b001r1r1 = (new RegraftBatch)->execute(
+                $b001r1,
+                30,
+                (int) $criollo->scion_variety_id,
+                '2026-09-08',
+                'Regrafted a further 30 plants from B001-R1 into a linked sub-batch.',
+                (int) $admin->id,
+            );
+        }
+
+        $b001r1r1 ??= Batch::where('batch_code', 'B001-R1-R1')->first();
+
         // Stock In has no batch_id: it records the received quantity before a
         // batch is established. Scion_Receiving was merged into Stock_In
         // (client-confirmed same real-world event), so scion receipts are seeded
@@ -279,11 +297,12 @@ class DatabaseSeeder extends Seeder
         }
 
         // Monthly inventory snapshots (current month) for the seeded batches,
-        // including the regraft sub-batch.
+        // including both regraft sub-batches.
         $b002->refresh();
         $b001r1?->refresh();
+        $b001r1r1?->refresh();
 
-        $inventoryBatches = array_filter([$b001->refresh(), $b002, $b003, $b001r1]);
+        $inventoryBatches = array_filter([$b001->refresh(), $b002, $b003, $b001r1, $b001r1r1]);
 
         foreach ($inventoryBatches as $batch) {
             $month = now()->startOfMonth()->toDateString();
