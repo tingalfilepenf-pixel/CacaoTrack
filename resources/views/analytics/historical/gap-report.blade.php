@@ -53,9 +53,7 @@
                 <label class="form-label text-muted small fw-bold">Batch</label>
                 <select name="batch_id" class="form-select">
                     <option value="">All Batches</option>
-                    @foreach ($batches as $batch)
-                        <option value="{{ $batch->batch_id }}" @selected(($filters['batch_id'] ?? null) == $batch->batch_id)>{{ $batch->batch_code }}</option>
-                    @endforeach
+                    @include('analytics.partials.batch-options', ['batches' => $batches, 'selected' => $filters['batch_id'] ?? null])
                 </select>
             </div>
             <div class="col-md-4 d-flex align-items-end gap-2">
@@ -69,6 +67,8 @@
             balance on every validated release, so <em>total grafted − available − pulled out</em> is not a gap by itself; recorded
             mortality is the only quantity still unreflected in Available, i.e. how much of the live balance may be
             overstated until those deaths are reconciled.
+            <br>
+            Filtering by a batch matches that exact batch only; selecting a parent does not include its sub-batches.
         </small>
     </div>
 </div>
@@ -127,6 +127,7 @@
                     <thead class="table-light">
                         <tr>
                             <th>Batch</th>
+                            <th>Parent Batch</th>
                             <th>Scion Variety</th>
                             <th class="text-end">Expected</th>
                             <th class="text-end">Available</th>
@@ -137,7 +138,16 @@
                     <tbody>
                         @foreach ($gap['rows'] as $row)
                             <tr>
-                                <td><strong>{{ $row['batch'] }}</strong></td>
+                                <td>
+                                    @if ($row['depth'] > 0)
+                                        <span style="display:inline-block;width:{{ $row['depth'] * 18 }}px"></span><span class="text-muted">↳</span>
+                                    @endif
+                                    <strong>{{ $row['batch'] }}</strong>
+                                    @if ($row['parent_missing'] && $row['parent'])
+                                        <span class="text-muted small">(parent: {{ $row['parent'] }})</span>
+                                    @endif
+                                </td>
+                                <td class="text-muted">{{ $row['parent'] ?? '—' }}</td>
                                 <td>{{ $row['variety'] }}</td>
                                 <td class="text-end">{{ number_format($row['expected']) }}</td>
                                 <td class="text-end">{{ number_format($row['actual']) }}</td>
@@ -148,7 +158,7 @@
                     </tbody>
                     <tfoot class="table-secondary fw-bold">
                         <tr>
-                            <td colspan="2">Total</td>
+                            <td colspan="3">Total</td>
                             <td class="text-end">{{ number_format($gap['totalExpected']) }}</td>
                             <td class="text-end">{{ number_format($gap['totalActual']) }}</td>
                             <td class="text-end">{{ number_format($gap['totalPulledOut']) }}</td>

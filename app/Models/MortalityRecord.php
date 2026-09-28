@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Collection;
 
 /**
  * Revised ERD entity `Mortality_Record` (ERD §3.10).
@@ -92,5 +93,29 @@ class MortalityRecord extends Model
         }
 
         return (int) static::query()->whereIn('batch_id', $ids)->sum('quantity');
+    }
+
+    /**
+     * Per-batch effective mortality keyed by `batch_id` (set-based counterpart
+     * of effectiveQuantityForBatch, for batch summaries — RULE 6). Avoids an
+     * N+1 of per-batch lookups.
+     *
+     * @param  iterable<int, int|string>  $batchIds
+     * @return Collection<int, int>
+     */
+    public static function effectiveQuantityByBatch(iterable $batchIds): Collection
+    {
+        $ids = collect($batchIds)->map(fn ($id) => (int) $id)->all();
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return static::query()
+            ->whereIn('batch_id', $ids)
+            ->selectRaw('batch_id, COALESCE(SUM(quantity), 0) as total')
+            ->groupBy('batch_id')
+            ->pluck('total', 'batch_id')
+            ->map(fn ($total) => (int) $total);
     }
 }

@@ -118,6 +118,8 @@ Route::prefix('analytics')->middleware('auth')->group(function () {
 
         Route::get('/stock-ledger/export', [AnalyticsController::class, 'exportPdf'])->name('analytics.stock-ledger.export');
 
+        Route::get('/stock-ledger/export/csv', [AnalyticsController::class, 'exportLedgerCsv'])->name('analytics.stock-ledger.export.csv');
+
         Route::get('/mortality-matrix', [AnalyticsController::class, 'mortalityMatrix'])->name('analytics.mortality-matrix');
 
         Route::get('/mortality-matrix/export', [AnalyticsController::class, 'exportMatrixPdf'])->name('analytics.mortality-matrix.export');

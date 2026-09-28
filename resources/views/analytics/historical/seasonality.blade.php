@@ -53,9 +53,7 @@
                 <label class="form-label text-muted small fw-bold">Batch</label>
                 <select name="batch_id" class="form-select">
                     <option value="">All Batches</option>
-                    @foreach ($batches as $batch)
-                        <option value="{{ $batch->batch_id }}" @selected(($filters['batch_id'] ?? null) == $batch->batch_id)>{{ $batch->batch_code }}</option>
-                    @endforeach
+                    @include('analytics.partials.batch-options', ['batches' => $batches, 'selected' => $filters['batch_id'] ?? null])
                 </select>
             </div>
             <div class="col-md-3 d-flex align-items-end gap-2">

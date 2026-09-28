@@ -48,9 +48,7 @@
                 <label class="form-label text-muted small fw-bold">Batch</label>
                 <select name="batch_id" class="form-select">
                     <option value="">All Batches</option>
-                    @foreach ($batches as $batch)
-                        <option value="{{ $batch->batch_id }}" @selected(($filters['batch_id'] ?? null) == $batch->batch_id)>{{ $batch->batch_code }}</option>
-                    @endforeach
+                    @include('analytics.partials.batch-options', ['batches' => $batches, 'selected' => $filters['batch_id'] ?? null])
                 </select>
             </div>
             <div class="col-md-3">
@@ -62,7 +60,7 @@
                 <a href="{{ route('analytics.historical.age-profile') }}" class="btn btn-outline-secondary">Reset</a>
             </div>
         </form>
-        <small class="text-muted d-block mt-2">Age is derived from each batch's grafted date to the selected reporting date. Each batch's current available quantity is counted per age bucket.</small>
+        <small class="text-muted d-block mt-2">Age is derived from each batch's grafted date to the selected reporting date. Each batch's current available quantity is counted per age bucket. Filtering by a batch matches that exact batch only; selecting a parent does not include its sub-batches.</small>
     </div>
 </div>
 
@@ -76,6 +74,54 @@
         @else
             <p class="text-muted text-center my-5">No data available for the selected period.</p>
         @endif
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0 fw-bold text-primary">Batch age detail</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Batch or sub-batch</th>
+                        <th>Parent Batch</th>
+                        <th>Scion Variety</th>
+                        <th>Date Grafted</th>
+                        <th class="text-end">Age (days)</th>
+                        <th class="text-end">Available</th>
+                        <th>Bucket</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse ($profile['rows'] as $row)
+                        <tr>
+                            <td class="fw-medium">
+                                @if ($row['depth'] > 0)
+                                    <span style="display:inline-block;width:{{ $row['depth'] * 18 }}px"></span><span class="text-muted">↳</span>
+                                @endif
+                                {{ $row['batch'] }}
+                                @if ($row['parent_missing'] && $row['parent'])
+                                    <span class="text-muted small">(parent: {{ $row['parent'] }})</span>
+                                @endif
+                            </td>
+                            <td class="text-muted">{{ $row['parent'] ?? '—' }}</td>
+                            <td>{{ $row['variety'] }}</td>
+                            <td class="text-muted">{{ $row['grafted_date'] ?? '—' }}</td>
+                            <td class="text-end">{{ $row['age'] ?? '—' }}</td>
+                            <td class="text-end fw-bold text-success">{{ number_format($row['available']) }}</td>
+                            <td>{{ $row['bucket'] ?? '—' }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">No batches for the selected filters.</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 @endsection

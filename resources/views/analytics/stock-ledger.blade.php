@@ -17,9 +17,9 @@
 
 @section('page_actions')
 <div class="d-flex flex-wrap gap-2 justify-content-end">
-    <button class="btn btn-outline-success" type="button" id="exportLedger">
+    <a class="btn btn-outline-success" href="{{ route('analytics.stock-ledger.export.csv', request()->query()) }}">
         <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
-    </button>
+    </a>
     <form method="GET" action="{{ route('analytics.stock-ledger.export') }}" target="_blank" class="d-inline">
         <input type="hidden" name="batch_id" value="{{ $filters['batch_id'] ?? '' }}">
         <input type="hidden" name="scion_variety_id" value="{{ $filters['scion_variety_id'] ?? '' }}">
@@ -67,9 +67,7 @@
                 <label class="form-label text-muted small fw-bold">Batch</label>
                 <select name="batch_id" class="form-select">
                     <option value="">All Batches</option>
-                    @foreach ($batches as $batch)
-                        <option value="{{ $batch->batch_id }}" @selected(($filters['batch_id'] ?? null) == $batch->batch_id)>{{ $batch->batch_code }}</option>
-                    @endforeach
+                    @include('analytics.partials.batch-options', ['batches' => $batches, 'selected' => $filters['batch_id'] ?? null])
                 </select>
             </div>
             <div class="col-md-3">
@@ -98,9 +96,10 @@
             <div class="text-danger small mt-2">{{ $message }}</div>
         @enderror
         <small class="text-muted d-block mt-2">
-            Monthly grid grouped by month, with dynamic per-Scion-Variety columns. Seedlings = Stock In quantity;
-            Grafted = batch total grafted; Mortality / Regraft / Ready to Plant / Pullout, per scion variety.
+            Monthly grid grouped by month, with dynamic per-Scion-Variety columns. Seedlings = Stock In quantity (seedling-only receipts);
+            Grafted = root-batch total grafted; Mortality / Regraft / Ready to Plant / Pullout, per scion variety.
             <span class="fst-italic">Ready to Plant currently maps to each batch's live available count (pending client confirmation).</span>
+            Filtering by a batch matches that exact batch only; selecting a parent does not include its sub-batches.
         </small>
     </div>
 </div>
@@ -233,35 +232,77 @@
     </div>
 @endif
 
+<p class="text-muted small fst-italic">
+    Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same
+    plants; no cross-column total is implied.
+</p>
+
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold text-primary">Batch summary (nested)</h6>
+        <span class="text-muted small">{{ count($grid['batchSummary']['rows']) }} batch{{ count($grid['batchSummary']['rows']) === 1 ? '' : 'es' }}</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 align-middle ledger-summary-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Batch or sub-batch</th>
+                        <th>Parent Batch</th>
+                        <th>Scion Variety</th>
+                        <th class="text-end">Total Grafted</th>
+                        <th class="text-end">Available</th>
+                        <th class="text-end">Regraft</th>
+                        <th class="text-end">Mortality</th>
+                        <th class="text-end">Stock Out</th>
+                        <th>Date Grafted</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse ($grid['batchSummary']['rows'] as $row)
+                        <tr>
+                            <td class="fw-medium">
+                                @if ($row['depth'] > 0)
+                                    <span style="display:inline-block;width:{{ $row['depth'] * 18 }}px"></span><span class="text-muted">↳</span>
+                                @endif
+                                {{ $row['batch'] }}
+                                @if ($row['parent_missing'] && $row['parent'])
+                                    <span class="text-muted small">(parent: {{ $row['parent'] }})</span>
+                                @endif
+                            </td>
+                            <td class="text-muted">{{ $row['parent'] ?? '—' }}</td>
+                            <td>{{ $row['variety'] }}</td>
+                            <td class="text-end">{{ number_format($row['total_grafted']) }}</td>
+                            <td class="text-end fw-bold text-success">{{ number_format($row['available']) }}</td>
+                            <td class="text-end text-warning">{{ number_format($row['regraft']) }}</td>
+                            <td class="text-end text-danger">{{ number_format($row['mortality']) }}</td>
+                            <td class="text-end">{{ number_format($row['stock_out']) }}</td>
+                            <td class="text-muted">{{ $row['grafted_date'] ?? '—' }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-4">No batches for the selected filters.</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+                <tfoot class="table-secondary fw-bold">
+                    <tr>
+                        <td colspan="3">Total</td>
+                        <td class="text-end">{{ number_format($grid['batchSummary']['totals']['total_grafted']) }}</td>
+                        <td class="text-end">{{ number_format($grid['batchSummary']['totals']['available']) }}</td>
+                        <td class="text-end text-warning">{{ number_format($grid['batchSummary']['totals']['regraft']) }}</td>
+                        <td class="text-end text-danger">{{ number_format($grid['batchSummary']['totals']['mortality']) }}</td>
+                        <td class="text-end">{{ number_format($grid['batchSummary']['totals']['stock_out']) }}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
 @include('analytics.partials.generated-reports', [
     'reports' => $reports,
     'reportTitle' => 'Generated Stock Ledger Reports',
 ])
 @endsection
-
-@push('scripts')
-<script>
-document.getElementById('exportLedger')?.addEventListener('click', function () {
-    const tables = document.querySelectorAll('.ledger-month-table');
-    if (!tables.length) return;
-
-    const lines = [];
-    tables.forEach(function (table) {
-        Array.from(table.querySelectorAll('tr')).forEach(function (tr) {
-            const cells = Array.from(tr.querySelectorAll('th, td')).map(function (cell) {
-                return '"' + cell.innerText.trim().replace(/"/g, '""') + '"';
-            });
-            lines.push(cells.join(','));
-        });
-        lines.push('');
-    });
-
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'cacao-stock-ledger.csv';
-    link.click();
-    URL.revokeObjectURL(link.href);
-});
-</script>
-@endpush

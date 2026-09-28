@@ -29,12 +29,13 @@ class GapReportPdf extends FPDF
 
     /** @var array<string,float> Column widths in millimetres (sum = TABLE_WIDTH). */
     private const COLUMNS = [
-        'batch' => 44.0,
-        'variety' => 62.0,
-        'expected' => 41.0,
-        'actual' => 41.0,
-        'pulled_out' => 44.0,
-        'gap' => 41.0,
+        'batch' => 40.0,
+        'parent' => 28.0,
+        'variety' => 45.0,
+        'expected' => 40.0,
+        'actual' => 40.0,
+        'pulled_out' => 40.0,
+        'gap' => 40.0,
     ];
 
     /** Brand palette (shared with the other report PDFs). */
@@ -185,6 +186,7 @@ class GapReportPdf extends FPDF
     {
         $headers = [
             'batch' => 'Batch',
+            'parent' => 'Parent Batch',
             'variety' => 'Scion Variety',
             'expected' => 'Expected',
             'actual' => 'Available',
@@ -233,10 +235,18 @@ class GapReportPdf extends FPDF
      */
     private function drawRow(int $number, array $row): void
     {
-        $batchText = $this->txt($row['batch']);
+        $batchLabel = str_repeat('   ', (int) ($row['depth'] ?? 0)).$row['batch'];
+
+        if (! empty($row['parent_missing']) && ! empty($row['parent'])) {
+            $batchLabel .= ' ('.$row['parent'].')';
+        }
+
+        $batchText = $this->txt($batchLabel);
+        $parentText = $this->txt((string) ($row['parent'] ?? '—'));
         $varietyText = $this->txt($row['variety']);
         $lines = max(
             $this->linesFor($batchText, self::COLUMNS['batch'] - 2, 'B', 8.5),
+            $this->linesFor($parentText, self::COLUMNS['parent'] - 2, '', 8.5),
             $this->linesFor($varietyText, self::COLUMNS['variety'] - 2, '', 8.5),
             1,
         );
@@ -268,7 +278,13 @@ class GapReportPdf extends FPDF
         $this->SetTextColor(...self::TEXT);
         $this->MultiCell(self::COLUMNS['batch'] - 2, self::LINE_HEIGHT, $batchText, 0, 'L');
 
-        $varietyX = $x + self::COLUMNS['batch'];
+        $parentX = $x + self::COLUMNS['batch'];
+        $this->SetXY($parentX + 1.2, $contentTop);
+        $this->SetFont('Helvetica', '', 8.5);
+        $this->SetTextColor(...self::MUTED);
+        $this->MultiCell(self::COLUMNS['parent'] - 2, self::LINE_HEIGHT, $parentText, 0, 'L');
+
+        $varietyX = $parentX + self::COLUMNS['parent'];
         $this->SetXY($varietyX + 1.2, $contentTop);
         $this->SetFont('Helvetica', '', 8.5);
         $this->SetTextColor(...self::TEXT);
@@ -312,7 +328,7 @@ class GapReportPdf extends FPDF
             $cursor += $width;
         }
 
-        $combinedWidth = self::COLUMNS['batch'] + self::COLUMNS['variety'];
+        $combinedWidth = self::COLUMNS['batch'] + self::COLUMNS['parent'] + self::COLUMNS['variety'];
         $this->vCenter('Total', $x, $y, $combinedWidth, $height, 'L', self::TEXT, 'B', 8.5);
 
         $expectedX = $x + $combinedWidth;

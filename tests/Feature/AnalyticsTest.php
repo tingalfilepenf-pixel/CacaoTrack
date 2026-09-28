@@ -533,10 +533,10 @@ class AnalyticsTest extends TestCase
         $csv = $response->getContent();
 
         // fputcsv quotes headers containing spaces/parentheses.
-        $this->assertStringContainsString('Batch,Variety,Expected,Available,"Pulled Out","Gap (Effective Mortality)"', $csv);
-        $this->assertStringContainsString('B001,Criollo,200,170,0,25', $csv);
-        $this->assertStringContainsString('B002,Trinitario,100,100,0,10', $csv);
-        $this->assertStringContainsString('Total,,300,270,0,35', $csv);
+        $this->assertStringContainsString('Batch,"Parent Batch",Variety,Expected,Available,"Pulled Out","Gap (Effective Mortality)"', $csv);
+        $this->assertStringContainsString('B001,,Criollo,200,170,0,25', $csv);
+        $this->assertStringContainsString('B002,,Trinitario,100,100,0,10', $csv);
+        $this->assertStringContainsString('Total,,,300,270,0,35', $csv);
     }
 
     public function test_gap_report_exports_reject_unknown_batch_filter(): void

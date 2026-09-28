@@ -364,8 +364,11 @@ class AnalyticsMetrics
      *
      * Uses the live `batches.available_count` balance (the batch's current
      * available inventory), bucketed by the age derived from `grafted_date`.
+     * Phase 7C also returns one nested row per batch/sub-batch (ordered through
+     * the single {@see BatchTree} helper) with a Parent link, so a sub-batch is
+     * shown as its own row with its own grafted date.
      *
-     * @return array{labels:array<int,string>,values:array<int,int>,total:int}
+     * @return array{labels:array<int,string>,values:array<int,int>,total:int,rows:list<array<string,mixed>>}
      */
     public static function ageProfile(
         ?int $batchId = null,
@@ -382,28 +385,46 @@ class AnalyticsMetrics
         $reference = ($asOf ? Carbon::parse($asOf) : now())->startOfDay();
         $totals = array_fill_keys(array_keys($buckets), 0);
 
-        $batches = self::batchQuery($batchId, $scionVarietyId)->get();
+        $batches = self::batchQuery($batchId, $scionVarietyId)->with('scionVariety')->get();
 
-        foreach ($batches as $batch) {
-            if (! $batch->grafted_date) {
-                continue;
-            }
+        $rows = [];
 
-            $age = (int) $batch->grafted_date->copy()->startOfDay()->diffInDays($reference);
+        foreach (BatchTree::flatten($batches) as $node) {
+            $batch = $node['batch'];
             $quantity = (int) $batch->available_count;
+            $age = null;
+            $bucket = null;
 
-            foreach ($buckets as $label => [$min, $max]) {
-                if ($age >= $min && ($max === null || $age <= $max)) {
-                    $totals[$label] += $quantity;
-                    break;
+            if ($batch->grafted_date) {
+                $age = (int) $batch->grafted_date->copy()->startOfDay()->diffInDays($reference);
+
+                foreach ($buckets as $label => [$min, $max]) {
+                    if ($age >= $min && ($max === null || $age <= $max)) {
+                        $bucket = $label;
+                        $totals[$label] += $quantity;
+                        break;
+                    }
                 }
             }
+
+            $rows[] = [
+                'batch' => $batch->batch_code,
+                'parent' => $node['parent_code'],
+                'parent_missing' => $node['parent_missing'],
+                'depth' => $node['depth'],
+                'variety' => $batch->scionVariety?->scion_variety_name ?? '—',
+                'grafted_date' => $batch->grafted_date?->format('Y-m-d'),
+                'age' => $age,
+                'available' => $quantity,
+                'bucket' => $bucket,
+            ];
         }
 
         return [
             'labels' => array_keys($buckets),
             'values' => array_values($totals),
             'total' => array_sum($totals),
+            'rows' => $rows,
         ];
     }
 
@@ -426,13 +447,12 @@ class AnalyticsMetrics
      * (available_count) and `pulled_out` (summed Stock_Out_Detail quantity) are
      * retained as context columns only.
      *
-     * @return array{rows:array<int,array{batch:string,variety:string,expected:int,actual:int,pulled_out:int,gap:int}>,totalExpected:int,totalActual:int,totalPulledOut:int,totalGap:int}
+     * @return array{rows:array<int,array{batch:string,parent:?string,parent_missing:bool,depth:int,variety:string,expected:int,actual:int,pulled_out:int,gap:int}>,totalExpected:int,totalActual:int,totalPulledOut:int,totalGap:int}
      */
     public static function gapReport(?int $batchId = null, ?int $scionVarietyId = null): array
     {
         $batches = self::batchQuery($batchId, $scionVarietyId)
             ->with('scionVariety')
-            ->orderBy('batch_code')
             ->get();
 
         $stockOutByBatch = StockOutDetail::query()
@@ -441,20 +461,29 @@ class AnalyticsMetrics
             ->groupBy('batch_id')
             ->pluck('total', 'batch_id');
 
-        $rows = $batches->map(function (Batch $batch) use ($stockOutByBatch) {
+        $rows = [];
+
+        // Phase 7C: sub-batch rows are nested under their parent through the
+        // single tree helper; the formula itself is unchanged (gap = effective
+        // mortality).
+        foreach (BatchTree::flatten($batches) as $node) {
+            $batch = $node['batch'];
             $expected = (int) $batch->total_grafted;
             $actual = (int) $batch->available_count;
             $pulledOut = (int) ($stockOutByBatch[$batch->batch_id] ?? 0);
 
-            return [
+            $rows[] = [
                 'batch' => $batch->batch_code,
+                'parent' => $node['parent_code'],
+                'parent_missing' => $node['parent_missing'],
+                'depth' => $node['depth'],
                 'variety' => $batch->scionVariety?->scion_variety_name ?? '—',
                 'expected' => $expected,
                 'actual' => $actual,
                 'pulled_out' => $pulledOut,
                 'gap' => $batch->effectiveMortalityQuantity(),
             ];
-        })->all();
+        }
 
         return [
             'rows' => $rows,
@@ -492,6 +521,11 @@ class AnalyticsMetrics
         $events = [];
 
         // Grafted + Ready to Plant: one event row per batch (by grafted_date).
+        // Phase 7C: only ROOT batches contribute to the Grafted column — a
+        // regraft sub-batch's plants are a movement of the same population and
+        // appear under Regraft, so family grafted totals are not inflated.
+        // "Ready to Plant" is unchanged: it still reflects each batch's live
+        // `available_count` (sub-batches included).
         $batches = self::batchQuery($batchId, $scionVarietyId)
             ->when($from, fn (Builder $q) => $q->whereDate('grafted_date', '>=', $from))
             ->when($to, fn (Builder $q) => $q->whereDate('grafted_date', '<=', $to))
@@ -509,11 +543,15 @@ class AnalyticsMetrics
                 $referenced[$varietyId] = true;
             }
 
+            $isRoot = $batch->parent_batch_id === null;
+
             $events[] = [
                 'date' => $batch->grafted_date->toDateString(),
-                'description' => 'Batch '.$batch->batch_code.' — established / grafted',
+                'description' => $isRoot
+                    ? 'Batch '.$batch->batch_code.' — established / grafted'
+                    : 'Sub-batch '.$batch->batch_code.' — ready to plant',
                 'seedlings' => 0,
-                'grafted' => $varietyId !== null ? [$varietyId => (int) $batch->total_grafted] : [],
+                'grafted' => $isRoot && $varietyId !== null ? [$varietyId => (int) $batch->total_grafted] : [],
                 'mortality' => [],
                 'regraft' => [],
                 'ready' => $varietyId !== null ? [$varietyId => (int) $batch->available_count] : [],
@@ -522,8 +560,11 @@ class AnalyticsMetrics
         }
 
         // Seedlings: Stock In (variety-agnostic; only when no batch narrowing).
+        // Phase 7C: only seedling-only receipts count — a scion-inclusive Stock In
+        // row (`scion_variety_id` set) must not inflate the Seedlings column.
         if ($batchId === null) {
             $stockIns = StockIn::query()
+                ->whereNull('scion_variety_id')
                 ->when($from, fn (Builder $q) => $q->whereDate('date_received', '>=', $from))
                 ->when($to, fn (Builder $q) => $q->whereDate('date_received', '<=', $to))
                 ->with('supplier')
@@ -576,13 +617,15 @@ class AnalyticsMetrics
 
         // Re Graft per Scion Variety. Regraft and Replanting are the same
         // recorded procedure (the separate Regraft_Record table was retracted),
-        // so the ledger reads the real `replanting_records` rows.
+        // so the ledger reads the real `replanting_records` rows. Phase 7C: the
+        // column is the SUB-BATCH's scion variety and the description names the
+        // source → sub-batch move.
         $replantingRecords = ReplantingRecord::query()
             ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
             ->when($from, fn (Builder $q) => $q->whereDate('replanting_date', '>=', $from))
             ->when($to, fn (Builder $q) => $q->whereDate('replanting_date', '<=', $to))
             ->when($scionVarietyId, fn (Builder $q) => $q->whereHas('batch', fn (Builder $b) => $b->where('scion_variety_id', $scionVarietyId)))
-            ->with('batch')
+            ->with(['batch', 'parent'])
             ->orderBy('replanting_date')
             ->get();
 
@@ -593,9 +636,12 @@ class AnalyticsMetrics
                 $referenced[$varietyId] = true;
             }
 
+            $sourceCode = $record->parent?->batch_code ?? $record->batch?->batch_code ?? '—';
+            $subBatchCode = $record->batch?->batch_code ?? '—';
+
             $events[] = [
                 'date' => $record->replanting_date->toDateString(),
-                'description' => 'Regraft ('.($record->batch?->batch_code ?? '—').')'.($record->remark ? ' — '.$record->remark : ''),
+                'description' => 'Regraft '.$sourceCode.' → '.$subBatchCode.($record->remark ? ' — '.$record->remark : ''),
                 'seedlings' => 0,
                 'grafted' => [],
                 'mortality' => [],
@@ -681,6 +727,71 @@ class AnalyticsMetrics
             'grandTotals' => $grandTotals,
             'summary' => $summary,
             'hasData' => $events !== [],
+            'batchSummary' => self::batchSummary($batchId, $scionVarietyId, $from, $to),
+        ];
+    }
+
+    /**
+     * Nested per-batch summary for the Stock Ledger (PRD §9.3): one row per
+     * batch/sub-batch with the parent link, ordered through the single
+     * {@see BatchTree} helper so parent batches and their regraft sub-batches
+     * are clearly distinguishable. Every value is computed from real records;
+     * nothing is stored (Phase 7C).
+     *
+     * @return array{rows:list<array<string,mixed>>,totals:array{total_grafted:int,available:int,regraft:int,mortality:int,stock_out:int}}
+     */
+    public static function batchSummary(
+        ?int $batchId = null,
+        ?int $scionVarietyId = null,
+        ?string $from = null,
+        ?string $to = null,
+    ): array {
+        $batches = self::batchQuery($batchId, $scionVarietyId)
+            ->when($from, fn (Builder $q) => $q->whereDate('grafted_date', '>=', $from))
+            ->when($to, fn (Builder $q) => $q->whereDate('grafted_date', '<=', $to))
+            ->with('scionVariety')
+            ->get();
+
+        $batchIds = $batches->pluck('batch_id')->map(fn ($id) => (int) $id)->all();
+
+        $mortalityByBatch = MortalityRecord::effectiveQuantityByBatch($batchIds);
+        $stockOutByBatch = $batchIds === []
+            ? collect()
+            : StockOutDetail::query()
+                ->whereIn('batch_id', $batchIds)
+                ->selectRaw('batch_id, COALESCE(SUM(quantity), 0) as total')
+                ->groupBy('batch_id')
+                ->pluck('total', 'batch_id');
+
+        $rows = [];
+
+        foreach (BatchTree::flatten($batches) as $node) {
+            $batch = $node['batch'];
+
+            $rows[] = [
+                'batch' => $batch->batch_code,
+                'parent' => $node['parent_code'],
+                'parent_missing' => $node['parent_missing'],
+                'depth' => $node['depth'],
+                'variety' => $batch->scionVariety?->scion_variety_name ?? '—',
+                'total_grafted' => (int) $batch->total_grafted,
+                'available' => (int) $batch->available_count,
+                'regraft' => (int) $batch->regraft,
+                'mortality' => (int) ($mortalityByBatch[$batch->batch_id] ?? 0),
+                'stock_out' => (int) ($stockOutByBatch[$batch->batch_id] ?? 0),
+                'grafted_date' => $batch->grafted_date?->format('Y-m-d'),
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'totals' => [
+                'total_grafted' => (int) collect($rows)->sum('total_grafted'),
+                'available' => (int) collect($rows)->sum('available'),
+                'regraft' => (int) collect($rows)->sum('regraft'),
+                'mortality' => (int) collect($rows)->sum('mortality'),
+                'stock_out' => (int) collect($rows)->sum('stock_out'),
+            ],
         ];
     }
 

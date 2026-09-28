@@ -39,6 +39,19 @@ class StockLedgerPdf extends FPDF
 
     private const ROW_H = 5.4;
 
+    /** @var array<string,float> Nested batch-summary column widths (sum = TABLE_WIDTH). */
+    private const SUMMARY_COLUMNS = [
+        'batch' => 46.0,
+        'parent' => 26.0,
+        'variety' => 40.0,
+        'total_grafted' => 26.0,
+        'available' => 26.0,
+        'regraft' => 24.0,
+        'mortality' => 26.0,
+        'stock_out' => 30.0,
+        'grafted_date' => 29.0,
+    ];
+
     /** Brand palette (restrained agricultural green + neutral greys). */
     private const BRAND = [30, 61, 43];
 
@@ -64,11 +77,14 @@ class StockLedgerPdf extends FPDF
 
     private float $fontSize = 6.5;
 
+    private bool $summaryMode = false;
+
     /**
      * @param  array<int,array{id:int,name:string}>  $varieties
      * @param  array<int,array{key:string,label:string,rows:array<int,array<string,mixed>>,totals:array<string,mixed>}>  $months
      * @param  array<string,mixed>  $grandTotals
      * @param  array<string,int>  $summary
+     * @param  array{rows:list<array<string,mixed>>,totals:array<string,int>}  $batchSummary
      */
     public function __construct(
         private readonly string $filterLabel,
@@ -78,6 +94,7 @@ class StockLedgerPdf extends FPDF
         private readonly array $months,
         private readonly array $grandTotals,
         private readonly array $summary,
+        private readonly array $batchSummary = ['rows' => [], 'totals' => []],
     ) {
         parent::__construct('L', 'mm', 'A4');
 
@@ -102,6 +119,12 @@ class StockLedgerPdf extends FPDF
     public function header(): void
     {
         if ($this->PageNo() > 1) {
+            if ($this->summaryMode) {
+                $this->drawSummaryContinuationHeader();
+
+                return;
+            }
+
             $this->drawContinuationHeader();
 
             return;
@@ -177,6 +200,255 @@ class StockLedgerPdf extends FPDF
         }
 
         $this->drawTotalsRow('GRAND TOTAL', $this->grandTotals, true);
+
+        $this->drawLedgerFootnote();
+        $this->drawBatchSummary();
+    }
+
+    /**
+     * The ledger footnote that explains why sub-batch quantities are shown under
+     * Regraft rather than Grafted (Phase 7C).
+     */
+    private function drawLedgerFootnote(): void
+    {
+        $this->ensureSummarySpace(9);
+
+        $this->SetX(12);
+        $this->SetFont('Helvetica', 'I', 7.5);
+        $this->SetTextColor(...self::MUTED);
+        $this->MultiCell(
+            self::TABLE_WIDTH,
+            3.6,
+            $this->txt('Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same plants; no cross-column total is implied.'),
+            0,
+            'L',
+        );
+        $this->SetTextColor(...self::TEXT);
+    }
+
+    /**
+     * Nested per-batch summary below the grid (PRD §9.3): parent batches and
+     * their regraft sub-batches with the parent link. Real data only.
+     */
+    private function drawBatchSummary(): void
+    {
+        $rows = $this->batchSummary['rows'] ?? [];
+
+        $this->ensureSummarySpace(6.2);
+        $this->SetFillColor(...self::BRAND);
+        $this->Rect(12, $this->GetY(), self::TABLE_WIDTH, 6.2, 'F');
+        $this->SetXY(14, $this->GetY() + 0.8);
+        $this->SetFont('Helvetica', 'B', 9);
+        $this->SetTextColor(255, 255, 255);
+        $this->Cell(self::TABLE_WIDTH - 4, 4.6, $this->txt('Batch summary (nested)'), 0, 1, 'L');
+        $this->SetTextColor(...self::TEXT);
+        $this->SetX(12);
+
+        // From here on, continuation pages continue the summary (not the grid).
+        $this->summaryMode = true;
+
+        $this->drawSummaryHeader();
+
+        if ($rows === []) {
+            $this->ensureSummarySpace(6.0);
+            $this->SetFont('Helvetica', 'I', 8);
+            $this->SetTextColor(...self::MUTED);
+            $this->SetX(12);
+            $this->Cell(self::TABLE_WIDTH, 6.0, $this->txt('No batches for the selected filters.'), 1, 1, 'C');
+            $this->SetTextColor(...self::TEXT);
+
+            return;
+        }
+
+        $zebra = false;
+
+        foreach ($rows as $row) {
+            $this->ensureSummarySpace(self::ROW_H);
+            $zebra = ! $zebra;
+            $this->drawSummaryRow($row, $zebra);
+        }
+
+        $this->ensureSummarySpace(6.2);
+        $this->drawSummaryTotals($this->batchSummary['totals'] ?? []);
+    }
+
+    private function drawSummaryContinuationHeader(): void
+    {
+        $this->SetY(12);
+        $this->SetX(12);
+        $this->SetFont('Helvetica', 'B', 10);
+        $this->SetTextColor(...self::BRAND);
+        $this->Cell(0, 6, $this->txt('Batch summary (nested) - '.$this->filterLabel), 0, 1, 'L');
+
+        $this->SetDrawColor(...self::BORDER);
+        $this->SetLineWidth(0.3);
+        $this->Line(12, $this->GetY() + 0.5, 285, $this->GetY() + 0.5);
+        $this->SetY($this->GetY() + 2.5);
+        $this->SetX(12);
+        $this->drawSummaryHeader();
+    }
+
+    private function drawSummaryHeader(): void
+    {
+        $headers = [
+            'batch' => 'Batch or sub-batch',
+            'parent' => 'Parent Batch',
+            'variety' => 'Scion Variety',
+            'total_grafted' => 'Total Grafted',
+            'available' => 'Available',
+            'regraft' => 'Regraft',
+            'mortality' => 'Mortality',
+            'stock_out' => 'Stock Out',
+            'grafted_date' => 'Date Grafted',
+        ];
+
+        if ($this->GetY() + 6.4 > $this->PageBreakTrigger) {
+            $this->AddPage($this->CurOrientation);
+        }
+
+        $x = 12.0;
+        $y = $this->GetY();
+
+        $this->SetFont('Helvetica', 'B', 6.8);
+        $this->SetDrawColor(...self::BRAND);
+        $this->SetLineWidth(0.2);
+
+        foreach ($headers as $key => $label) {
+            $align = in_array($key, ['total_grafted', 'available', 'regraft', 'mortality', 'stock_out'], true) ? 'R' : 'L';
+            $this->SetFillColor(...self::BRAND);
+            $this->SetTextColor(255, 255, 255);
+            $this->SetXY($x, $y);
+            $this->Cell(self::SUMMARY_COLUMNS[$key], 6.4, $this->txt($label), 1, 0, $align, true);
+            $x += self::SUMMARY_COLUMNS[$key];
+        }
+
+        $this->SetXY(12, $y + 6.4);
+        $this->SetTextColor(...self::TEXT);
+        $this->SetDrawColor(...self::BORDER);
+    }
+
+    /**
+     * @param  array<string,mixed>  $row
+     */
+    private function drawSummaryRow(array $row, bool $zebra): void
+    {
+        $x = 12.0;
+        $y = $this->GetY();
+        $height = self::ROW_H;
+
+        if ($zebra) {
+            $this->SetFillColor(...self::ZEBRA);
+            $this->Rect($x, $y, self::TABLE_WIDTH, $height, 'F');
+        }
+
+        $this->SetDrawColor(...self::BORDER);
+        $this->SetLineWidth(0.2);
+
+        $cursor = $x;
+
+        foreach (self::SUMMARY_COLUMNS as $width) {
+            $this->Rect($cursor, $y, $width, $height, $zebra ? 'DF' : 'D');
+            $cursor += $width;
+        }
+
+        $label = str_repeat('   ', (int) ($row['depth'] ?? 0)).'> '.$row['batch'];
+
+        if (! empty($row['parent_missing']) && ! empty($row['parent'])) {
+            $label .= ' (parent: '.$row['parent'].')';
+        }
+
+        $cells = [
+            'batch' => [$this->clip($label, 30), 'L', self::TEXT, 'B'],
+            'parent' => [(string) ($row['parent'] ?? '—'), 'L', self::MUTED, ''],
+            'variety' => [$this->clip((string) ($row['variety'] ?? '—'), 26), 'L', self::TEXT, ''],
+            'total_grafted' => [number_format((int) $row['total_grafted']), 'R', self::TEXT, ''],
+            'available' => [number_format((int) $row['available']), 'R', self::TEXT, ''],
+            'regraft' => [number_format((int) $row['regraft']), 'R', self::WARNING, ''],
+            'mortality' => [number_format((int) $row['mortality']), 'R', self::DANGER, ''],
+            'stock_out' => [number_format((int) $row['stock_out']), 'R', self::TEXT, ''],
+            'grafted_date' => [(string) ($row['grafted_date'] ?? '—'), 'L', self::MUTED, ''],
+        ];
+
+        $cursor = $x;
+
+        foreach ($cells as $key => [$text, $align, $color, $style]) {
+            $this->SetFont('Helvetica', $style, 7);
+            $this->SetTextColor(...$color);
+            $this->SetXY($cursor + 1, $y + (($height - 4) / 2));
+            $this->Cell(self::SUMMARY_COLUMNS[$key] - 2, 4, $this->txt($text), 0, 0, $align);
+            $cursor += self::SUMMARY_COLUMNS[$key];
+        }
+
+        $this->SetXY($x, $y + $height);
+        $this->SetTextColor(...self::TEXT);
+    }
+
+    /**
+     * @param  array<string,int>  $totals
+     */
+    private function drawSummaryTotals(array $totals): void
+    {
+        $height = 6.2;
+        $x = 12.0;
+        $y = $this->GetY();
+
+        $this->SetFillColor(...self::BRAND_LIGHT);
+        $this->Rect($x, $y, self::TABLE_WIDTH, $height, 'F');
+        $this->SetDrawColor(...self::BORDER);
+        $this->SetLineWidth(0.2);
+
+        $cursor = $x;
+
+        foreach (self::SUMMARY_COLUMNS as $width) {
+            $this->Rect($cursor, $y, $width, $height, 'DF');
+            $cursor += $width;
+        }
+
+        $combined = self::SUMMARY_COLUMNS['batch'] + self::SUMMARY_COLUMNS['parent'] + self::SUMMARY_COLUMNS['variety'];
+        $this->SetFont('Helvetica', 'B', 7.5);
+        $this->SetTextColor(...self::TEXT);
+        $this->SetXY($x + 1, $y + (($height - 4) / 2));
+        $this->Cell($combined - 2, 4, $this->txt('Total'), 0, 0, 'L');
+
+        $values = [
+            'total_grafted' => (int) ($totals['total_grafted'] ?? 0),
+            'available' => (int) ($totals['available'] ?? 0),
+            'regraft' => (int) ($totals['regraft'] ?? 0),
+            'mortality' => (int) ($totals['mortality'] ?? 0),
+            'stock_out' => (int) ($totals['stock_out'] ?? 0),
+        ];
+
+        $cursor = $x + $combined;
+
+        foreach ($values as $key => $value) {
+            $color = match ($key) {
+                'regraft' => self::WARNING,
+                'mortality' => self::DANGER,
+                default => self::TEXT,
+            };
+            $this->SetTextColor(...$color);
+            $this->SetXY($cursor + 1, $y + (($height - 4) / 2));
+            $this->Cell(self::SUMMARY_COLUMNS[$key] - 2, 4, number_format($value), 0, 0, 'R');
+            $cursor += self::SUMMARY_COLUMNS[$key];
+        }
+
+        $this->SetXY($x, $y + $height);
+        $this->SetTextColor(...self::TEXT);
+    }
+
+    private function ensureSummarySpace(float $height): void
+    {
+        if ($this->GetY() + $height <= $this->PageBreakTrigger) {
+            return;
+        }
+
+        $this->AddPage($this->CurOrientation);
+        $this->SetX(12);
+    }
+
+    private function clip(string $text, int $length): string
+    {
+        return strlen($text) > $length ? substr($text, 0, $length - 1).'…' : $text;
     }
 
     private function drawSummaryStrip(): void
