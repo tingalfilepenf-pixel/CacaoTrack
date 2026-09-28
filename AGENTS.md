@@ -8,6 +8,39 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## PHASE 7D DONE — live `db_capstone` upgraded to the approved schema + reseeded (2026-09-29)
+- **One approved destructive action — EXPLICITLY signed off by the project owner for this run only.
+  Connection `mysql`, database `db_capstone`.** The standing rule is unchanged: tests run **only**
+  against `db_capstone_test`; any further destructive action on the live DB needs fresh sign-off.
+- **Backup first (verified, left untouched outside the git repo):**
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql`
+  — **35,131 B**, 23 `CREATE TABLE` + 15 `INSERT INTO`, `--single-transaction`, includes
+  `CREATE DATABASE`/`USE db_capstone`, clean `-- Dump completed on 2026-09-29 0:02:07` trailer.
+  **The backup file was NOT deleted or modified.**
+- **Run:** `php artisan migrate:fresh --seed --force` against `db_capstone` (fresh because legacy
+  replanting rows cannot become sub-batches without inventing data). All **52** migrations ran,
+  including the four `2026_09_27_*`; `DatabaseSeeder` + `ActivityLogSeeder` seeded.
+- **Before → after row counts (`db_capstone`):** batches 3 → 5, stock_ins 6 → 4, stock_outs 1 → 1,
+  stock_out_details 1 → 1, mortality_records 4 → 4, replanting_records 5 → 2, inventories 3 → 5,
+  users 1 → 1, scion_varieties 3 → 5, suppliers 3 → 3, clients 3 → 3.
+- **Schema verified live (`Schema::hasColumn`):** `batches.viable_count` **false**,
+  `stock_ins.viable` **false**, `inventories.viable` **false**, `batches.regraft` **true**,
+  `batches.parent_batch_id` **true**, `replanting_records.parent_batch_id` **true**;
+  `migrate:status` **0 Pending**.
+- **Invariants verified live:** `available_count > total_grafted` = **0**; `available_count < 0` =
+  **0**; `batches.regraft == SUM(replanting_records.quantity by parent_batch_id)` mismatches = **0**;
+  B001 family `total_grafted` = **500**.
+- **Seeded family:** B001 Batangas (total 400 / available 400, regraft 100, mortality 25) →
+  B001-R1 Toledo (70 / 50, regraft 30, mortality 5) → B001-R1-R1 Criollo (30 / 30, regraft 0,
+  mortality 0); plus B002 Trinitario (150 / 150, mortality 15) and B003 Forastero (100 / 100,
+  mortality 10).
+- **End-to-end (read-only, as the seeded administrator through the HTTP kernel):** all **20 sidebar
+  GET pages return 200**; KPIs — Total Active Inventory **730**, Crude Mortality Rate **7.33%**,
+  Regraft Deficit **25**, Gap total **55**; Stock Ledger CSV (`/analytics/stock-ledger/export/csv`)
+  returns **200**. No data was created in `db_capstone` during verification.
+- **`db_capstone` is now on the approved (Phase 7A) schema** — the four `2026_09_27_*` migrations are
+  applied and `batches.viable_count`, `stock_ins.viable` and `inventories.viable` are gone.
+
 ## PHASE 7A DONE — viability count removed; schema aligned with the client-approved ERD (2026-09-28)
 - **Baseline = the client-approved v1.0 docs** `docs/CacaoTrack_PRD_UPDATED.md` /
   `docs/CacaoTrack_ERD_UPDATED.md`. Only the two provisional defaults below were implemented from the
@@ -29,9 +62,10 @@
      update path only while the batch has no operational records).
   2. **`OD-4`** — `Batch::remainingMortalityCapacity() = max(0, total_grafted − effective mortality)`.
      Mortality still does **not** change `available_count` or the `regraft` counter.
-- **`db_capstone` is still on the OLD schema** — it was **NOT** migrated in Phase 7A. It still has
-  `batches.viable_count`, `stock_ins.viable` and `inventories.viable`. Applying the four new
-  migrations to the live DB is a later, explicitly approved step (alongside the final reseed).
+- **`db_capstone` was upgraded to this schema + reseeded in Phase 7D (2026-09-29)** — the four
+  `2026_09_27_*` migrations are applied and the live DB no longer has `batches.viable_count`,
+  `stock_ins.viable` or `inventories.viable`. (When Phase 7A landed the live DB was deliberately left
+  on the old schema; that step was executed later — see "PHASE 7D DONE" at the top.)
 - **Out of scope this phase (unchanged):** the regraft/sub-batch flow (`ReplantingController`,
   Phase 7B), Stock Ledger nesting (7C), `Plant_Condition`, `Sub_Batch_ID`, and any correction/edit
   policy.
@@ -91,9 +125,9 @@
   Seeded invariants: `available_count > total_grafted` = **0**, `available_count < 0` = **0**,
   family totals conserve (B001 400 + B001-R1 100 = original 500), `Σregraft` **100** ==
   `Σ(records where parent_batch_id)` **100**.
-- **`db_capstone` is still on the OLD schema and was NOT migrated/touched** (the four
-  `2026_09_27_*` migrations remain Pending there; it still has `batches.viable_count` and
-  `stock_ins.viable`). No destructive command was run.
+- **`db_capstone` was upgraded + reseeded in Phase 7D (2026-09-29)** — the four `2026_09_27_*`
+  migrations are applied (no longer Pending) and the live DB matches this schema. (They remained
+  Pending through Phase 7B; that step was executed later — see "PHASE 7D DONE" at the top.)
 - **Out of scope (unchanged):** Stock Ledger / Inventory **nested display** (Phase 7C), analytics
   changes, `Plant_Condition`, `Sub_Batch_ID`, and any correction/edit policy. The Regraft Deficit and
   Gap formulas were **not** changed (`OD-10`/`OD-3` remain open).
@@ -144,9 +178,10 @@
   denominator; B001 family total_grafted **500** conserved; `Σregraft` **130** ==
   `Σ(replanting_records.quantity)` **130**; Seedlings **800** (seedling-only) vs **1000** all Stock In;
   ledger grafted **650** / ready_to_plant **730**.
-- **`db_capstone` is still on the OLD schema and was NOT touched** — the four `2026_09_27_*`
-  migrations remain **Pending** there; applying them (and any reseed) is a separate, explicitly
-  approved step with a fresh verified backup.
+- **`db_capstone` was upgraded + reseeded in Phase 7D (2026-09-29)** — the four `2026_09_27_*`
+  migrations are applied and the live DB matches this schema. (They remained Pending through
+  Phase 7C; applying them + the reseed was the separate, explicitly approved step executed in
+  Phase 7D — see "PHASE 7D DONE" at the top.)
 - **Out of scope (unchanged):** analytics formulas / `OD-n` decisions, `Plant_Condition`,
   `Sub_Batch_ID`, correction/edit policy, and the Ready to Plant mapping (still a best guess).
 
@@ -558,3 +593,11 @@ pre-refactor residue is gone and the seeder now enforces the app's own invariant
   rows were migrated into `stock_ins` (`stock_ins` 2 → 4; scion rows `viable == quantity`) and then the
   empty table was dropped. `migrate:status` 0 Pending. This was an additive+data-migrating schema
   change, not a wipe/reseed; the wipe policy above still stands.
+- **Phase 7D wipe + reseed on the live DB (2026-09-29):** the project owner explicitly approved one
+  further destructive action — `php artisan migrate:fresh --seed --force` against `db_capstone` —
+  after a fresh verified backup at
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql`
+  (35,131 B / 23 tables). It applied the four `2026_09_27_*` migrations and reseeded the approved
+  family (B001 → B001-R1 → B001-R1-R1 + B002/B003). `migrate:status` 0 Pending; all 20 sidebar pages
+  return 200. See "PHASE 7D DONE" at the top. This remains the ONLY further approved destructive
+  action; any additional one needs fresh sign-off.
