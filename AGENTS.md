@@ -99,11 +99,36 @@
 
 ## Source-of-truth docs (read before schema or business-logic changes)
 - `docs/CacaoTrack_PRD.md` — revised PRD: what the system must do (FR-01…FR-13, validation,
-  transaction integrity, analytics, dashboard, data-consistency rules).
+  transaction integrity, analytics, dashboard, data-consistency rules). **v2.0 (2026-09-28)** —
+  corrected from the client-approved baseline; **§19 Open Decisions** (`OD-1`…`OD-14`) is pending
+  client sign-off.
 - `docs/CacaoTrack_ERD.md` — revised ERD: the **15-entity** data model (snake_case PK/FK map). This
-  is the database source of truth.
+  is the database source of truth. **v2.0 (2026-09-28)** — corrected; Appendix A holds decision-log
+  history.
+- `docs/CacaoTrack_PRD_UPDATED.md` / `docs/CacaoTrack_ERD_UPDATED.md` — the **client-approved v1.0
+  baseline**. **Untouched provenance — never edit.** The corrected canonical files above are derived
+  from them.
 - `docs/CacaoTrack_Development_Rules.md` — 14 mandatory rules (validate everything, real data only,
   transaction-safe inventory, centralized formulas, stop instead of guessing).
+
+## Corrected client-approved PRD/ERD + Open Decisions (2026-09-28, doc-only, checkpoint `584c548`)
+- The **client-approved baseline** now is the corrected `docs/CacaoTrack_PRD.md` +
+  `docs/CacaoTrack_ERD.md` (**v2.0, 2026-09-28**). They are derived from the untouched provenance
+  copies `docs/CacaoTrack_PRD_UPDATED.md` / `docs/CacaoTrack_ERD_UPDATED.md` (**v1.0,
+  client-approved; never edit**). The `_REVISED` copies mirror the canonical files **byte-identically**
+  (SHA-256 match), per project practice.
+- The correction fixed internal PRD/ERD contradictions (Stock In fields; Stock In ↔ Batch; mortality
+  plant condition; scion availability; ordered quantity; regraft purpose; the **Regraft** screen
+  label) and defined previously undefined rules. **No client-approved rule was changed.**
+- **Open Decisions are pending client confirmation** — PRD **§19** lists `OD-1`…`OD-14`: ordered
+  quantity storage; mortality `Plant_Condition`; `Available_Count` definition (+ Gap Report);
+  mortality quantity bound; corrections policy; regraft sub-batch details; 21-day cycle +
+  `Batch.Status`; Stock In ↔ Batch traceability; Inventory snapshot semantics; Dashboard KPIs
+  (+ Regraft Deficit); `Replanting_Record.Sub_Batch_ID`; cached `Batch.Regraft`; scion freshness
+  rule; scion receipt traceability. Every such rule carries the inline marker
+  **[PROPOSED — pending client confirmation]**. **Do not implement any `OD-n` rule without
+  sign-off.**
+- **Doc-only:** no code, migration, seeder, test or route was changed.
 
 ## Revised data model (15 entities — the TARGET)
 | # | Entity | PK | Key FKs / notable columns |

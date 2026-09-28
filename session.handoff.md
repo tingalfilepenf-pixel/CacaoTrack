@@ -1,6 +1,16 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CC — **`Scion_Receiving` merged into `Stock_In` (client-confirmed); refactor P0–P6 still DONE**)
+> ### ▶ Continue here (latest: Session CD — **corrected client-approved PRD/ERD; refactor P0–P6 still DONE**)
+> - **▶ Session CD (DONE — doc-only: corrected client-approved PRD/ERD; checkpoint `584c548`):**
+>   rewrote `docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` from the client-approved baseline
+>   (`docs/CacaoTrack_PRD_UPDATED.md` / `docs/CacaoTrack_ERD_UPDATED.md`, kept **untouched as
+>   provenance**; `_REVISED` copies byte-identical). Fixes internal PRD/ERD contradictions and
+>   defines previously undefined rules; **no client-approved rule was changed**. Every new,
+>   unconfirmed rule carries **[PROPOSED — pending client confirmation]** and is listed in
+>   **PRD §19 Open Decisions** (`OD-1`…`OD-14`) — **pending sign-off, do not implement**. **No code,
+>   migration, seeder, test or route changed.** Verified: `viable` **0 hits**; `Replanting` appears
+>   only as the internal `Replanting_Record` name / terminology note; **no dangling `§3.16`**;
+>   canonical ↔ `_REVISED` **SHA-256 match**.
 > - **▶ Session CC (DONE — `scion_receivings` merged into `stock_ins`; commit below):** the client
 >   confirmed seedling Stock In and Scion Receiving are the **same real-world receiving event**, so the
 >   short-lived `Scion_Receiving` entity (Session BV/CB) was retired — mirroring the earlier
