@@ -47,16 +47,40 @@ class BatchRelationshipsTest extends TestCase
         $this->assertSame(235, MortalityRecord::effectiveQuantityForBatch($batch->batch_id));
     }
 
-    public function test_batch_has_many_replanting_records_and_sums_them(): void
+    public function test_batch_replanting_records_and_regraft_counter_are_centralized(): void
     {
-        $batch = Batch::factory()->create();
+        $batch = Batch::factory()->create(['regraft' => 0]);
 
         ReplantingRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 15]);
         ReplantingRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 5]);
 
         $this->assertCount(2, $batch->replantingRecords);
-        $this->assertSame(20, $batch->totalReplanted());
         $this->assertSame(20, ReplantingRecord::totalForBatch($batch->batch_id));
+
+        // Phase 7B: totalReplanted() reads the cached `batches.regraft` counter.
+        $batch->update(['regraft' => 20]);
+        $this->assertSame(20, $batch->fresh()->totalReplanted());
+    }
+
+    public function test_batch_regraft_records_as_parent_links_a_source_to_its_sub_batches(): void
+    {
+        $source = Batch::factory()->create(['batch_code' => 'B001']);
+        $sub = Batch::factory()->create([
+            'batch_code' => 'B001-R1',
+            'parent_batch_id' => $source->batch_id,
+        ]);
+
+        $record = ReplantingRecord::factory()->create([
+            'batch_id' => $sub->batch_id,
+            'parent_batch_id' => $source->batch_id,
+            'quantity' => 30,
+        ]);
+
+        $this->assertCount(1, $source->regraftRecordsAsParent);
+        $this->assertTrue($source->regraftRecordsAsParent->first()->is($record));
+        $this->assertTrue($record->parent->is($source));
+        $this->assertTrue($record->subBatch->is($sub));
+        $this->assertSame(30, ReplantingRecord::totalRegraftedFromBatch($source->batch_id));
     }
 
     public function test_batch_has_many_inventory_snapshots_and_a_latest_snapshot(): void

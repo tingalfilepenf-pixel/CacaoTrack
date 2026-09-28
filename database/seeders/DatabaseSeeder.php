@@ -2,12 +2,12 @@
 
 namespace Database\Seeders;
 
+use App\Actions\RegraftBatch;
 use App\Models\ActivityTask;
 use App\Models\Batch;
 use App\Models\Client;
 use App\Models\Inventory;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
 use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
@@ -21,11 +21,12 @@ use Illuminate\Support\Facades\Hash;
  * Development-only reference data for the revised 15-entity model.
  *
  * These records must not be confused with real production data. The batch B001
- * deliberately carries genuine mortality AND regraft (Replanting) records so
- * the Gap Report has real non-zero data to verify against. Seeding respects the
- * application's own invariants: seeded Stock Out quantities never exceed the
- * referenced batch's `available_count`, and orders/receipts are applied through
- * the same balance the app maintains.
+ * deliberately carries genuine mortality AND a Phase 7B regraft into the linked
+ * sub-batch B001-R1 so the Gap Report, Regraft page and Stock Ledger have real
+ * non-zero data to verify against. Seeding respects the application's own
+ * invariants: a regraft is seeded **only** through {@see RegraftBatch} (never a
+ * raw insert), and seeded Stock Out quantities never exceed the referenced
+ * batch's `available_count`.
  */
 class DatabaseSeeder extends Seeder
 {
@@ -55,7 +56,15 @@ class DatabaseSeeder extends Seeder
 
         // Scion Variety: the single retained scion module (replaces both the old
         // `varieties` master and the generic `scions` stock pool).
-        $criollo = ScionVariety::firstOrCreate(
+        $batangas = ScionVariety::firstOrCreate(
+            ['scion_variety_name' => 'Batangas'],
+            ['description' => 'Common local scion variety used in nursery grafting.'],
+        );
+        $toledo = ScionVariety::firstOrCreate(
+            ['scion_variety_name' => 'Toledo'],
+            ['description' => 'High-yielding scion variety used for regrafting.'],
+        );
+        ScionVariety::firstOrCreate(
             ['scion_variety_name' => 'Criollo'],
             ['description' => 'Fine-flavor cacao variety, relatively disease-sensitive.'],
         );
@@ -90,12 +99,12 @@ class DatabaseSeeder extends Seeder
 
         $batches = [
             [
-                'scion_variety_id' => $criollo->scion_variety_id,
+                'scion_variety_id' => $batangas->scion_variety_id,
                 'user_id' => $admin->id,
                 'batch_code' => 'B001',
-                'total_grafted' => 200,
+                'total_grafted' => 500,
                 'regraft' => 0,
-                'available_count' => 200,
+                'available_count' => 500,
                 'grafted_date' => '2026-07-15',
                 'created_at' => now(),
                 'status' => Batch::STATUS_ACTIVE,
@@ -137,9 +146,9 @@ class DatabaseSeeder extends Seeder
         $b002 = $batchModels['B002'];
         $b003 = $batchModels['B003'];
 
-        // Genuine mortality + regraft for B001 (Gap Report fixture), plus
-        // incremental entries for the other batches (matches the notebook-style
-        // cumulative recording the client uses).
+        // Genuine mortality for the seeded batches (Gap Report fixture). B001's
+        // 25 deaths precede its regraft, so the Phase 7B regraftable cap
+        // (`min(available, total_grafted - mortality)`) is exercised for real.
         $mortalityRecords = [
             ['batch_id' => $b001->batch_id, 'cause' => 'Disease', 'quantity' => 25, 'recorded_at' => '2026-09-01'],
             ['batch_id' => $b002->batch_id, 'cause' => 'Drought', 'quantity' => 15, 'recorded_at' => '2026-09-01'],
@@ -160,22 +169,34 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        $replantingRecords = [
-            ['batch_id' => $b001->batch_id, 'quantity' => 15, 'replanting_date' => '2026-09-03', 'remark' => 'Replaced disease-affected seedlings.'],
-            ['batch_id' => $b002->batch_id, 'quantity' => 15, 'replanting_date' => '2026-09-03', 'remark' => 'Full regraft of drought losses.'],
-            ['batch_id' => $b003->batch_id, 'quantity' => 4, 'replanting_date' => '2026-09-04', 'remark' => 'Partial regraft; remaining stock pending.'],
-        ];
+        // Phase 7B regraft scenario — seeded ONLY through the RegraftBatch action
+        // (never a raw insert): 100 plants move out of B001 Batangas into the
+        // linked sub-batch B001-R1 using Toledo. Guarded so re-running the
+        // seeder is idempotent instead of creating B001-R2.
+        if ((int) $b001->fresh()->regraft < 100) {
+            (new RegraftBatch)->execute(
+                $b001,
+                100,
+                (int) $toledo->scion_variety_id,
+                '2026-09-05',
+                'Regrafted disease-affected stock into a Toledo sub-batch.',
+                (int) $admin->id,
+            );
+        }
 
-        foreach ($replantingRecords as $record) {
-            ReplantingRecord::firstOrCreate(
+        $b001r1 = Batch::where('batch_code', 'B001-R1')->first();
+
+        if ($b001r1 !== null) {
+            // Mortality on the sub-batch (its own independent 21-day cycle).
+            MortalityRecord::firstOrCreate(
                 [
-                    'batch_id' => $record['batch_id'],
-                    'replanting_date' => $record['replanting_date'],
+                    'batch_id' => $b001r1->batch_id,
+                    'cause' => 'Disease',
+                    'recorded_at' => '2026-09-10 00:00:00',
                 ],
                 [
                     'user_id' => $admin->id,
-                    'quantity' => $record['quantity'],
-                    'remark' => $record['remark'],
+                    'quantity' => 5,
                 ],
             );
         }
@@ -218,45 +239,53 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // Stock Out: header + one detail line per batch/scion variety. The
-        // released quantity is checked against the live available balance, then
-        // the balance is decremented exactly as the application does.
+        // Stock Out: header + one detail line. Phase 7B scenario — the release
+        // is taken from the regraft sub-batch B001-R1 (seedlings move out of the
+        // sub-batch, not the parent). The released quantity is checked against
+        // the live available balance, then the balance is decremented exactly as
+        // the application does.
         $client = Client::where('client_name', 'Cacao Farmers Coop')->first();
 
-        $header = StockOut::firstOrCreate(
-            [
-                'client_id' => $client->client_id,
-                'release_date' => '2026-09-10',
-            ],
-            [
-                'user_id' => $admin->id,
-                'total_amount' => null,
-            ],
-        );
+        if ($b001r1 !== null) {
+            $header = StockOut::firstOrCreate(
+                [
+                    'client_id' => $client->client_id,
+                    'release_date' => '2026-09-12',
+                ],
+                [
+                    'user_id' => $admin->id,
+                    'total_amount' => null,
+                ],
+            );
 
-        if ($header->wasRecentlyCreated) {
-            $releasedFromB002 = 20;
+            if ($header->wasRecentlyCreated) {
+                $releasedFromSubBatch = 20;
 
-            if ($releasedFromB002 > (int) $b002->available_count) {
-                $releasedFromB002 = (int) $b002->available_count;
+                if ($releasedFromSubBatch > (int) $b001r1->available_count) {
+                    $releasedFromSubBatch = (int) $b001r1->available_count;
+                }
+
+                $header->details()->create([
+                    'batch_id' => $b001r1->batch_id,
+                    'quantity' => $releasedFromSubBatch,
+                    'unit' => 'seedlings',
+                    'unit_price' => 25.00,
+                    'amount' => $releasedFromSubBatch * 25.00,
+                ]);
+
+                $header->forceFill(['total_amount' => $releasedFromSubBatch * 25.00])->save();
+                $b001r1->decrement('available_count', $releasedFromSubBatch);
             }
-
-            $header->details()->create([
-                'batch_id' => $b002->batch_id,
-                'quantity' => $releasedFromB002,
-                'unit' => 'seedlings',
-                'unit_price' => 25.00,
-                'amount' => $releasedFromB002 * 25.00,
-            ]);
-
-            $header->forceFill(['total_amount' => $releasedFromB002 * 25.00])->save();
-            $b002->decrement('available_count', $releasedFromB002);
         }
 
-        // Monthly inventory snapshots (September 2026) for the seeded batches.
+        // Monthly inventory snapshots (current month) for the seeded batches,
+        // including the regraft sub-batch.
         $b002->refresh();
+        $b001r1?->refresh();
 
-        foreach ([$b001, $b002, $b003] as $batch) {
+        $inventoryBatches = array_filter([$b001->refresh(), $b002, $b003, $b001r1]);
+
+        foreach ($inventoryBatches as $batch) {
             $month = now()->startOfMonth()->toDateString();
 
             if (Inventory::where('batch_id', $batch->batch_id)

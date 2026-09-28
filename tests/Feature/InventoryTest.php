@@ -175,6 +175,9 @@ class InventoryTest extends TestCase
             'replanting_date' => '2026-09-03',
         ]);
 
+        // Phase 7B: the snapshot's `regraft` reads the batch's cached counter.
+        $batch->update(['regraft' => 10]);
+
         $this->actingAs($user)
             ->post(route('inventory.snapshots.store'), [
                 'batch_id' => $batch->batch_id,

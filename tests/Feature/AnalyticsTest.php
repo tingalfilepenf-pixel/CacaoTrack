@@ -75,6 +75,10 @@ class AnalyticsTest extends TestCase
             'replanting_date' => '2026-09-03',
             'remark' => 'Replaced disease losses.',
         ]);
+
+        // Phase 7B: the batch's cached `regraft` counter is the authoritative
+        // per-batch regrafted total used by the Regraft Deficit formula.
+        $this->b001->update(['regraft' => 15]);
     }
 
     private function createBatch(

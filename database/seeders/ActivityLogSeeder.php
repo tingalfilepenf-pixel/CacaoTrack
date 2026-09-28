@@ -38,15 +38,22 @@ class ActivityLogSeeder extends Seeder
             );
         }
 
-        foreach (ReplantingRecord::with('batch')->get() as $record) {
+        foreach (ReplantingRecord::with(['batch.scionVariety', 'parent'])->get() as $record) {
             if (! $record->batch) {
                 continue;
             }
 
+            // Phase 7B: a regraft record links the source (parent) batch to the
+            // new sub-batch; reproduce the RegraftBatch action's description so
+            // firstOrCreate() dedupes the row the action already wrote.
+            $description = $record->parent
+                ? "Regrafted {$record->quantity} from {$record->parent->batch_code} into {$record->batch->batch_code} ({$record->batch->scionVariety?->scion_variety_name})."
+                : "Recorded {$record->quantity} regraft for {$record->batch->batch_code}.";
+
             $this->log(
                 $record->batch_id,
                 ActivityLog::TYPE_REPLANTING_RECORDED,
-                "Recorded {$record->quantity} regraft for {$record->batch->batch_code}.",
+                $description,
                 (int) $record->user_id,
                 $record->replanting_date,
             );

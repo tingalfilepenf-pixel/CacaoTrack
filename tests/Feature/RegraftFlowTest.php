@@ -1,0 +1,492 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Actions\RegraftBatch;
+use App\Models\ActivityLog;
+use App\Models\Batch;
+use App\Models\Client;
+use App\Models\Inventory;
+use App\Models\MortalityRecord;
+use App\Models\ReplantingRecord;
+use App\Models\ScionVariety;
+use App\Models\StockOutDetail;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
+use Tests\TestCase;
+
+/**
+ * Phase 7B: the regraft / sub-batch flow.
+ *
+ * A regraft moves a quantity out of a source batch into a linked sub-batch
+ * (its own 21-day cycle and possibly a different Scion Variety), deducting the
+ * parent's `total_grafted`/`available_count` and incrementing its `regraft`
+ * counter — all atomically through {@see RegraftBatch}.
+ */
+class RegraftFlowTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function variety(string $name = 'Batangas'): ScionVariety
+    {
+        return ScionVariety::create(['scion_variety_name' => $name]);
+    }
+
+    private function batch(User $user, ScionVariety $variety, string $code = 'B001', int $total = 100): Batch
+    {
+        return Batch::create([
+            'scion_variety_id' => $variety->scion_variety_id,
+            'user_id' => $user->id,
+            'batch_code' => $code,
+            'total_grafted' => $total,
+            'regraft' => 0,
+            'available_count' => $total,
+            'grafted_date' => now()->subMonths(2)->toDateString(),
+            'created_at' => now(),
+            'status' => Batch::STATUS_ACTIVE,
+        ]);
+    }
+
+    private function mortality(Batch $batch, User $user, int $quantity): MortalityRecord
+    {
+        return MortalityRecord::create([
+            'batch_id' => $batch->batch_id,
+            'user_id' => $user->id,
+            'quantity' => $quantity,
+            'cause' => 'Disease',
+            'recorded_at' => now()->subDays(15)->toDateString(),
+        ]);
+    }
+
+    /**
+     * @return TestResponse
+     */
+    private function postRegraft(User $user, Batch $source, int|string $quantity, ?ScionVariety $variety = null, ?string $date = null)
+    {
+        $variety ??= $source->scionVariety;
+
+        return $this->actingAs($user)
+            ->from(route('operational.replanting'))
+            ->post(route('operational.replanting.records.store'), [
+                'batch_id' => $source->batch_id,
+                'quantity' => $quantity,
+                'scion_variety_id' => $variety?->scion_variety_id,
+                'replanting_date' => $date ?? now()->subDays(5)->toDateString(),
+                'remark' => 'Replaced affected stock.',
+            ]);
+    }
+
+    public function test_happy_path_moves_quantity_into_a_linked_sub_batch(): void
+    {
+        $user = User::factory()->create();
+        $batangas = $this->variety('Batangas');
+        $toledo = $this->variety('Toledo');
+        $source = $this->batch($user, $batangas, 'B001', 500);
+        $this->mortality($source, $user, 25);
+
+        $this->postRegraft($user, $source, 100, $toledo)
+            ->assertRedirect(route('operational.replanting'))
+            ->assertSessionHas('success');
+
+        $source->refresh();
+        $this->assertSame(400, (int) $source->total_grafted);
+        $this->assertSame(400, (int) $source->available_count);
+        $this->assertSame(100, (int) $source->regraft);
+
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+        $this->assertSame(100, (int) $sub->total_grafted);
+        $this->assertSame(100, (int) $sub->available_count);
+        $this->assertSame(0, (int) $sub->regraft);
+        $this->assertSame($source->batch_id, (int) $sub->parent_batch_id);
+        $this->assertSame($toledo->scion_variety_id, (int) $sub->scion_variety_id);
+        $this->assertSame($user->id, (int) $sub->user_id);
+        $this->assertSame(now()->subDays(5)->toDateString(), $sub->grafted_date->format('Y-m-d'));
+
+        $this->assertDatabaseHas('replanting_records', [
+            'batch_id' => $sub->batch_id,
+            'parent_batch_id' => $source->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 100,
+            'remark' => 'Replaced affected stock.',
+        ]);
+
+        $this->assertDatabaseHas('activity_logs', [
+            'batch_id' => $sub->batch_id,
+            'activity_type' => ActivityLog::TYPE_REPLANTING_RECORDED,
+        ]);
+    }
+
+    public function test_second_regraft_from_the_same_source_appends_r2(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 200);
+
+        $this->postRegraft($user, $source, 50);
+        $this->postRegraft($user, $source->fresh(), 30);
+
+        $this->assertDatabaseHas('batches', ['batch_code' => 'B001-R1']);
+        $this->assertDatabaseHas('batches', ['batch_code' => 'B001-R2']);
+        $this->assertSame(80, (int) $source->fresh()->regraft);
+    }
+
+    public function test_regrafting_a_sub_batch_produces_a_nested_code(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 100);
+
+        $this->postRegraft($user, $source, 40);
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+
+        $this->postRegraft($user, $sub, 10);
+
+        $this->assertDatabaseHas('batches', [
+            'batch_code' => 'B001-R1-R1',
+            'parent_batch_id' => $sub->batch_id,
+        ]);
+    }
+
+    public function test_quantity_must_be_positive_and_numeric(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety());
+
+        foreach ([0, -5, 'abc'] as $quantity) {
+            $this->postRegraft($user, $source, $quantity)
+                ->assertSessionHasErrors('quantity', null, 'replanting');
+        }
+
+        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertSame(100, (int) $source->fresh()->total_grafted);
+    }
+
+    public function test_quantity_cannot_exceed_the_regraftable_quantity(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 100);
+
+        // available 100, total_grafted 100, no mortality -> regraftable 100.
+        $this->postRegraft($user, $source, 101)
+            ->assertSessionHasErrors('quantity', null, 'replanting');
+
+        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertSame(100, (int) $source->fresh()->available_count);
+        $this->assertSame(0, (int) $source->fresh()->regraft);
+    }
+
+    public function test_regraft_cannot_exceed_available_minus_recorded_mortality(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 100);
+        $this->mortality($source, $user, 90);
+
+        // regraftable = min(100, 100 - 90) = 10; dead root stock cannot be regrafted.
+        $this->assertSame(10, $source->fresh()->regraftableQuantity());
+
+        $this->postRegraft($user, $source, 11)
+            ->assertSessionHasErrors('quantity', null, 'replanting');
+
+        $this->assertDatabaseCount('replanting_records', 0);
+    }
+
+    public function test_scion_variety_is_required_and_must_be_active(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety());
+
+        $this->actingAs($user)->from(route('operational.replanting'))
+            ->post(route('operational.replanting.records.store'), [
+                'batch_id' => $source->batch_id,
+                'quantity' => 10,
+                'replanting_date' => now()->subDays(5)->toDateString(),
+            ])
+            ->assertSessionHasErrors('scion_variety_id', null, 'replanting');
+
+        $archived = $this->variety('Archived');
+        $archived->update(['archived_at' => now()]);
+
+        $this->postRegraft($user, $source, 10, $archived)
+            ->assertSessionHasErrors('scion_variety_id', null, 'replanting');
+
+        $this->assertDatabaseCount('replanting_records', 0);
+    }
+
+    public function test_archived_source_batch_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety());
+        $source->update(['archived_at' => now()]);
+
+        $this->postRegraft($user, $source, 10)
+            ->assertSessionHasErrors('batch_id', null, 'replanting');
+
+        $this->assertDatabaseCount('replanting_records', 0);
+    }
+
+    public function test_future_regraft_date_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety());
+
+        $this->postRegraft($user, $source, 10, null, now()->addDay()->toDateString())
+            ->assertSessionHasErrors('replanting_date', null, 'replanting');
+
+        $this->assertDatabaseCount('replanting_records', 0);
+    }
+
+    public function test_regraft_date_cannot_precede_the_source_grafted_date(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety());
+        $source->update(['grafted_date' => now()->subDays(5)->toDateString()]);
+
+        $this->postRegraft($user, $source, 10, null, now()->subDays(20)->toDateString())
+            ->assertSessionHasErrors('replanting_date', null, 'replanting');
+
+        $this->assertDatabaseCount('replanting_records', 0);
+    }
+
+    public function test_a_failure_after_the_source_update_rolls_everything_back(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 100);
+
+        ActivityLog::creating(function (): void {
+            throw new \RuntimeException('forced failure');
+        });
+
+        try {
+            (new RegraftBatch)->execute(
+                $source,
+                40,
+                (int) $source->scionVariety->scion_variety_id,
+                now()->subDays(5)->toDateString(),
+                'Should roll back.',
+                (int) $user->id,
+            );
+
+            $this->fail('The forced activity-log failure should have aborted the transaction.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('forced failure', $exception->getMessage());
+        } finally {
+            ActivityLog::flushEventListeners();
+        }
+
+        $source->refresh();
+        $this->assertSame(100, (int) $source->total_grafted);
+        $this->assertSame(100, (int) $source->available_count);
+        $this->assertSame(0, (int) $source->regraft);
+        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseMissing('batches', ['batch_code' => 'B001-R1']);
+    }
+
+    public function test_duplicate_submission_is_blocked(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 100);
+
+        $this->postRegraft($user, $source, 20)->assertSessionHas('success');
+
+        $this->postRegraft($user, $source->fresh(), 20)
+            ->assertSessionHasErrors('submission', null, 'replanting');
+
+        $this->assertSame(1, Batch::where('parent_batch_id', $source->batch_id)->count());
+    }
+
+    public function test_a_user_without_record_operations_gets_403(): void
+    {
+        $user = User::factory()->create(['permissions' => ['view_analytics']]);
+        $source = $this->batch($user, $this->variety());
+
+        $this->actingAs($user)
+            ->post(route('operational.replanting.records.store'), [
+                'batch_id' => $source->batch_id,
+                'quantity' => 10,
+                'scion_variety_id' => $source->scion_variety_id,
+                'replanting_date' => now()->subDays(5)->toDateString(),
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('replanting_records', 0);
+    }
+
+    public function test_invariants_hold_after_a_regraft(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 500);
+        $this->mortality($source, $user, 25);
+
+        $this->postRegraft($user, $source, 100);
+
+        $source->refresh();
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+
+        foreach ([$source, $sub] as $batch) {
+            $this->assertGreaterThanOrEqual(0, (int) $batch->available_count);
+            $this->assertLessThanOrEqual((int) $batch->total_grafted, (int) $batch->available_count);
+        }
+
+        // The family's grafted population is conserved.
+        $this->assertSame(500, (int) $source->total_grafted + (int) $sub->total_grafted);
+
+        // The cached counter reconciles with the regraft records.
+        $this->assertSame(
+            $source->totalReplanted(),
+            ReplantingRecord::totalRegraftedFromBatch($source->batch_id),
+        );
+        $this->assertSame(100, ReplantingRecord::totalRegraftedFromBatch($source->batch_id));
+    }
+
+    public function test_mortality_and_regraft_are_independent_across_the_family(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 200);
+
+        $this->postRegraft($user, $source, 50);
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+
+        $mortalityCountBefore = MortalityRecord::count();
+
+        // Mortality on the parent does not touch the regraft counter or the sub-batch.
+        $this->actingAs($user)->post(route('operational.mortality.records.store'), [
+            'batch_id' => $source->batch_id,
+            'quantity' => 10,
+            'cause' => 'Pest',
+            'recorded_at' => now()->subDays(2)->toDateString(),
+        ])->assertRedirect(route('operational.mortality'));
+
+        $this->assertSame(50, (int) $source->fresh()->regraft);
+        $this->assertSame(50, (int) $sub->fresh()->available_count);
+
+        // Mortality on the sub-batch does not touch the parent.
+        $this->actingAs($user)->post(route('operational.mortality.records.store'), [
+            'batch_id' => $sub->batch_id,
+            'quantity' => 5,
+            'cause' => 'Pest',
+            'recorded_at' => now()->subDays(2)->toDateString(),
+        ]);
+
+        $this->assertSame(150, (int) $source->fresh()->total_grafted);
+        $this->assertSame(50, (int) $source->fresh()->regraft);
+        $this->assertSame(5, $sub->fresh()->effectiveMortalityQuantity());
+
+        // Regrafting never creates or edits a Mortality_Record.
+        $this->assertSame($mortalityCountBefore + 2, MortalityRecord::count());
+    }
+
+    public function test_parent_counts_are_locked_after_a_regraft(): void
+    {
+        $user = User::factory()->create();
+        $variety = $this->variety();
+        $source = $this->batch($user, $variety, 'B001', 200);
+
+        $this->postRegraft($user, $source, 50);
+
+        $this->actingAs($user)
+            ->put(route('operational.batches.update', $source), [
+                'batch_code' => 'B001',
+                'scion_variety_id' => $variety->scion_variety_id,
+                'total_grafted' => 9999,
+                'grafted_date' => now()->subMonths(2)->toDateString(),
+                'status' => Batch::STATUS_ACTIVE,
+            ])
+            ->assertRedirect(route('operational.batches'));
+
+        $source->refresh();
+        $this->assertSame(150, (int) $source->total_grafted);
+        $this->assertSame(150, (int) $source->available_count);
+    }
+
+    public function test_stock_out_from_a_sub_batch_decrements_only_that_sub_batch(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 200);
+        $client = Client::create(['client_name' => 'Cacao Farmers Coop', 'contact_number' => '000', 'address' => 'Davao']);
+
+        $this->postRegraft($user, $source, 50);
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+
+        $this->actingAs($user)->post(route('inventory.stock-out.store'), [
+            'client_id' => $client->client_id,
+            'release_date' => now()->subDay()->toDateString(),
+            'details' => [
+                ['batch_id' => $sub->batch_id, 'quantity' => 20, 'unit' => 'seedlings'],
+            ],
+        ])->assertRedirect(route('inventory.stock-out'));
+
+        $this->assertSame(30, (int) $sub->fresh()->available_count);
+        $this->assertSame(150, (int) $source->fresh()->available_count);
+        $this->assertDatabaseHas('stock_out_details', [
+            'batch_id' => $sub->batch_id,
+            'quantity' => 20,
+        ]);
+    }
+
+    public function test_inventory_snapshot_works_for_a_sub_batch(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 200);
+
+        $this->postRegraft($user, $source, 50);
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+
+        $this->actingAs($user)->post(route('inventory.snapshots.store'), [
+            'batch_id' => $sub->batch_id,
+            'inventory_date' => now()->toDateString(),
+        ])->assertRedirect(route('inventory.index'));
+
+        $snapshot = Inventory::where('batch_id', $sub->batch_id)->firstOrFail();
+        $this->assertSame(50, (int) $snapshot->total_grafted);
+        $this->assertSame(0, (int) $snapshot->regraft);
+        $this->assertSame(Inventory::STATUS_ACTIVE, $snapshot->status);
+    }
+
+    public function test_the_regraft_page_no_longer_uses_the_remaining_deficit_cap(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('operational.replanting'))
+            ->assertOk()
+            ->assertSee('Regrafted plants move to a new sub-batch')
+            ->assertDontSee('remaining deficit', false)
+            ->assertDontSee('remainingReplantingCapacity');
+    }
+
+    public function test_regraft_ledger_page_lists_source_and_sub_batch(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 200);
+
+        $this->postRegraft($user, $source, 50);
+
+        $this->actingAs($user)
+            ->get(route('operational.replanting'))
+            ->assertOk()
+            ->assertSee('Regraft History')
+            ->assertSee('B001')
+            ->assertSee('B001-R1');
+    }
+
+    public function test_stock_out_detail_is_derived_for_a_sub_batch_without_special_casing(): void
+    {
+        $user = User::factory()->create();
+        $toledo = $this->variety('Toledo');
+        $source = $this->batch($user, $this->variety(), 'B001', 200);
+        $client = Client::create(['client_name' => 'Coop', 'contact_number' => '0', 'address' => 'Davao']);
+
+        $this->postRegraft($user, $source, 50, $toledo);
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+
+        $this->actingAs($user)->post(route('inventory.stock-out.store'), [
+            'client_id' => $client->client_id,
+            'release_date' => now()->subDay()->toDateString(),
+            'details' => [
+                ['batch_id' => $sub->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+            ],
+        ]);
+
+        $detail = StockOutDetail::where('batch_id', $sub->batch_id)->firstOrFail();
+        $this->assertSame((int) $toledo->scion_variety_id, (int) $detail->scion_variety_id);
+    }
+}

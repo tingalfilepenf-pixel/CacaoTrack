@@ -31,16 +31,25 @@ class CumulativeEventRecordsTest extends TestCase
         $this->assertSame(2, $batch->mortalityRecords()->count());
     }
 
-    public function test_incremental_regraft_entries_sum_for_the_same_batch(): void
+    public function test_incremental_regraft_entries_sum_for_the_same_source_batch(): void
     {
-        $batch = Batch::factory()->create();
+        $source = Batch::factory()->create(['batch_code' => 'B001']);
 
-        ReplantingRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 100]);
-        ReplantingRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 60]);
-        ReplantingRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 35]);
+        foreach ([100, 60, 35] as $index => $quantity) {
+            $sub = Batch::factory()->create([
+                'batch_code' => 'B001-R'.($index + 1),
+                'parent_batch_id' => $source->batch_id,
+            ]);
 
-        $this->assertSame(195, $batch->totalReplanted());
-        $this->assertSame(3, $batch->replantingRecords()->count());
+            ReplantingRecord::factory()->create([
+                'batch_id' => $sub->batch_id,
+                'parent_batch_id' => $source->batch_id,
+                'quantity' => $quantity,
+            ]);
+        }
+
+        $this->assertSame(195, ReplantingRecord::totalRegraftedFromBatch($source->batch_id));
+        $this->assertSame(3, $source->regraftRecordsAsParent()->count());
     }
 
     public function test_cumulative_sums_are_scoped_per_batch(): void
