@@ -58,7 +58,7 @@ class ActivityLogSeeder extends Seeder
                 null,
                 ActivityLog::TYPE_STOCK_IN_RECORDED,
                 "Received {$stockIn->quantity} seedlings from ".($stockIn->supplier?->supplier_name ?? 'supplier')
-                    ." (origin: {$stockIn->origin}); viable {$stockIn->viable}.",
+                    ." (origin: {$stockIn->origin}).",
                 (int) $stockIn->user_id,
                 $stockIn->date_received,
             );

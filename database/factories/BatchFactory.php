@@ -20,15 +20,15 @@ class BatchFactory extends Factory
     public function definition(): array
     {
         $grafted = $this->faker->numberBetween(50, 400);
-        $viable = $this->faker->numberBetween(1, $grafted);
 
         return [
             'scion_variety_id' => ScionVariety::factory(),
+            'parent_batch_id' => null,
             'user_id' => User::factory(),
             'batch_code' => 'B'.$this->faker->unique()->numerify('####'),
             'total_grafted' => $grafted,
-            'viable_count' => $viable,
-            'available_count' => $viable,
+            'regraft' => 0,
+            'available_count' => $grafted,
             'grafted_date' => $this->faker->dateTimeBetween('-6 months', '-1 month')->format('Y-m-d'),
             'created_at' => now(),
             'status' => Batch::STATUS_ACTIVE,

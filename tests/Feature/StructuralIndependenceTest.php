@@ -62,6 +62,15 @@ class StructuralIndependenceTest extends TestCase
         $this->assertFalse(Schema::hasColumn('inventories', 'current_quantity'));
     }
 
+    public function test_the_viable_columns_do_not_exist(): void
+    {
+        // Phase 7A: the client-approved ERD has no viability count on Stock In,
+        // Batch or Inventory. Guard against reintroducing them.
+        $this->assertFalse(Schema::hasColumn('stock_ins', 'viable'));
+        $this->assertFalse(Schema::hasColumn('inventories', 'viable'));
+        $this->assertFalse(Schema::hasColumn('batches', 'viable_count'));
+    }
+
     public function test_the_revised_tables_and_columns_exist(): void
     {
         $this->assertTrue(Schema::hasTable('scion_varieties'));
@@ -69,7 +78,9 @@ class StructuralIndependenceTest extends TestCase
 
         $this->assertTrue(Schema::hasColumn('batches', 'scion_variety_id'));
         $this->assertTrue(Schema::hasColumn('batches', 'available_count'));
-        $this->assertTrue(Schema::hasColumn('stock_ins', 'viable'));
+        $this->assertTrue(Schema::hasColumn('batches', 'regraft'));
+        $this->assertTrue(Schema::hasColumn('batches', 'parent_batch_id'));
+        $this->assertTrue(Schema::hasColumn('replanting_records', 'parent_batch_id'));
         $this->assertTrue(Schema::hasColumn('stock_ins', 'origin'));
         $this->assertTrue(Schema::hasColumn('inventories', 'inventory_date'));
     }

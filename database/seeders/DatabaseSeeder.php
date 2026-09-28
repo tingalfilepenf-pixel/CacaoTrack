@@ -94,8 +94,8 @@ class DatabaseSeeder extends Seeder
                 'user_id' => $admin->id,
                 'batch_code' => 'B001',
                 'total_grafted' => 200,
-                'viable_count' => 180,
-                'available_count' => 180,
+                'regraft' => 0,
+                'available_count' => 200,
                 'grafted_date' => '2026-07-15',
                 'created_at' => now(),
                 'status' => Batch::STATUS_ACTIVE,
@@ -105,8 +105,8 @@ class DatabaseSeeder extends Seeder
                 'user_id' => $admin->id,
                 'batch_code' => 'B002',
                 'total_grafted' => 150,
-                'viable_count' => 140,
-                'available_count' => 140,
+                'regraft' => 0,
+                'available_count' => 150,
                 'grafted_date' => '2026-08-01',
                 'created_at' => now(),
                 'status' => Batch::STATUS_ACTIVE,
@@ -116,8 +116,8 @@ class DatabaseSeeder extends Seeder
                 'user_id' => $admin->id,
                 'batch_code' => 'B003',
                 'total_grafted' => 100,
-                'viable_count' => 95,
-                'available_count' => 95,
+                'regraft' => 0,
+                'available_count' => 100,
                 'grafted_date' => '2026-08-20',
                 'created_at' => now(),
                 'status' => Batch::STATUS_ACTIVE,
@@ -180,15 +180,14 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        // Stock In has no batch_id: it records the received vs viable count
-        // before a batch is established. Scion_Receiving was merged into
-        // Stock_In (client-confirmed same real-world event), so scion receipts
-        // are seeded here too: a row with a `scion_variety_id` includes scion and
-        // sets viable = quantity (no five-day recount — scion is perishable and
-        // used immediately); a seedling row keeps its recounted viable value.
+        // Stock In has no batch_id: it records the received quantity before a
+        // batch is established. Scion_Receiving was merged into Stock_In
+        // (client-confirmed same real-world event), so scion receipts are seeded
+        // here too: a row with a `scion_variety_id` includes scion; a seedling
+        // row leaves it null.
         $stockIns = [
-            ['supplier_name' => 'Davao Cacao Growers', 'quantity' => 500, 'viable' => 480, 'origin' => 'Davao del Sur', 'date_received' => '2026-07-01'],
-            ['supplier_name' => 'Bukidnon Seedling Supply', 'quantity' => 300, 'viable' => 300, 'origin' => 'Bukidnon', 'date_received' => '2026-08-01'],
+            ['supplier_name' => 'Davao Cacao Growers', 'quantity' => 500, 'origin' => 'Davao del Sur', 'date_received' => '2026-07-01'],
+            ['supplier_name' => 'Bukidnon Seedling Supply', 'quantity' => 300, 'origin' => 'Bukidnon', 'date_received' => '2026-08-01'],
             ['scion_variety_name' => 'Criollo', 'supplier_name' => 'Davao Cacao Growers', 'quantity' => 120, 'unit_price' => 12.50, 'origin' => 'Davao del Sur', 'notes' => 'Premium Criollo scion bundle.', 'date_received' => '2026-08-15'],
             ['scion_variety_name' => 'Trinitario', 'supplier_name' => null, 'quantity' => 80, 'unit_price' => null, 'origin' => null, 'notes' => null, 'date_received' => '2026-08-20'],
         ];
@@ -213,7 +212,6 @@ class DatabaseSeeder extends Seeder
                 'scion_variety_id' => $scionVarietyId,
                 'user_id' => $admin->id,
                 'quantity' => $stockIn['quantity'],
-                'viable' => $isScion ? $stockIn['quantity'] : $stockIn['viable'],
                 'unit_price' => $stockIn['unit_price'] ?? null,
                 'origin' => $stockIn['origin'] ?? '',
                 'notes' => $stockIn['notes'] ?? null,
@@ -272,7 +270,6 @@ class DatabaseSeeder extends Seeder
                 'batch_id' => $batch->batch_id,
                 'inventory_date' => $month,
                 'total_grafted' => (int) $batch->total_grafted,
-                'viable' => (int) $batch->viable_count,
                 'regraft' => $batch->totalReplanted(),
                 'mortality' => $batch->effectiveMortalityQuantity(),
                 'last_update' => now(),

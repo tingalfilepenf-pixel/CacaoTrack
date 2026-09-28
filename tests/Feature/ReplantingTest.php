@@ -20,7 +20,7 @@ class ReplantingTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createBatch(User $user, int $viable = 100): Batch
+    private function createBatch(User $user, int $totalGrafted = 100): Batch
     {
         $variety = ScionVariety::create(['scion_variety_name' => 'Criollo']);
 
@@ -28,9 +28,9 @@ class ReplantingTest extends TestCase
             'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => 'B001',
-            'total_grafted' => $viable,
-            'viable_count' => $viable,
-            'available_count' => $viable,
+            'total_grafted' => $totalGrafted,
+            'regraft' => 0,
+            'available_count' => $totalGrafted,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
             'status' => Batch::STATUS_ACTIVE,

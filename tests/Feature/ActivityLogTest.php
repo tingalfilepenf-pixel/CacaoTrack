@@ -19,7 +19,7 @@ class ActivityLogTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createBatch(User $user, int $viable = 100, string $code = 'B001'): Batch
+    private function createBatch(User $user, int $totalGrafted = 100, string $code = 'B001'): Batch
     {
         $variety = ScionVariety::create(['scion_variety_name' => 'Criollo']);
 
@@ -27,9 +27,9 @@ class ActivityLogTest extends TestCase
             'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => $code,
-            'total_grafted' => $viable,
-            'viable_count' => $viable,
-            'available_count' => $viable,
+            'total_grafted' => $totalGrafted,
+            'regraft' => 0,
+            'available_count' => $totalGrafted,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
             'status' => Batch::STATUS_ACTIVE,
@@ -256,7 +256,6 @@ class ActivityLogTest extends TestCase
         $this->actingAs($user)->post(route('inventory.stock-in.store'), [
             'supplier_id' => $supplier->supplier_id,
             'quantity' => 100,
-            'viable' => 95,
             'origin' => 'Calinan',
             'date_received' => '2026-09-12',
         ])->assertRedirect(route('inventory.stock-in'));
@@ -266,7 +265,7 @@ class ActivityLogTest extends TestCase
             'user_id' => $user->id,
             'batch_id' => null,
             'activity_type' => ActivityLog::TYPE_STOCK_IN_RECORDED,
-            'description' => 'Received 100 seedlings from Davao Cacao Growers (origin: Calinan); viable 95.',
+            'description' => 'Received 100 seedlings from Davao Cacao Growers (origin: Calinan).',
         ]);
     }
 

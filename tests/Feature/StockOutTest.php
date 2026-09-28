@@ -33,7 +33,7 @@ class StockOutTest extends TestCase
             'user_id' => $user->id,
             'batch_code' => $code,
             'total_grafted' => $available,
-            'viable_count' => $available,
+            'regraft' => 0,
             'available_count' => $available,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),

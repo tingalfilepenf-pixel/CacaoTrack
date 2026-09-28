@@ -12,10 +12,10 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Stock In on the revised model (ERD §3.7): it records the received vs the
- * five-day recounted viable quantity and has NO `batch_id` and no inventory
- * side effect. Since the client-confirmed merge of Scion_Receiving into
- * Stock_In, a single form/list handles both seedling-only rows and
+ * Stock In on the client-approved model (ERD §3.7): it records the received
+ * quantity immediately (no five-day viability count), has NO `batch_id` and no
+ * inventory side effect. Since the client-confirmed merge of Scion_Receiving
+ * into Stock_In, a single form/list handles both seedling-only rows and
  * scion-inclusive rows (identified by a non-null `scion_variety_id`).
  */
 class StockInTest extends TestCase
@@ -62,7 +62,6 @@ class StockInTest extends TestCase
             ->post(route('inventory.stock-in.store'), [
                 'supplier_id' => $supplier->supplier_id,
                 'quantity' => 30,
-                'viable' => 28,
                 'origin' => 'Davao del Sur',
                 'date_received' => '2026-09-05',
             ])
@@ -73,12 +72,11 @@ class StockInTest extends TestCase
             'supplier_id' => $supplier->supplier_id,
             'user_id' => $user->id,
             'quantity' => 30,
-            'viable' => 28,
             'origin' => 'Davao del Sur',
             'date_received' => '2026-09-05',
         ]);
 
-        // Stock In is a standalone received-vs-viable record; it never mutates a batch.
+        // Stock In is a standalone receiving record; it never mutates a batch.
         $this->assertDatabaseCount('inventories', 0);
 
         // A pure-seedling submission never sets the optional scion fields.
@@ -86,14 +84,32 @@ class StockInTest extends TestCase
         $this->assertNull(StockIn::first()->unit_price);
     }
 
-    public function test_scion_stock_in_sets_viable_equal_to_quantity_and_persists_scion_fields(): void
+    public function test_stock_in_saves_without_a_viable_column(): void
+    {
+        // The approved Stock In has no separate seedling viability count.
+        $this->assertFalse(Schema::hasColumn('stock_ins', 'viable'));
+
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'supplier_id' => $supplier->supplier_id,
+                'quantity' => 45,
+                'origin' => 'Davao',
+                'date_received' => '2026-09-05',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(45, (int) StockIn::first()->quantity);
+    }
+
+    public function test_scion_stock_in_persists_scion_fields(): void
     {
         $user = User::factory()->create();
         $supplier = $this->createSupplier();
         $variety = $this->createScionVariety('Criollo');
 
-        // No `viable` is submitted: the Scion tab hides/relies on the server to
-        // set it, because scion has no five-day recount.
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
                 'supplier_id' => $supplier->supplier_id,
@@ -113,7 +129,6 @@ class StockInTest extends TestCase
         $this->assertSame($variety->scion_variety_id, (int) $stockIn->scion_variety_id);
         $this->assertSame('12.50', $stockIn->unit_price);
         $this->assertSame(120, (int) $stockIn->quantity);
-        $this->assertSame(120, (int) $stockIn->viable);
         $this->assertTrue($stockIn->isScionEntry());
         $this->assertTrue($stockIn->scionVariety->is($variety));
     }
@@ -159,7 +174,6 @@ class StockInTest extends TestCase
             'supplier_id' => $supplier->supplier_id,
             'user_id' => $user->id,
             'quantity' => 50,
-            'viable' => 50,
             'origin' => 'Seedling Origin',
             'date_received' => '2026-09-01',
         ]);
@@ -169,7 +183,6 @@ class StockInTest extends TestCase
             'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'quantity' => 80,
-            'viable' => 80,
             'unit_price' => 12.50,
             'origin' => 'Scion Origin',
             'date_received' => '2026-09-02',
@@ -180,6 +193,37 @@ class StockInTest extends TestCase
             ->assertOk()
             ->assertSee('Trinitario')
             ->assertSee('Scion');
+    }
+
+    public function test_stock_in_seedling_total_excludes_scion_rows(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        StockIn::create([
+            'supplier_id' => $supplier->supplier_id,
+            'user_id' => $user->id,
+            'quantity' => 50,
+            'origin' => 'Seedling Origin',
+            'date_received' => '2026-09-01',
+        ]);
+
+        StockIn::create([
+            'supplier_id' => $supplier->supplier_id,
+            'scion_variety_id' => $variety->scion_variety_id,
+            'user_id' => $user->id,
+            'quantity' => 80,
+            'unit_price' => 12.50,
+            'origin' => 'Scion Origin',
+            'date_received' => '2026-09-02',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-in'))
+            ->assertOk()
+            ->assertViewHas('totalReceived', 130)
+            ->assertViewHas('totalReceivedSeedlings', 50);
     }
 
     public function test_stock_in_schema_carries_optional_scion_fields(): void
@@ -198,7 +242,7 @@ class StockInTest extends TestCase
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [])
             ->assertSessionHasErrors(
-                ['supplier_id', 'quantity', 'viable', 'origin', 'date_received'],
+                ['supplier_id', 'quantity', 'origin', 'date_received'],
                 null,
                 'stockin',
             );
@@ -213,7 +257,6 @@ class StockInTest extends TestCase
             ->post(route('inventory.stock-in.store'), [
                 'supplier_id' => 9999,
                 'quantity' => 10,
-                'viable' => 10,
                 'origin' => 'Davao',
                 'date_received' => '2026-09-05',
             ])
@@ -225,7 +268,6 @@ class StockInTest extends TestCase
             ->post(route('inventory.stock-in.store'), [
                 'supplier_id' => $supplier->supplier_id,
                 'quantity' => 10,
-                'viable' => 10,
                 'origin' => 'Davao',
                 'date_received' => '2026-09-05',
             ])
@@ -244,30 +286,11 @@ class StockInTest extends TestCase
                 ->post(route('inventory.stock-in.store'), [
                     'supplier_id' => $supplier->supplier_id,
                     'quantity' => $quantity,
-                    'viable' => 0,
                     'origin' => 'Davao',
                     'date_received' => '2026-09-05',
                 ])
                 ->assertSessionHasErrors(['quantity'], null, 'stockin');
         }
-
-        $this->assertSame(0, StockIn::count());
-    }
-
-    public function test_stock_in_rejects_viable_greater_than_received(): void
-    {
-        $user = User::factory()->create();
-        $supplier = $this->createSupplier();
-
-        $this->actingAs($user)
-            ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => $supplier->supplier_id,
-                'quantity' => 10,
-                'viable' => 11,
-                'origin' => 'Davao',
-                'date_received' => '2026-09-05',
-            ])
-            ->assertSessionHasErrors(['viable'], null, 'stockin');
 
         $this->assertSame(0, StockIn::count());
     }
@@ -281,7 +304,6 @@ class StockInTest extends TestCase
             ->post(route('inventory.stock-in.store'), [
                 'supplier_id' => $supplier->supplier_id,
                 'quantity' => 10,
-                'viable' => 10,
                 'origin' => 'Davao',
                 'date_received' => now()->addDay()->toDateString(),
             ])
@@ -298,7 +320,6 @@ class StockInTest extends TestCase
             'supplier_id' => $supplier->supplier_id,
             'user_id' => $user->id,
             'quantity' => 77,
-            'viable' => 70,
             'origin' => 'Test Origin',
             'date_received' => '2026-09-04',
         ]);
@@ -316,8 +337,8 @@ class StockInTest extends TestCase
         $supplierA = $this->createSupplier('Alpha Supply');
         $supplierB = $this->createSupplier('Beta Supply');
 
-        $stockInA = StockIn::create(['supplier_id' => $supplierA->supplier_id, 'user_id' => $user->id, 'quantity' => 10, 'viable' => 10, 'origin' => 'Alpha Origin', 'date_received' => '2026-09-01']);
-        $stockInB = StockIn::create(['supplier_id' => $supplierB->supplier_id, 'user_id' => $user->id, 'quantity' => 20, 'viable' => 20, 'origin' => 'Beta Origin', 'date_received' => '2026-09-02']);
+        $stockInA = StockIn::create(['supplier_id' => $supplierA->supplier_id, 'user_id' => $user->id, 'quantity' => 10, 'origin' => 'Alpha Origin', 'date_received' => '2026-09-01']);
+        $stockInB = StockIn::create(['supplier_id' => $supplierB->supplier_id, 'user_id' => $user->id, 'quantity' => 20, 'origin' => 'Beta Origin', 'date_received' => '2026-09-02']);
 
         $this->actingAs($user)
             ->get(route('inventory.stock-in', ['supplier_id' => $supplierB->supplier_id]))

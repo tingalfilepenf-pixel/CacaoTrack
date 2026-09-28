@@ -44,7 +44,7 @@ class UserManagementTest extends TestCase
             'user_id' => $owner->id,
             'batch_code' => $code,
             'total_grafted' => 100,
-            'viable_count' => 100,
+            'regraft' => 0,
             'available_count' => 100,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),

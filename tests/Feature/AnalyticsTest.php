@@ -17,14 +17,14 @@ use Tests\TestCase;
  *
  * Fixture (real, non-zero mortality and regraft so the Gap Report has genuine
  * data to verify against):
- *   B001 / Criollo   grafted 200, viable 180, available 170, grafted 2026-07-15
- *   B002 / Trinitario grafted 100, viable 100, available 100, grafted 2026-08-20
+ *   B001 / Criollo   grafted 200, available 170, grafted 2026-07-15
+ *   B002 / Trinitario grafted 100, available 100, grafted 2026-08-20
  *   Mortality:    B001 Disease 25, B002 Pest 10  (total 35)
  *   Regraft:      B001 15
  *
  * Corrected Gap formula (Session BS): gap = Batch::effectiveMortalityQuantity()
- * (recorded mortality), NOT viable − available − stock_out (an identity that
- * always resolves to 0 because Stock Out is already netted out of
+ * (recorded mortality), NOT total_grafted − available − stock_out (an identity
+ * that always resolves to 0 because Stock Out is already netted out of
  * `available_count`). B001 gap = 25, B002 gap = 10, total = 35.
  */
 class AnalyticsTest extends TestCase
@@ -49,8 +49,8 @@ class AnalyticsTest extends TestCase
         $this->criollo = ScionVariety::create(['scion_variety_name' => 'Criollo']);
         $this->trinitario = ScionVariety::create(['scion_variety_name' => 'Trinitario']);
 
-        $this->b001 = $this->createBatch($this->criollo, 'B001', 200, 180, 170, '2026-07-15');
-        $this->b002 = $this->createBatch($this->trinitario, 'B002', 100, 100, 100, '2026-08-20');
+        $this->b001 = $this->createBatch($this->criollo, 'B001', 200, 170, '2026-07-15');
+        $this->b002 = $this->createBatch($this->trinitario, 'B002', 100, 100, '2026-08-20');
 
         MortalityRecord::create([
             'batch_id' => $this->b001->batch_id,
@@ -81,7 +81,6 @@ class AnalyticsTest extends TestCase
         ScionVariety $variety,
         string $code,
         int $totalGrafted,
-        int $viable,
         int $available,
         string $graftedDate,
     ): Batch {
@@ -90,7 +89,7 @@ class AnalyticsTest extends TestCase
             'user_id' => $this->user->id,
             'batch_code' => $code,
             'total_grafted' => $totalGrafted,
-            'viable_count' => $viable,
+            'regraft' => 0,
             'available_count' => $available,
             'grafted_date' => $graftedDate,
             'created_at' => now(),
@@ -159,7 +158,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Trinitario', $content);
         $this->assertStringContainsString('Survival vs Mortality', $content);
         $this->assertStringContainsString('Surviving', $content);
-        $this->assertStringContainsString('245', $content); // surviving = viable 280 - mortality 35
+        $this->assertStringContainsString('265', $content); // surviving = total grafted 300 - mortality 35
     }
 
     public function test_operational_analytics_csv_export_renders_real_data(): void
@@ -195,9 +194,9 @@ class AnalyticsTest extends TestCase
         $this->assertSame(300, $components['denominator']);
 
         $survival = AnalyticsMetrics::survivalVsMortality();
-        $this->assertSame(280, $survival['totalViable']);
+        $this->assertSame(300, $survival['totalGrafted']);
         $this->assertSame(35, $survival['mortality']);
-        $this->assertSame(245, $survival['surviving']);
+        $this->assertSame(265, $survival['surviving']);
     }
 
     public function test_stock_ledger_shows_real_batch_data(): void
@@ -438,12 +437,12 @@ class AnalyticsTest extends TestCase
     public function test_gap_report_computes_expected_available_and_effective_mortality_gap(): void
     {
         // Part B: the Gap formula was corrected to Batch::effectiveMortalityQuantity()
-        // (recorded mortality). It is NOT viable - available - stock_out, which is
-        // an identity that always equals 0 because Stock Out is already netted out
+        // (recorded mortality). It is NOT total_grafted - available - stock_out, which
+        // is an identity that always equals 0 because Stock Out is already netted out
         // of `available_count` on every validated release.
         $gap = AnalyticsMetrics::gapReport();
 
-        $this->assertSame(280, $gap['totalExpected']);   // viable 180 + 100
+        $this->assertSame(300, $gap['totalExpected']);   // total grafted 200 + 100
         $this->assertSame(270, $gap['totalActual']);     // available 170 + 100
         $this->assertSame(35, $gap['totalGap']);         // mortality 25 + 10
 
@@ -499,11 +498,11 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('B001', $content);
         $this->assertStringContainsString('B002', $content);
         $this->assertStringContainsString('Criollo', $content);
-        $this->assertStringContainsString('Expected: 280', $content);
+        $this->assertStringContainsString('Expected: 300', $content);
         $this->assertStringContainsString('Available: 270', $content);
         // FPDF escapes the parentheses in the label.
         $this->assertStringContainsString('Gap \(effective mortality\): 35', $content);
-        $this->assertStringContainsString('180', $content); // B001 expected
+        $this->assertStringContainsString('200', $content); // B001 expected (total grafted)
         $this->assertStringContainsString('170', $content); // B001 available
     }
 
@@ -531,9 +530,9 @@ class AnalyticsTest extends TestCase
 
         // fputcsv quotes headers containing spaces/parentheses.
         $this->assertStringContainsString('Batch,Variety,Expected,Available,"Pulled Out","Gap (Effective Mortality)"', $csv);
-        $this->assertStringContainsString('B001,Criollo,180,170,0,25', $csv);
+        $this->assertStringContainsString('B001,Criollo,200,170,0,25', $csv);
         $this->assertStringContainsString('B002,Trinitario,100,100,0,10', $csv);
-        $this->assertStringContainsString('Total,,280,270,0,35', $csv);
+        $this->assertStringContainsString('Total,,300,270,0,35', $csv);
     }
 
     public function test_gap_report_exports_reject_unknown_batch_filter(): void

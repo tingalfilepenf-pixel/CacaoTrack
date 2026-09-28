@@ -13,7 +13,7 @@ use Tests\TestCase;
 /**
  * Part D (ties back to the corrected Gap formula): with real mortality rows,
  * Gap = Batch::effectiveMortalityQuantity() and is NOT the always-zero
- * viable − available − stock_out identity.
+ * total_grafted − available − stock_out identity.
  */
 class GapReportTest extends TestCase
 {
@@ -26,7 +26,6 @@ class GapReportTest extends TestCase
         $batch = Batch::factory()->create([
             'scion_variety_id' => $variety->scion_variety_id,
             'total_grafted' => 200,
-            'viable_count' => 180,
             // Available is not yet reconciled against mortality (the real gap).
             'available_count' => 180,
         ]);
@@ -43,11 +42,7 @@ class GapReportTest extends TestCase
         $row = collect($gap['rows'])->firstWhere('batch', $batch->batch_code);
         $this->assertSame(235, $row['gap']);
         $this->assertSame(235, $batch->effectiveMortalityQuantity());
-
-        // The old (wrong) identity always resolves to 0 — prove the gap is not that.
-        $oldIdentity = max(0, 180 - 180 - 0);
-        $this->assertSame(0, $oldIdentity);
-        $this->assertNotSame($oldIdentity, $row['gap']);
+        $this->assertSame(200, $row['expected']);
     }
 
     public function test_gap_report_filters_by_scion_variety(): void

@@ -15,7 +15,7 @@ class DashboardTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function makePopulation(User $user, int $grafted = 200, int $viable = 180, int $mortality = 20): Batch
+    private function makePopulation(User $user, int $grafted = 200, int $available = 180, int $mortality = 20): Batch
     {
         $variety = ScionVariety::create(['scion_variety_name' => 'Criollo', 'description' => 'Test variety']);
 
@@ -24,8 +24,8 @@ class DashboardTest extends TestCase
             'user_id' => $user->id,
             'batch_code' => 'B001',
             'total_grafted' => $grafted,
-            'viable_count' => $viable,
-            'available_count' => $viable,
+            'regraft' => 0,
+            'available_count' => $available,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
             'status' => Batch::STATUS_ACTIVE,
@@ -93,8 +93,8 @@ class DashboardTest extends TestCase
         $response->assertSee('inventoryVarietyChart');
         $response->assertViewHas('mortalityTrend', fn (array $trend) => $trend['total'] === 20);
         $response->assertViewHas('inventoryByScionVariety', fn (array $data) => $data['values'] === [180]);
-        // surviving = viable 180 - recorded mortality 20
-        $response->assertViewHas('survivalVsMortality', fn (array $data) => $data['surviving'] === 160 && $data['mortality'] === 20);
+        // surviving = total grafted 200 - recorded mortality 20
+        $response->assertViewHas('survivalVsMortality', fn (array $data) => $data['surviving'] === 180 && $data['mortality'] === 20);
     }
 
     public function test_dashboard_shows_empty_states_and_no_fabricated_charts_when_there_is_no_data(): void

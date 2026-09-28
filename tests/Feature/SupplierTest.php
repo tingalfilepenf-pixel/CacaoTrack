@@ -167,7 +167,6 @@ class SupplierTest extends TestCase
             'supplier_id' => $supplier->supplier_id,
             'user_id' => $user->id,
             'quantity' => 10,
-            'viable' => 10,
             'origin' => 'Test Origin',
             'date_received' => '2026-09-05',
         ]);

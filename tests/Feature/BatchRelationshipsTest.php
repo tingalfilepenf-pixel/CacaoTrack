@@ -61,7 +61,7 @@ class BatchRelationshipsTest extends TestCase
 
     public function test_batch_has_many_inventory_snapshots_and_a_latest_snapshot(): void
     {
-        $batch = Batch::factory()->create(['viable_count' => 100, 'available_count' => 100]);
+        $batch = Batch::factory()->create(['available_count' => 100]);
 
         $older = Inventory::factory()->forBatch($batch)->create(['inventory_date' => '2026-08-01']);
         $newer = Inventory::factory()->forBatch($batch)->create(['inventory_date' => '2026-09-01']);
@@ -93,5 +93,30 @@ class BatchRelationshipsTest extends TestCase
         $this->assertTrue($variety->stockOutDetails->contains($detail));
         $this->assertTrue($header->details->contains($detail));
         $this->assertSame(10, $header->totalQuantity());
+    }
+
+    public function test_batch_parent_and_sub_batch_relations(): void
+    {
+        $parent = Batch::factory()->create(['batch_code' => 'B001']);
+        $childA = Batch::factory()->create([
+            'batch_code' => 'B001-R1',
+            'parent_batch_id' => $parent->batch_id,
+        ]);
+        $childB = Batch::factory()->create([
+            'batch_code' => 'B001-R2',
+            'parent_batch_id' => $parent->batch_id,
+        ]);
+
+        // Parent is a plain batch; children are sub-batches.
+        $this->assertFalse($parent->isSubBatch());
+        $this->assertNull($parent->parent);
+
+        $this->assertTrue($childA->isSubBatch());
+        $this->assertTrue($childA->parent->is($parent));
+
+        // The parent sees both linked sub-batches.
+        $this->assertCount(2, $parent->subBatches);
+        $this->assertTrue($parent->subBatches->contains($childA));
+        $this->assertTrue($parent->subBatches->contains($childB));
     }
 }

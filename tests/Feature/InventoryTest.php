@@ -22,7 +22,7 @@ class InventoryTest extends TestCase
     private function createBatch(
         User $user,
         string $code = 'B001',
-        int $viable = 100,
+        int $totalGrafted = 100,
         int $available = 100,
         string $varietyName = 'Criollo',
     ): Batch {
@@ -32,8 +32,8 @@ class InventoryTest extends TestCase
             'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => $code,
-            'total_grafted' => max($viable, $available),
-            'viable_count' => $viable,
+            'total_grafted' => $totalGrafted,
+            'regraft' => 0,
             'available_count' => $available,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
@@ -47,7 +47,6 @@ class InventoryTest extends TestCase
             'batch_id' => $batch->batch_id,
             'inventory_date' => $date,
             'total_grafted' => (int) $batch->total_grafted,
-            'viable' => (int) $batch->viable_count,
             'regraft' => $batch->totalReplanted(),
             'mortality' => $batch->effectiveMortalityQuantity(),
             'last_update' => now(),
@@ -187,7 +186,6 @@ class InventoryTest extends TestCase
         $this->assertDatabaseHas('inventories', [
             'batch_id' => $batch->batch_id,
             'total_grafted' => 180,
-            'viable' => 180,
             'regraft' => 10,
             'mortality' => 20,
             'status' => Inventory::STATUS_ACTIVE,

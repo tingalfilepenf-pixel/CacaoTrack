@@ -30,7 +30,6 @@ class BatchManagementTest extends TestCase
             'batch_code' => 'B001',
             'scion_variety_id' => $variety?->scion_variety_id,
             'total_grafted' => 200,
-            'viable_count' => 180,
             'grafted_date' => '2026-07-15',
             'status' => Batch::STATUS_ACTIVE,
         ], $overrides);
@@ -47,8 +46,8 @@ class BatchManagementTest extends TestCase
             'user_id' => $user->id,
             'batch_code' => $code,
             'total_grafted' => 200,
-            'viable_count' => 180,
-            'available_count' => 180,
+            'regraft' => 0,
+            'available_count' => 200,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
             'status' => $status,
@@ -75,7 +74,7 @@ class BatchManagementTest extends TestCase
             ->assertSee('Total Batches');
     }
 
-    public function test_batch_can_be_created_with_available_count_initialized_from_viable_count(): void
+    public function test_batch_can_be_created_with_available_count_initialized_from_total_grafted(): void
     {
         $user = User::factory()->create();
         $variety = $this->variety();
@@ -87,8 +86,11 @@ class BatchManagementTest extends TestCase
 
         $batch = Batch::where('batch_code', 'B001')->first();
         $this->assertNotNull($batch);
-        $this->assertSame(180, (int) $batch->viable_count);
-        $this->assertSame(180, (int) $batch->available_count);
+        $this->assertSame(200, (int) $batch->total_grafted);
+        $this->assertSame(200, (int) $batch->available_count);
+        $this->assertSame(0, (int) $batch->regraft);
+        $this->assertNull($batch->parent_batch_id);
+        $this->assertFalse($batch->isSubBatch());
         $this->assertSame($user->id, (int) $batch->user_id);
     }
 
@@ -125,7 +127,7 @@ class BatchManagementTest extends TestCase
         $this->actingAs($user)
             ->post(route('operational.batches.manage.store'), [])
             ->assertSessionHasErrors([
-                'batch_code', 'total_grafted', 'viable_count', 'grafted_date', 'status',
+                'batch_code', 'total_grafted', 'grafted_date', 'status',
             ], null, 'batch');
 
         $this->assertSame(0, Batch::count());
@@ -142,20 +144,6 @@ class BatchManagementTest extends TestCase
             ->assertSessionHasErrors(['batch_code'], null, 'batch');
 
         $this->assertSame(1, Batch::count());
-    }
-
-    public function test_batch_creation_rejects_viable_count_above_total_grafted(): void
-    {
-        $user = User::factory()->create();
-
-        $this->actingAs($user)
-            ->post(route('operational.batches.manage.store'), $this->payload(null, [
-                'total_grafted' => 100,
-                'viable_count' => 150,
-            ]))
-            ->assertSessionHasErrors(['viable_count'], null, 'batch');
-
-        $this->assertSame(0, Batch::count());
     }
 
     public function test_batch_creation_rejects_a_future_grafted_date(): void
@@ -215,7 +203,6 @@ class BatchManagementTest extends TestCase
                 'batch_code' => 'B001-UPDATED',
                 'scion_variety_id' => $variety->scion_variety_id,
                 'total_grafted' => 250,
-                'viable_count' => 220,
                 'grafted_date' => '2026-07-20',
                 'status' => Batch::STATUS_INACTIVE,
             ])
@@ -224,8 +211,8 @@ class BatchManagementTest extends TestCase
 
         $batch->refresh();
         $this->assertSame('B001-UPDATED', $batch->batch_code);
-        $this->assertSame(220, (int) $batch->viable_count);
-        $this->assertSame(220, (int) $batch->available_count);
+        $this->assertSame(250, (int) $batch->total_grafted);
+        $this->assertSame(250, (int) $batch->available_count);
         $this->assertSame(Batch::STATUS_INACTIVE, $batch->status);
     }
 
@@ -246,15 +233,13 @@ class BatchManagementTest extends TestCase
         $this->actingAs($user)
             ->put(route('operational.batches.update', $batch), $this->payload($variety, [
                 'total_grafted' => 999,
-                'viable_count' => 999,
             ]))
             ->assertRedirect(route('operational.batches'))
             ->assertSessionHas('success');
 
         $batch->refresh();
         $this->assertSame(200, (int) $batch->total_grafted);
-        $this->assertSame(180, (int) $batch->viable_count);
-        $this->assertSame(180, (int) $batch->available_count);
+        $this->assertSame(200, (int) $batch->available_count);
     }
 
     public function test_batch_master_fields_remain_editable_when_used(): void

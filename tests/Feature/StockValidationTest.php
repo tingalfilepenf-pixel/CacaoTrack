@@ -12,56 +12,29 @@ use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
-use InvalidArgumentException;
 use Tests\TestCase;
 
 /**
  * Part D: validation rules for the current schema — Stock Out quantity
- * <= available_count, Stock In viable <= quantity, and required/nullable fields.
+ * <= available_count, Stock In accepted without a viability count, and
+ * required/nullable fields.
  */
 class StockValidationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_stock_in_rules_enforce_viable_le_quantity(): void
+    public function test_stock_in_rules_accept_a_plain_seedling_record(): void
     {
         $supplier = Supplier::factory()->create();
 
         $valid = Validator::make([
             'supplier_id' => $supplier->supplier_id,
             'quantity' => 100,
-            'viable' => 80,
             'origin' => 'Davao',
             'date_received' => '2026-09-01',
         ], StockIn::rules());
+
         $this->assertFalse($valid->fails());
-
-        $invalid = Validator::make([
-            'supplier_id' => $supplier->supplier_id,
-            'quantity' => 100,
-            'viable' => 101,
-            'origin' => 'Davao',
-            'date_received' => '2026-09-01',
-        ], StockIn::rules());
-        $this->assertTrue($invalid->fails());
-        $this->assertArrayHasKey('viable', $invalid->errors()->toArray());
-    }
-
-    public function test_stock_in_model_guard_rejects_viable_greater_than_quantity(): void
-    {
-        $supplier = Supplier::factory()->create();
-        $user = User::factory()->create();
-
-        $this->expectException(InvalidArgumentException::class);
-
-        StockIn::create([
-            'supplier_id' => $supplier->supplier_id,
-            'user_id' => $user->id,
-            'quantity' => 10,
-            'viable' => 11,
-            'origin' => 'Davao',
-            'date_received' => '2026-09-01',
-        ]);
     }
 
     public function test_stock_out_detail_rules_require_a_valid_unit_and_positive_quantity(): void
@@ -100,13 +73,12 @@ class StockValidationTest extends TestCase
         $this->assertArrayHasKey('quantity', $badQuantity->errors()->toArray());
     }
 
-    public function test_batch_rules_bound_viable_by_total_grafted_and_scion_variety_is_nullable(): void
+    public function test_batch_rules_require_total_grafted_and_scion_variety_is_nullable(): void
     {
         $valid = Validator::make([
             'batch_code' => 'B001',
             'scion_variety_id' => null,
             'total_grafted' => 100,
-            'viable_count' => 100,
             'grafted_date' => '2026-07-15',
             'status' => Batch::STATUS_ACTIVE,
         ], Batch::rules());
@@ -115,13 +87,12 @@ class StockValidationTest extends TestCase
         $invalid = Validator::make([
             'batch_code' => 'B001',
             'scion_variety_id' => null,
-            'total_grafted' => 100,
-            'viable_count' => 150,
+            'total_grafted' => 0,
             'grafted_date' => '2026-07-15',
             'status' => Batch::STATUS_ACTIVE,
         ], Batch::rules());
         $this->assertTrue($invalid->fails());
-        $this->assertArrayHasKey('viable_count', $invalid->errors()->toArray());
+        $this->assertArrayHasKey('total_grafted', $invalid->errors()->toArray());
     }
 
     public function test_stock_out_availability_is_checked_against_available_count(): void
@@ -133,7 +104,6 @@ class StockValidationTest extends TestCase
         $batch = Batch::factory()->create([
             'scion_variety_id' => $variety->scion_variety_id,
             'total_grafted' => 100,
-            'viable_count' => 100,
             'available_count' => 40,
         ]);
 

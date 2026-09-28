@@ -12,15 +12,16 @@ use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 /**
- * Mortality Tracking on the revised model: record-only (Mortality_Adjustments
- * was removed), the cap is `max(0, viable_count - effective mortality)` and
- * recording NEVER mutates `batches.viable_count` (locked business rule 1).
+ * Mortality Tracking on the client-approved model: record-only
+ * (Mortality_Adjustments was removed), the cap is
+ * `max(0, total_grafted - effective mortality)`, and recording NEVER mutates
+ * `batches.available_count` or the `regraft` counter.
  */
 class MortalityTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createBatch(User $user, int $viable = 100): Batch
+    private function createBatch(User $user, int $totalGrafted = 100): Batch
     {
         $variety = ScionVariety::create(['scion_variety_name' => 'Criollo']);
 
@@ -28,9 +29,9 @@ class MortalityTest extends TestCase
             'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $user->id,
             'batch_code' => 'B001',
-            'total_grafted' => $viable,
-            'viable_count' => $viable,
-            'available_count' => $viable,
+            'total_grafted' => $totalGrafted,
+            'regraft' => 0,
+            'available_count' => $totalGrafted,
             'grafted_date' => '2026-07-15',
             'created_at' => now(),
             'status' => Batch::STATUS_ACTIVE,
@@ -52,7 +53,7 @@ class MortalityTest extends TestCase
             ->assertSee('Mortality Tracking');
     }
 
-    public function test_user_can_record_mortality_without_mutating_the_viable_count(): void
+    public function test_user_can_record_mortality_without_mutating_the_available_count(): void
     {
         $user = User::factory()->create();
         $batch = $this->createBatch($user);
@@ -74,8 +75,9 @@ class MortalityTest extends TestCase
             'cause' => 'Disease',
         ]);
 
-        // Locked rule: `viable_count` is set once and never decremented by mortality.
-        $this->assertSame(100, (int) $batch->fresh()->viable_count);
+        // Mortality never decrements the live available balance or regraft counter.
+        $this->assertSame(100, (int) $batch->fresh()->available_count);
+        $this->assertSame(0, (int) $batch->fresh()->regraft);
         $this->assertSame(25, $batch->fresh()->effectiveMortalityQuantity());
         $this->assertSame(75, $batch->fresh()->remainingMortalityCapacity());
 
@@ -85,10 +87,26 @@ class MortalityTest extends TestCase
         ]);
     }
 
+    public function test_mortality_capacity_is_bounded_by_total_grafted(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, totalGrafted: 400);
+
+        $this->actingAs($user)->post(route('operational.mortality.records.store'), [
+            'batch_id' => $batch->batch_id,
+            'quantity' => 235,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        // cap = total_grafted (400) - effective mortality (235).
+        $this->assertSame(165, $batch->fresh()->remainingMortalityCapacity());
+    }
+
     public function test_mortality_quantity_cannot_exceed_batch_capacity(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user, viable: 100);
+        $batch = $this->createBatch($user, totalGrafted: 100);
 
         $this->actingAs($user)
             ->from(route('operational.mortality'))
@@ -106,7 +124,7 @@ class MortalityTest extends TestCase
     public function test_cumulative_mortality_cannot_exceed_batch_capacity(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user, viable: 100);
+        $batch = $this->createBatch($user, totalGrafted: 100);
 
         $this->actingAs($user)->post(route('operational.mortality.records.store'), [
             'batch_id' => $batch->batch_id,
@@ -165,7 +183,7 @@ class MortalityTest extends TestCase
     public function test_cumulative_records_sum_correctly_for_the_same_batch(): void
     {
         $user = User::factory()->create();
-        $batch = $this->createBatch($user, viable: 400);
+        $batch = $this->createBatch($user, totalGrafted: 400);
 
         foreach ([207, 28] as $quantity) {
             $this->actingAs($user)->post(route('operational.mortality.records.store'), [

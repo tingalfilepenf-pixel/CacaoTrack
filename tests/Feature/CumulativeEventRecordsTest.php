@@ -85,7 +85,6 @@ class CumulativeEventRecordsTest extends TestCase
         // Stock_In) is identified by its scion variety and casts the date too.
         $scionReceipt = StockIn::factory()->create([
             'quantity' => 80,
-            'viable' => 80,
             'scion_variety_id' => ScionVariety::factory(),
             'unit_price' => 12.50,
             'date_received' => '2026-08-15',

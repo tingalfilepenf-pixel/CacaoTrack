@@ -25,7 +25,6 @@ class InventoryFactory extends Factory
             'batch_id' => Batch::factory(),
             'inventory_date' => now()->startOfMonth()->toDateString(),
             'total_grafted' => 0,
-            'viable' => 0,
             'regraft' => 0,
             'mortality' => 0,
             'last_update' => now(),
@@ -40,7 +39,6 @@ class InventoryFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'batch_id' => $batch->batch_id,
             'total_grafted' => (int) $batch->total_grafted,
-            'viable' => (int) $batch->viable_count,
             'regraft' => $batch->totalReplanted(),
             'mortality' => $batch->effectiveMortalityQuantity(),
         ]);
