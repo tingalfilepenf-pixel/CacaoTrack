@@ -787,6 +787,11 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
    `StoreScionReceivingRequest` with field-specific messages, sidebar link and
    `operational/scion-receivings/index.blade.php`; suite green **280/1170**; commit `6cd5d75`;
    Add-only — Edit/Archive/Details + grafting/regrafting traceability still deferred)
+   and **CC** (`Scion_Receiving` **merged into `stock_ins`** — client-confirmed same real-world event;
+   migrations `2026_09_26_000003`/`000004`; `ScionReceiving` model/factory/test/controller/request/
+   view + its 2 routes and sidebar link deleted; Stock In modal gains a **Seedlings/Scion** tab pair
+   and the list a **Scion Variety** column; suite green **278/1163**; commits `52a9f67` + `f766ce8` —
+   see the top banner, §3 and §5)
 
 ### Session A — Daily Checklist (previous session)
 The Operational → **Daily Checklist** page (`/operational/checklist`) was converted from a static
@@ -4376,6 +4381,21 @@ A repo-wide grep for `regraft_records|RegraftRecord|regraftRecords` leaves **no 
 
 ## 3. Current database state (`db_capstone`)
 
+**⬇ CURRENT — Session CC (2026-09-26): `Scion_Receiving` merged into `stock_ins` (schema + data).**
+The client-confirmed merge ran migrations `2026_09_26_000003` (nullable `scion_variety_id` FK →
+`scion_varieties`, `unit_price` decimal(12,2), `notes`; `supplier_id` made nullable) and
+`2026_09_26_000004` (data-migrate `scion_receivings` into `stock_ins`, then drop it) against
+`db_capstone`, after a fresh verified backup
+(`...\Temp\opencode\db_capstone_backup_cc_20260926_170736.sql`; 36,778 B / 24 tables). **Result:**
+`scion_receivings` is **gone**; `stock_ins` went **2 → 4** in the migration (2 seedling rows unchanged
++ 2 scion rows with `scion_variety_id` set and `viable == quantity` = 120 and 80; `origin`/`notes`
+preserved; the null-supplier row kept). **Live now: `stock_ins` = 6 rows (3 seedling + 3 scion)** —
+2 further rows were added through the new Stock In "Scion"/seedling UI on 2026-09-28 (`activity_logs`
+9 → 14), which confirms the two-tab form works end-to-end. DB is **23 tables** (15 revised entities +
+8 framework). KPIs unchanged (Active Inventory **395**, Crude Mortality **11.11%**, Regraft
+Deficit **16**, Gap **50**); `migrate:status` **0 Pending**; merger validated reversible
+(up→down→up on `db_capstone_test`). The create migration `2026_09_26_000001` is kept as history.
+
 **Session CA (2026-09-26) — the wipe + reseed was EXECUTED (the one approved destructive action on
 the live DB).** `db_capstone` was backed up first
 (`...\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql`) then rebuilt with
@@ -4866,19 +4886,37 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
     - There is **no Record Monitoring update, no monitoring history and no survival rate**.
       `Batch_Monitoring` is retained for history but is never written.
 
-25. Scion Receiving at `http://localhost:8000/operational/scion-receivings` (approved additive entity
-    ERD §3.16; **Session CB**, Add + list only):
-    - A **receiving log** for scion material: **Date | Scion Variety | Supplier (or "—") | Quantity |
-      Unit Price (or "—") | Origin (or "—")**; newest first, paginated 10; empty state "No scion
-      receiving records found.".
-    - Click **Add Scion Receiving** → modal: scion variety (required, active only), supplier
-      (optional / "None"), quantity (required, > 0), unit price (optional `decimal(12,2)`), date
-      received (required, not in the future), origin (optional, e.g. `RU`/`banban`), notes (optional).
-    - **Log only — no stock balance and no amount/ledger column**; nothing is added to
-      `scion_varieties` and Regraft/Replanting is untouched. No freshness/viability field (deferred).
-      Gated by `manage_inventory`. **Edit/Archive/Details modals are not built yet.**
+25. Scion receiving is **not a separate page** — it is the **"Scion" tab** of the Stock In form
+    (Session CC; the former `/operational/scion-receivings` page/route was retired). At
+    `http://localhost:8000/inventory/stock-in`:
+    - The **New Stock In** modal has a **Seedlings / Scion** Bootstrap tab pair sharing one form
+      (supplier, quantity, origin, date received). The **Seedlings** tab shows the five-day viable
+      recount; the **Scion** tab adds **scion variety** (active only) + **unit price** (+ optional
+      notes), and the server sets `viable = quantity` (scion has no recount).
+    - The single Receiving History list is mixed: scion rows show the **Scion Variety** name in that
+      column (plus a "Scion" badge), pure-seedling rows show "—". There is **one** list, not two.
+    - A scion receipt is just a `stock_ins` row with `scion_variety_id` set; there is **no**
+      discriminator column and **no** stock balance on `scion_varieties`. Conditional validation lives
+      in `StoreStockInRequest` (`required_with` pair + a `Rule::requiredIf` for `viable`). Freshness/
+      viability and scion-receipt Edit/Archive/Details remain unbuilt (client-gated, deferred).
 
 ## 5. Verification status
+- **Session CC (`Scion_Receiving` merged into `Stock_In`): full suite run and GREEN.** MySQL suite
+  (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`) **278 passed /
+  1163 assertions, 0 failures** (was 280/1170: the 7-test `ScionReceivingTest` was deleted; 4 new
+  scion-entry tests were added to `StockInTest` plus a merge guard in `StructuralIndependenceTest`, and
+  `CumulativeEventRecordsTest` was repointed at a scion `StockIn`). `vendor\bin\pint --test`
+  **passed** (whole repo); `php -l` clean; `php artisan view:cache` clean; `php artisan route:list` =
+  **69 routes** (the 2 scion-receiving routes removed). `migrate:status` **0 Pending** on both
+  `db_capstone_test` and `db_capstone`; the two new migrations were validated **up→down→up** on
+  `db_capstone_test`. **Live `db_capstone` migrated after a fresh verified backup**
+  (`...\Temp\opencode\db_capstone_backup_cc_20260926_170736.sql`, 36,778 B / 24 tables):
+  `scion_receivings` 2 rows → 2 `stock_ins` scion rows (`stock_ins` 2 → 4; `viable == quantity`), table
+  dropped. (The first live attempt aborted on the `users.id` key lookup **before** any insert — no data
+  was lost; the migration now detects the key and re-ran clean.) A repo-wide grep finds **no runtime
+  `ScionReceiving` reference** — only the historical create migration, the new merge migrations,
+  explanatory comments/docs and the structural merge guard. **Committed `52a9f67` (feature) +
+  `f766ce8` (docs sync incl. `_REVISED` ERD).**
 - **Session CB (Scion Receiving "Add" CRUD UI): full suite run and GREEN.** MySQL suite
   (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
   **280 passed / 1170 assertions, 0 failures** (unchanged count — this session added **no** permanent
