@@ -4454,6 +4454,16 @@ A repo-wide grep for `regraft_records|RegraftRecord|regraftRecords` leaves **no 
 
 ## 3. Current database state (`db_capstone`)
 
+**⚠️ NOTE (Session CF, 2026-09-28) — `db_capstone` is UNCHANGED since Session CC and is still on the
+OLD schema.** Phase 7A (`batches.regraft` + `batches.parent_batch_id`, `replanting_records.parent_batch_id`,
+`batches.viable_count`/`stock_ins.viable`/`inventories.viable` removals) and Phase 7B (the regraft flow)
+were **NOT** applied to the live DB — `migrate:status` there shows the four `2026_09_27_*` migrations
+**Pending**, and it still has `batches.viable_count` / `stock_ins.viable` / `inventories.viable` and **no**
+`batches.regraft`. So the live app still shows the old viability columns and has no regraft sub-batch
+flow. Applying Phase 7A + 7B to `db_capstone` is a later, **explicitly approved** step (fresh verified
+`mysqldump` first, then **only** the four `2026_09_27_*` migrations — **not** `migrate:fresh`). The
+state below is the current live DB.
+
 **⬇ CURRENT — Session CC (2026-09-26): `Scion_Receiving` merged into `stock_ins` (schema + data).**
 The client-confirmed merge ran migrations `2026_09_26_000003` (nullable `scion_variety_id` FK →
 `scion_varieties`, `unit_price` decimal(12,2), `notes`; `supplier_id` made nullable) and
@@ -5329,6 +5339,28 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
+- **▶ Session CF (DONE — Phase 7B: regraft / sub-batch flow; commits `0f8195a`, `a82c513`, `e266412`,
+  `52c5172`):** implemented the client-approved Regrafting / Sub-Batch Creation process
+  (PRD_UPDATED §2.4/§8; ERD_UPDATED §2 rules 5-8, §3.8/§3.10/§3.11) as one atomic flow in
+  **`App\Actions\RegraftBatch`** (the only place the steps live): lock source → re-check archived /
+  `1 ≤ q ≤ regraftableQuantity()` / active scion variety / date not before `grafted_date` → source
+  `total_grafted -= q`, `available_count -= q`, `regraft += q` → create the linked sub-batch
+  (`parent_batch_id`, `nextSubBatchCode()` = `B001-R1`, own 21-day cycle + variety) → create the
+  `ReplantingRecord` (`batch_id` = sub-batch, `parent_batch_id` = source) → `ActivityLog` (existing
+  `replanting_recorded` type) → commit (all-or-nothing). `Batch` gained `regraftableQuantity()`,
+  `nextSubBatchCode()`, `regraftRecordsAsParent()`; `totalReplanted()` = cached `batches.regraft`;
+  `remainingReplantingCapacity()` removed; `subBatches` in `OPERATIONAL_RELATIONS`; `ReplantingRecord`
+  gained `parent()`/`subBatch()`/`totalRegraftedFromBatch()`. Controller delegates to the action behind
+  `DuplicateSubmissionGuard`; request requires batch/quantity/active scion variety/non-future date; the
+  Regraft page was rebuilt (summary cards, per-batch table, Regraft History, source-prefilled modal) and
+  the Batches list gained a **Parent Batch** column. **Provisional defaults (flag in code):** `OD-6`
+  regraftable cap + sub-batch code rule; ERD §3.11 reading; `OD-12` counter = `totalReplanted()`.
+  **Seeders** seed the regraft scenario **only via `RegraftBatch`** (idempotent). **Verified:** suite
+  **299/1278**, Pint + `php -l` clean, `migrate:status` 0 Pending on `db_capstone_test`, seeded
+  invariants hold (`available > total_grafted` 0, `available < 0` 0, family totals conserve,
+  `Σregraft` == `Σ(records where parent_batch_id)`). **`db_capstone` untouched** (still old schema; the
+  four `2026_09_27_*` migrations Pending). **Next:** Phase 7C (Stock Ledger / Inventory nested display)
+  or confirm the Open Decisions with the client. **No PRD/ERD file was edited.**
 - **▶ Session CC (DONE — `Scion_Receiving` merged into `Stock_In`; commit below):** client confirmed
   seedling Stock In and Scion Receiving are the same real-world receiving event. Migrations
   `2026_09_26_000003` (add nullable `scion_variety_id`/`unit_price`/`notes` to `stock_ins`; make
