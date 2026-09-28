@@ -1,6 +1,28 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CD — **corrected client-approved PRD/ERD; refactor P0–P6 still DONE**)
+> ### ▶ Continue here (latest: Session CE — **Phase 7A: viability count removed / schema aligned**)
+> - **▶ Session CE (DONE — Phase 7A: align schema + Stock In / Batch / Inventory with the
+>   client-approved ERD; commits `…`, see `git log`):** the client-approved baseline
+>   (`docs/CacaoTrack_PRD_UPDATED.md` / `_ERD_UPDATED.md`) has **no seedling viability count**; only
+>   the two provisional defaults below were taken from the v2.0 `[PROPOSED]` set — **no other `OD-n`
+>   item was implemented and no PRD/ERD file was edited.** Four new **reversible** migrations
+>   (`2026_09_27_000001..000004`; validated up → down → up on `db_capstone_test` only):
+>   `batches` drops `viable_count` and adds `regraft` (default 0) + nullable `parent_batch_id`
+>   (self-FK, indexed); `stock_ins` drops `viable`; `inventories` drops `viable`;
+>   `replanting_records` adds nullable `parent_batch_id` (ERD §3.11). `Batch` gained
+>   `parent()`/`subBatches()`/`isSubBatch()`. Stock In / Batches / Inventory models, requests,
+>   controllers, views, factories, seeders and all 16 affected tests were updated; Stock In's summary
+>   card is now **"Total Received (seedlings)"** (quantity where `scion_variety_id` is NULL) and the
+>   Gap Report's `expected` is `total_grafted` (the Gap formula itself is still effective mortality).
+>   **Verified:** full MySQL suite **280 passed / 1173 assertions**, Pint + `php -l` clean,
+>   `migrate:status` **0 Pending** on `db_capstone_test`, seeders clean + invariant-true
+>   (`available_count ≤ total_grafted`). **`db_capstone` is still on the OLD schema and was NOT
+>   migrated** (it still has `viable_count` / `stock_ins.viable` / `inventories.viable`); applying
+>   these migrations to the live DB is a later, explicitly approved step with the final reseed.
+>   **Provisional defaults (pending sign-off):** `OD-3` new batch `available_count = total_grafted`;
+>   `OD-4` `remainingMortalityCapacity() = max(0, total_grafted − effective mortality)`. **Out of
+>   scope:** regraft/sub-batch flow (7B), Stock Ledger nesting (7C), `Plant_Condition`, `Sub_Batch_ID`,
+>   correction/edit policy.
 > - **▶ Session CD (DONE — doc-only: corrected client-approved PRD/ERD; checkpoint `584c548`):**
 >   rewrote `docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` from the client-approved baseline
 >   (`docs/CacaoTrack_PRD_UPDATED.md` / `docs/CacaoTrack_ERD_UPDATED.md`, kept **untouched as
@@ -128,19 +150,25 @@
 >   graft/regraft to a scion-inclusive Stock In row; the freshness/viability rule; and the Stock Ledger
 >   "Ready to Plant" best-guess mapping. **There are no approved additive exceptions**
 >   (`scion_receivings` merged into `stock_ins`; `regraft_records` retracted).
-> - **▶ NEXT UP / where to pick up (vibecoding resume point):** there is **no remaining phase work** —
->   the revised-model refactor is complete (P0–P6), `db_capstone` holds clean, schema-valid
->   seed data, and the Scion Receiving entry UI is shipped as the Stock In **"Scion" tab**. Pick one of:
->   - **A. Optional quality-of-life:** enable `pdo_sqlite` in `php.ini` so plain `php artisan test`
+> - **▶ NEXT UP / where to pick up (vibecoding resume point):** no refactor phase work remains
+>   (P0–P6 DONE). The **client-approved PRD/ERD are now the corrected v2.0 docs**
+>   (`docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md`; the `_UPDATED` files are the untouched
+>   v1.0 baseline/provenance; `_REVISED` copies must stay byte-identical — SHA-256 match). The live
+>   open work is **14 Open Decisions pending client sign-off** (PRD §19, `OD-1`…`OD-14`); each is
+>   marked **[PROPOSED — pending client confirmation]** and **must not be implemented unprompted**.
+>   Pick one of:
+>   - **A. Confirm the Open Decisions with the client** (PRD §19), then implement the approved ones
+>     (docs + code + tests) **one at a time**. Suggested order by value: `OD-3` (`Available_Count`
+>     definition + Gap Report re-confirmation), `OD-5` (corrections policy), `OD-2` (mortality
+>     `Plant_Condition`), `OD-10` (Dashboard KPIs / Regraft Deficit), then the rest.
+>   - **B. Optional quality-of-life:** enable `pdo_sqlite` in `php.ini` so plain `php artisan test`
 >     works without the MySQL env override (see §5).
->   - **B. New feature work (product decision needed):** the only known deferred items are
->     **client-sign-off gated** — do **not** implement them unprompted: (1) scion-receipt
->     **Edit/Archive/Details** for a Stock In scion-tab row (Add + list already exist in the Stock In
->     **Scion** tab); (2) scion-receipt **traceability** (graft/regraft referencing a scion-inclusive
->     `Stock_In` row; **no** stock-balance deduction); (3) the scion freshness/viability rule; (4) Stock
->     Ledger "Ready to Plant" mapping (**leave as `available_count`** — do not change). See §6 and
->     `AGENTS.md` §"P6 deferred items".
->   - **C. Verify current state first** before touching anything (command below).
+>   - **C. Other client-gated feature work (do not build unprompted):** scion-receipt
+>     **Edit/Archive/Details**; scion-receipt **traceability** (graft/regraft referencing a
+>     scion-inclusive `Stock_In` row; **no** stock-balance deduction); the scion freshness/viability
+>     rule (`OD-13`); Stock Ledger "Ready to Plant" mapping (**leave as `available_count`**). See §6
+>     and `AGENTS.md` §"P6 deferred items".
+>   - **D. Verify current state first** before touching anything (command below).
 > - **Standing rules:** tests only against `db_capstone_test` (never `db_capstone`); the Session CA
 >   wipe + reseed was the **only** approved destructive action on the live DB — any further one needs
 >   fresh explicit sign-off. Keep this backup untouched:
@@ -149,12 +177,13 @@
 >   (never point tests at `db_capstone`). Full detail: §2 Session CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ, §3, §5, §6.
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session CC (2026-09-26)** — **the refactor is complete (P0–P6), `db_capstone` has
-been wiped + reseeded with clean, schema-valid data, and `Scion_Receiving` is merged into `Stock_In`
-(scion receipt entered via the Stock In "Scion" tab)**: the schema, models, controllers/routes, views,
-analytics and seeders/tests all match the revised 15-entity model, and the full MySQL suite is
-**green (278 passed / 1163 assertions)**. The next session starts from the **"NEXT UP" bullet in the
-banner above** and §6. (Historical context follows: Phase 5 (Analytics/reports) was
+project after **Session CE (2026-09-28)** — **Phase 7A is done: the seedling viability count is
+removed and the schema/Stock In/Batch/Inventory code match the client-approved ERD; `db_capstone`
+is still on the OLD schema (not migrated), and the two provisional defaults (`OD-3`/`OD-4`) await
+sign-off.** The schema, models, controllers/routes, views, analytics and
+seeders/tests all match the revised 15-entity model; the full MySQL suite was last fully verified
+green (**280 passed / 1173 assertions**, Session CE). The next session starts from the **"NEXT UP"
+bullet in the banner above** and §6. (Historical context follows: Phase 5 (Analytics/reports) was
 **implemented in Session BQ**; the Gap formula was corrected in Session BS; the Replanting→Regraft
 display rename landed in Session BT; Session BU audited the consolidation; Session BV added the
 **`Scion_Receiving`** entity as additive schema + model only; Session BW synced the docs; and Session BY

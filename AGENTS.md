@@ -8,6 +8,34 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## PHASE 7A DONE — viability count removed; schema aligned with the client-approved ERD (2026-09-28)
+- **Baseline = the client-approved v1.0 docs** `docs/CacaoTrack_PRD_UPDATED.md` /
+  `docs/CacaoTrack_ERD_UPDATED.md`. Only the two provisional defaults below were implemented from the
+  v2.0 `[PROPOSED]` set; **all other `OD-n` items remain unimplemented**. No PRD/ERD file was edited.
+- **Schema (new reversible migrations `2026_09_27_000001..000004`, validated up → down → up on
+  `db_capstone_test` only):** `batches` **drops `viable_count`** and **adds `regraft`** (unsigned int,
+  default 0) + nullable **`parent_batch_id`** (self-FK → `batches.batch_id`, restrictOnDelete,
+  indexed); `stock_ins` **drops `viable`**; `inventories` **drops `viable`**; `replanting_records`
+  **adds nullable `parent_batch_id`** (ERD §3.11). There is no five-day seedling viability recount.
+- **Code:** `Batch` gained `parent()` / `subBatches()` / `isSubBatch()`; Stock In / Batches /
+  Inventory models, requests, controllers and views no longer reference viable (Stock In's card is
+  now **"Total Received (seedlings)"**, summing `quantity` only where `scion_variety_id` is NULL).
+  Analytics: `survivalVsMortality` uses `total_grafted` and the Gap Report's `expected` is
+  `total_grafted` (the Gap formula is still effective mortality). Factories, seeders and all 16
+  affected tests were updated; full MySQL suite **280 passed / 1173 assertions**, Pint + `php -l`
+  clean.
+- **Two provisional defaults (recorded as provisional — pending client sign-off):**
+  1. **`OD-3`** — a new batch's `available_count = total_grafted` (`BatchController@store`, and the
+     update path only while the batch has no operational records).
+  2. **`OD-4`** — `Batch::remainingMortalityCapacity() = max(0, total_grafted − effective mortality)`.
+     Mortality still does **not** change `available_count` or the `regraft` counter.
+- **`db_capstone` is still on the OLD schema** — it was **NOT** migrated in Phase 7A. It still has
+  `batches.viable_count`, `stock_ins.viable` and `inventories.viable`. Applying the four new
+  migrations to the live DB is a later, explicitly approved step (alongside the final reseed).
+- **Out of scope this phase (unchanged):** the regraft/sub-batch flow (`ReplantingController`,
+  Phase 7B), Stock Ledger nesting (7C), `Plant_Condition`, `Sub_Batch_ID`, and any correction/edit
+  policy.
+
 ## REFACTOR IN PROGRESS — READ THIS FIRST
 - The source-of-truth PRD and ERD were **replaced with the revised 15-entity model**. Canonical
   `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md` now contain the revised content; identical
@@ -139,20 +167,22 @@
 | 4 | `Activity_Task` | `task_id` | `task_name`, `description`, `priority`, `archived_at` (nullable) |
 | 5 | `Task_Complete` | `completion_id` | `task_id`, `user_id`, `verified_by_id`, `completion_date`, `verified_at`, `remark` |
 | 6 | `Supplier` | `supplier_id` | `supplier_name`, `contact_number`, `address`, `archived_at` (nullable) |
-| 7 | `Stock_In` | `stock_in_id` | `supplier_id` (nullable), **`scion_variety_id` (nullable)**, `user_id`, `quantity`, **`viable`**, `unit_price` (nullable), **`origin`**, `notes` (nullable), `date_received` |
-| 8 | `Batch` | `batch_id` | **`scion_variety_id` (nullable)**, `user_id`, `batch_code`, `total_grafted`, `viable_count`, `available_count`, `grafted_date`, `created_at`, `status`, `archived_at` (nullable) |
+| 7 | `Stock_In` | `stock_in_id` | `supplier_id` (nullable), **`scion_variety_id` (nullable)**, `user_id`, `quantity`, `unit_price` (nullable), **`origin`**, `notes` (nullable), `date_received` |
+| 8 | `Batch` | `batch_id` | **`scion_variety_id` (nullable)**, **`parent_batch_id` (nullable)**, `user_id`, `batch_code`, `total_grafted`, **`regraft`**, `available_count`, `grafted_date`, `created_at`, `status`, `archived_at` (nullable) |
 | 9 | `Scion_Variety` | `scion_variety_id` | `scion_variety_name`, `description`, `archived_at` (nullable) |
 | 10 | `Mortality_Record` | `mortality_id` | `batch_id`, `user_id`, `quantity`, `cause`, `recorded_at` |
-| 11 | `Replanting_Record` | `replanting_id` | `batch_id`, `user_id`, `quantity`, `replanting_date`, `remark` |
-| 12 | `Inventory` | `inventory_id` | `batch_id`, `inventory_date`, `total_grafted`, `viable`, `regraft`, `mortality`, `status`, `last_update` |
+| 11 | `Replanting_Record` | `replanting_id` | `batch_id`, **`parent_batch_id` (nullable)**, `user_id`, `quantity`, `replanting_date`, `remark` |
+| 12 | `Inventory` | `inventory_id` | `batch_id`, `inventory_date`, `total_grafted`, `regraft`, `mortality`, `status`, `last_update` |
 | 13 | `Client` | `client_id` | `client_name`, `contact_number`, `address`, `archived_at` (nullable) |
 | 14 | `Stock_Out` | `stock_out_id` | `client_id`, `user_id`, `release_date`, `total_amount` (nullable) — header only |
 | 15 | `Stock_Out_Detail` | `stock_out_detail_id` | `stock_out_id`, `batch_id`, `scion_variety_id`, `quantity`, `unit`, `unit_price` (nullable), `amount` (nullable) |
 
-**Key revised rules:** `Stock_In.quantity` is the ordered/received quantity and `Stock_In.viable` is
-the five-day recounted usable quantity (they need not be equal); Stock In has **no** `batch_id`.
-`Batch` has **no** `variety_id`, `pot_id`, or `monitoring_start_date`. `Inventory` is a **monthly
-snapshot** (many rows per batch — the old per-batch UNIQUE `current_quantity` row is gone).
+**Key revised rules:** `Stock_In.quantity` is the received quantity recorded immediately (there is
+**no** five-day viability count and no `viable` column — Phase 7A); Stock In has **no** `batch_id`.
+`Batch` has **no** `variety_id`, `pot_id`, or `monitoring_start_date`, and (Phase 7A) **no
+`viable_count`** — it carries `regraft` and a nullable `parent_batch_id` for regraft sub-batches.
+`Inventory` is a **monthly snapshot** (many rows per batch — the old per-batch UNIQUE
+`current_quantity` row is gone) and holds no `viable` count.
 `Stock_Out` is a header; each variety/batch quantity is a `Stock_Out_Detail` line. `Stock_In` has
 **no** `scion_quantity` and there is no scion stock pool. **Scion receiving is merged into
 `Stock_In`** (Session CC): a scion-inclusive row has `scion_variety_id` + `unit_price` set (and
@@ -165,7 +195,9 @@ retracted; see the banner). `inventories.regraft` (monthly aggregate) is unchang
 ## Removed from the model/process (do NOT reintroduce)
 - Tables: `Batch_Monitoring`, `Variety`, generic `Scions` stock pool, `Pot_Type`,
   `Mortality_Adjustments`, `Stock_Reversal`.
-- Columns: `Batch.Monitoring_Start_Date`, `Stock_In.Batch_ID`, `Stock_In.Scion_Quantity`.
+- Columns: `Batch.Monitoring_Start_Date`, `Stock_In.Batch_ID`, `Stock_In.Scion_Quantity`,
+  `Batch.viable_count`, `Stock_In.viable`, `Inventory.viable` (the viability count was removed in
+  Phase 7A).
 - Concepts: scion stock receiving/used/unused inventory logic, Batch Monitoring
   status/history logic, the Stock Reversal workflow, separate per-scion inventory, and the
   `varieties`/`pot_types` master modules.
