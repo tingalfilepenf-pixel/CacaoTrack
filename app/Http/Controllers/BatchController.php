@@ -7,8 +7,10 @@ use App\Http\Requests\UpdateBatchRequest;
 use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\ScionVariety;
+use App\Support\BatchTree;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -54,11 +56,26 @@ class BatchController extends Controller
 
         $batches = (clone $visible)
             ->with(['scionVariety', 'latestInventory', 'parent'])
-            ->withCount(['mortalityRecords', 'replantingRecords'])
+            ->withCount(['mortalityRecords', 'replantingRecords', 'stockOutDetails'])
             ->withExists(Batch::OPERATIONAL_RELATIONS)
-            ->orderBy('batch_code')
-            ->paginate(10)
-            ->withQueryString();
+            ->get();
+
+        // One family per page so a parent and its regraft sub-batches are never
+        // split across pagination (Phase 7C nested display). Ordering/depth come
+        // from the single tree helper (RULE 6).
+        $families = collect(BatchTree::groups($batches));
+
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $perPage = 10;
+
+        $batches = new LengthAwarePaginator(
+            $families->forPage($page, $perPage)->values(),
+            $families->count(),
+            $perPage,
+            $page,
+            ['path' => LengthAwarePaginator::resolveCurrentPath()],
+        );
+        $batches->withQueryString();
 
         // New-record selectors offer active scion varieties only, but an
         // archived variety already referenced by a batch stays selectable so

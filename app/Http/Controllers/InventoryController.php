@@ -6,9 +6,11 @@ use App\Http\Requests\StoreInventorySnapshotRequest;
 use App\Models\Batch;
 use App\Models\Inventory;
 use App\Models\ScionVariety;
+use App\Support\BatchTree;
 use App\Support\DuplicateSubmissionGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -43,14 +45,56 @@ class InventoryController extends Controller
             ->when($filters['month'] ?? null, fn ($query, $month) => $query->whereMonth('inventory_date', $month));
 
         $inventories = (clone $base)
-            ->with(['batch', 'batch.scionVariety'])
-            ->orderByDesc('inventory_date')
-            ->orderByDesc('inventory_id')
-            ->paginate(10)
-            ->withQueryString();
+            ->with(['batch', 'batch.scionVariety', 'batch.parent'])
+            ->get();
+
+        // Nest the snapshot rows: order the batches through the single tree
+        // helper (RULE 6), then keep each batch's snapshots newest-first. No
+        // family subtotal rows are introduced (Phase 7C).
+        $treeOrder = [];
+
+        foreach (BatchTree::flatten($inventories->pluck('batch')->filter()->unique('batch_id')->values()) as $position => $node) {
+            $treeOrder[$node['batch']->batch_id] = [
+                'position' => $position,
+                'depth' => $node['depth'],
+                'parent_code' => $node['parent_code'],
+                'parent_missing' => $node['parent_missing'],
+            ];
+        }
+
+        $ordered = $inventories->sort(function (Inventory $a, Inventory $b) use ($treeOrder): int {
+            $aPosition = $treeOrder[$a->batch_id]['position'] ?? PHP_INT_MAX;
+            $bPosition = $treeOrder[$b->batch_id]['position'] ?? PHP_INT_MAX;
+
+            if ($aPosition !== $bPosition) {
+                return $aPosition <=> $bPosition;
+            }
+
+            $aDate = (string) $a->inventory_date;
+            $bDate = (string) $b->inventory_date;
+
+            if ($aDate !== $bDate) {
+                return $bDate <=> $aDate;
+            }
+
+            return (int) $b->inventory_id <=> (int) $a->inventory_id;
+        })->values();
+
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $perPage = 10;
+
+        $inventories = new LengthAwarePaginator(
+            $ordered->forPage($page, $perPage)->values(),
+            $ordered->count(),
+            $perPage,
+            $page,
+            ['path' => LengthAwarePaginator::resolveCurrentPath()],
+        );
+        $inventories->withQueryString();
 
         return view('inventory.index', [
             'inventories' => $inventories,
+            'nodeMeta' => $treeOrder,
             'scionVarieties' => ScionVariety::orderBy('scion_variety_name')->get(),
             'batches' => Batch::active()->with('scionVariety')->orderBy('batch_code')->get(),
             'filters' => $filters,

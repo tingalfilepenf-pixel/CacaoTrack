@@ -145,6 +145,7 @@
                     <tr>
                         <th class="ps-4">INVENTORY DATE</th>
                         <th>BATCH</th>
+                        <th>PARENT BATCH</th>
                         <th>SCION VARIETY</th>
                         <th class="text-end">TOTAL GRAFTED</th>
                         <th class="text-end">RE-GRAFT</th>
@@ -157,12 +158,28 @@
                     @forelse ($inventories as $inventory)
                         @php
                             $batch = $inventory->batch;
+                            $meta = $nodeMeta[$inventory->batch_id] ?? null;
+                            $depth = $meta['depth'] ?? 0;
+                            $parentCode = $meta['parent_code'] ?? null;
+                            $parentMissing = $meta['parent_missing'] ?? false;
                             $statusText = ucfirst($inventory->status);
                             $statusClass = $inventory->status === \App\Models\Inventory::STATUS_ACTIVE ? 'bg-success' : 'bg-secondary';
                         @endphp
                         <tr>
                             <td class="ps-4 fw-medium text-primary">{{ $formatDate($inventory->inventory_date) }}</td>
-                            <td class="fw-medium">{{ $batch?->batch_code ?? '—' }}</td>
+                            <td class="fw-medium">
+                                @if ($depth > 0)
+                                    <span style="display:inline-block;width:{{ $depth * 18 }}px"></span><span class="text-muted">↳</span>
+                                @endif
+                                {{ $batch?->batch_code ?? '—' }}
+                                @if ($batch?->isSubBatch())
+                                    <span class="badge bg-info-subtle text-info-emphasis ms-1">Sub-batch</span>
+                                @endif
+                                @if ($parentMissing && $parentCode)
+                                    <span class="text-muted small">(parent: {{ $parentCode }})</span>
+                                @endif
+                            </td>
+                            <td class="text-muted">{{ $parentCode ?? '—' }}</td>
                             <td>{{ $batch?->scionVariety?->scion_variety_name ?? 'Not assigned' }}</td>
                             <td class="text-end">{{ number_format((int) $inventory->total_grafted) }}</td>
                             <td class="text-end text-warning fw-bold">{{ number_format((int) $inventory->regraft) }}</td>
@@ -172,7 +189,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-5">
+                            <td colspan="9" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 No inventory snapshots found for the current filters.
                             </td>
@@ -205,9 +222,14 @@
                         <label class="form-label text-muted small fw-bold" for="inventoryBatch">Batch <span class="text-danger">*</span></label>
                         <select class="form-select @error('batch_id', 'inventory') is-invalid @enderror" id="inventoryBatch" name="batch_id" required>
                             <option value="" disabled @selected(old('batch_id') === null)>Select Batch</option>
-                            @foreach ($batches as $batch)
+                            @foreach (\App\Support\BatchTree::flatten($batches) as $node)
+                                @php $batch = $node['batch']; @endphp
                                 <option value="{{ $batch->batch_id }}" @selected(old('batch_id') == $batch->batch_id)>
-                                    {{ $batch->batch_code }} — {{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}
+                                    @if ($node['depth'] > 0)
+                                        ↳ {{ $batch->batch_code }} ({{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}, parent {{ $node['parent_code'] }})
+                                    @else
+                                        {{ $batch->batch_code }} — {{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}
+                                    @endif
                                 </option>
                             @endforeach
                         </select>

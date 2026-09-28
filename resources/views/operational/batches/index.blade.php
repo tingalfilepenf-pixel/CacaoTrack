@@ -163,77 +163,22 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse ($batches as $batch)
+                    @forelse ($batches as $family)
                         @php
-                            $used = $batch->hasOperationalRecords();
-                            $latestInventory = $batch->latestInventory;
-                            $details = [
-                                'batch_code' => $batch->batch_code,
-                                'scion_variety' => $batch->scionVariety?->scion_variety_name,
-                                'grafted_date' => $batch->grafted_date?->format('M d, Y'),
-                                'created_by' => $batch->user?->name,
-                                'created_at' => $batch->created_at?->format('M d, Y H:i'),
-                                'total_grafted' => (int) $batch->total_grafted,
-                                'available_count' => (int) $batch->available_count,
-                                'status' => $batch->status,
-                                'mortality' => (int) $batch->mortality_records_count,
-                                'replanting' => (int) $batch->replanting_records_count,
-                                'inventory_date' => $latestInventory?->inventory_date?->format('M d, Y'),
-                                'inventory_status' => $latestInventory?->status,
-                                'stock_outs' => $batch->stockOutDetails()->count(),
-                                'used' => $used,
-                            ];
+                            $nodes = $family['rows'];
+                            $parentIds = collect($nodes)->flatMap(fn ($node) => $node['ancestors'])->unique();
                         @endphp
-                        <tr>
-                            <td class="ps-4 fw-medium text-primary">
-                                {{ $batch->batch_code }}
-                                @if ($status === 'archived' && $batch->archived_at)
-                                    <div class="text-muted small fw-normal">Archived {{ $batch->archived_at->format('M j, Y g:i A') }}</div>
-                                @endif
-                            </td>
-                            <td class="text-muted">{{ $batch->parent?->batch_code ?? '—' }}</td>
-                            <td>{{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}</td>
-                            <td class="text-muted">{{ $batch->grafted_date?->format('M d, Y') ?? '—' }}</td>
-                            <td class="text-end">{{ number_format($batch->total_grafted) }}</td>
-                            <td class="text-end fw-bold text-success">{{ number_format($batch->available_count) }}</td>
-                            <td>
-                                @if ($batch->status === \App\Models\Batch::STATUS_ACTIVE)
-                                    <span class="badge bg-success">Active</span>
-                                @else
-                                    <span class="badge bg-secondary">Inactive</span>
-                                @endif
-                            </td>
-                            <td class="text-end pe-4 text-nowrap">
-                                <button class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#batchDetailsModal"
-                                    data-details="{{ json_encode($details) }}" title="View">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                                <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="modal" data-bs-target="#editBatchModal"
-                                    data-batch-id="{{ $batch->batch_id }}"
-                                    data-batch-code="{{ $batch->batch_code }}"
-                                    data-scion-variety-id="{{ $batch->scion_variety_id }}"
-                                    data-total-grafted="{{ $batch->total_grafted }}"
-                                    data-grafted-date="{{ $batch->grafted_date?->format('Y-m-d') }}"
-                                    data-status="{{ $batch->status }}"
-                                    data-used="{{ $used ? '1' : '0' }}" title="Edit">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                @if ($status === 'archived')
-                                    <form method="POST" action="{{ route('operational.batches.restore', $batch) }}" class="d-inline">
-                                        @csrf
-                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Restore">
-                                            <i class="bi bi-arrow-counterclockwise"></i>
-                                        </button>
-                                    </form>
-                                @else
-                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#archiveBatchModal"
-                                        data-batch-id="{{ $batch->batch_id }}"
-                                        data-batch-code="{{ $batch->batch_code }}" title="Archive">
-                                        <i class="bi bi-archive"></i>
-                                    </button>
-                                @endif
-                            </td>
-                        </tr>
+                        @foreach ($nodes as $node)
+                            @include('operational.batches.partials.batch-row', [
+                                'batch' => $node['batch'],
+                                'depth' => $node['depth'],
+                                'parentCode' => $node['parent_code'],
+                                'parentMissing' => $node['parent_missing'],
+                                'ancestors' => $node['ancestors'],
+                                'hasChildren' => $parentIds->contains($node['batch']->batch_id),
+                                'status' => $status,
+                            ])
+                        @endforeach
                     @empty
                         <tr>
                             <td colspan="8" class="text-center text-muted py-5">
@@ -252,7 +197,7 @@
     </div>
     <div class="card-footer bg-white py-3 d-flex justify-content-between align-items-center border-top">
         <span class="text-muted small">
-            Showing {{ $batches->firstItem() ?? 0 }} to {{ $batches->lastItem() ?? 0 }} of {{ $batches->total() }} entries
+            Showing {{ $batches->firstItem() ?? 0 }} to {{ $batches->lastItem() ?? 0 }} of {{ $batches->total() }} batch families
         </span>
         {{ $batches->links('pagination::bootstrap-5') }}
     </div>
