@@ -18,6 +18,7 @@ class ReplantingRecord extends Model
 
     protected $fillable = [
         'batch_id',
+        'parent_batch_id',
         'user_id',
         'quantity',
         'replanting_date',
@@ -34,6 +35,15 @@ class ReplantingRecord extends Model
     public function batch(): BelongsTo
     {
         return $this->belongsTo(Batch::class, 'batch_id', 'batch_id');
+    }
+
+    /**
+     * The parent batch of the regraft sub-batch this record created, when set
+     * (ERD §3.11).
+     */
+    public function parentBatch(): BelongsTo
+    {
+        return $this->belongsTo(Batch::class, 'parent_batch_id', 'batch_id');
     }
 
     public function user(): BelongsTo

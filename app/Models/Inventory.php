@@ -32,7 +32,6 @@ class Inventory extends Model
         'batch_id',
         'inventory_date',
         'total_grafted',
-        'viable',
         'regraft',
         'mortality',
         'status',

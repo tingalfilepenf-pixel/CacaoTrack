@@ -5,16 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use InvalidArgumentException;
 
 /**
- * Revised ERD entity `Stock_In` (ERD §3.7).
+ * Client-approved ERD entity `Stock_In` (ERD §3.7).
  *
- * Records a receiving event. `quantity` is the ordered/received quantity and
- * `viable` is the usable quantity. For a **seedling** row `viable` is the
- * five-day recounted usable quantity (so it need not equal `quantity`). There
- * is deliberately **no** `batch_id`: the viability count happens before a Batch
- * is established.
+ * Records a receiving event. `quantity` is the seedlings actually received
+ * (recorded immediately; there is no five-day wait and no separate seedling
+ * viability count). There is deliberately **no** `batch_id`: the receiving
+ * happens before a Batch is established.
  *
  * The client confirmed seedling Stock In and Scion Receiving are the same
  * real-world receiving event, so the former `Scion_Receiving` log was merged
@@ -23,9 +21,7 @@ use InvalidArgumentException;
  * and `unit_price` are **optional per row**: a row either represents seedlings
  * only (both null) or includes scion (both set). There is deliberately **no**
  * "type"/discriminator column — the presence of `scion_variety_id` itself is
- * the signal (see `isScionEntry()`). For scion-inclusive rows `viable` is set
- * equal to `quantity` at entry because scion has no five-day recount
- * (perishable, used immediately), unlike seedlings.
+ * the signal (see `isScionEntry()`).
  */
 class StockIn extends Model
 {
@@ -42,7 +38,6 @@ class StockIn extends Model
         'scion_variety_id',
         'user_id',
         'quantity',
-        'viable',
         'unit_price',
         'origin',
         'notes',
@@ -53,27 +48,9 @@ class StockIn extends Model
     {
         return [
             'quantity' => 'integer',
-            'viable' => 'integer',
             'unit_price' => 'decimal:2',
             'date_received' => 'date',
         ];
-    }
-
-    /**
-     * `viable` is a recount subset of the same physical shipment, so
-     * `viable > quantity` is an impossible physical state. Enforced at the
-     * model layer (locked business rule 5) because the schema is frozen (no DB
-     * CHECK can be added without a migration) and controllers are out of scope
-     * for this pass. The `rules()` (`lte:quantity`) provide the user-facing
-     * message; this guard is the structural backstop.
-     */
-    protected static function booted(): void
-    {
-        static::saving(function (self $stockIn): void {
-            if ((int) $stockIn->viable > (int) $stockIn->quantity) {
-                throw new InvalidArgumentException('Viable quantity cannot exceed the received quantity.');
-            }
-        });
     }
 
     public function supplier(): BelongsTo
@@ -125,9 +102,7 @@ class StockIn extends Model
      *
      * A stock-in is either seedling-only (`scion_variety_id`/`unit_price` both
      * null) or scion-inclusive (both set). `required_with` each way expresses
-     * "both or neither" without a discriminator column. `viable` is required
-     * here for the seedling path; the scion path sets it server-side, so
-     * `StoreStockInRequest` relaxes it only when `scion_variety_id` is present.
+     * "both or neither" without a discriminator column.
      *
      * @return array<string, array<int, mixed>>
      */
@@ -136,7 +111,6 @@ class StockIn extends Model
         return [
             'supplier_id' => ['required', 'integer', Supplier::activeExistsRule('supplier_id')],
             'quantity' => ['required', 'integer', 'min:1'],
-            'viable' => ['required', 'integer', 'min:0', 'lte:quantity'],
             'scion_variety_id' => ['nullable', 'integer', ScionVariety::activeExistsRule('scion_variety_id'), 'required_with:unit_price'],
             'unit_price' => ['nullable', 'numeric', 'min:0', 'required_with:scion_variety_id'],
             'origin' => ['required', 'string', 'max:255'],

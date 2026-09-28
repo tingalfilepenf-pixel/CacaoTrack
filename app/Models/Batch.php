@@ -12,12 +12,16 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
- * Revised ERD entity `Batch` (ERD §3.8).
+ * Client-approved ERD entity `Batch` (ERD §3.8).
  *
- * A batch is the established grafted cacao record. `viable_count` is set once
- * at establishment and is never decremented by mortality; the live available
- * balance is `available_count`, and the monthly operational status lives in the
- * related Inventory snapshots.
+ * A batch is the established grafted cacao record. `total_grafted` is the batch
+ * population, `regraft` is its regraft counter, and `available_count` is the
+ * live available balance (never decremented by mortality). A regraft sub-batch
+ * links to its parent through `parent_batch_id` and has its own 21-day cycle.
+ * The monthly operational status lives in the related Inventory snapshots.
+ *
+ * Provisional default 1 (pending PRD `OD-3`): a newly established batch starts
+ * with `available_count = total_grafted`.
  */
 class Batch extends Model
 {
@@ -53,10 +57,11 @@ class Batch extends Model
 
     protected $fillable = [
         'scion_variety_id',
+        'parent_batch_id',
         'user_id',
         'batch_code',
         'total_grafted',
-        'viable_count',
+        'regraft',
         'available_count',
         'grafted_date',
         'created_at',
@@ -67,6 +72,7 @@ class Batch extends Model
     protected function casts(): array
     {
         return [
+            'regraft' => 'integer',
             'grafted_date' => 'date',
             'created_at' => 'datetime',
             'archived_at' => 'datetime',
@@ -81,6 +87,30 @@ class Batch extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * The parent batch when this row is a regraft sub-batch (ERD §3.8).
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_batch_id', 'batch_id');
+    }
+
+    /**
+     * Regraft sub-batches linked to this batch as their parent (ERD §3.8).
+     */
+    public function subBatches(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_batch_id', 'batch_id');
+    }
+
+    /**
+     * Whether this row is a regraft sub-batch rather than a parent batch.
+     */
+    public function isSubBatch(): bool
+    {
+        return $this->parent_batch_id !== null;
     }
 
     public function mortalityRecords(): HasMany
@@ -124,9 +154,8 @@ class Batch extends Model
     /**
      * Total effective mortality recorded against this batch.
      *
-     * Revised rule (locked business rule 1): mortality is tracked separately
-     * from `viable_count`; the effective quantity is the raw sum of related
-     * Mortality_Record rows.
+     * Mortality is tracked separately from the live available balance; the
+     * effective quantity is the raw sum of related Mortality_Record rows.
      */
     public function effectiveMortalityQuantity(): int
     {
@@ -136,13 +165,14 @@ class Batch extends Model
     /**
      * Remaining quantity that may still be recorded as mortality.
      *
-     * `viable_count` is set once at batch establishment and never decremented,
-     * so the cap is `max(0, viable_count - effective mortality)` (locked
-     * business rule 1).
+     * Provisional default 2 (pending PRD `OD-4`): the mortality quantity is
+     * bounded by the batch's grafted population, so the cap is
+     * `max(0, total_grafted - effective mortality)`. Recording mortality still
+     * does **not** mutate `available_count` or the `regraft` counter.
      */
     public function remainingMortalityCapacity(): int
     {
-        return max(0, (int) $this->viable_count - $this->effectiveMortalityQuantity());
+        return max(0, (int) $this->total_grafted - $this->effectiveMortalityQuantity());
     }
 
     /**
@@ -224,7 +254,6 @@ class Batch extends Model
             'batch_code' => ['required', 'string', 'max:255', Rule::unique('batches', 'batch_code')->ignore($ignoreId, 'batch_id')],
             'scion_variety_id' => ['nullable', 'integer', ScionVariety::activeExistsRule('scion_variety_id')],
             'total_grafted' => ['required', 'integer', 'min:1'],
-            'viable_count' => ['required', 'integer', 'min:0', 'lte:total_grafted'],
             'grafted_date' => ['required', 'date', 'before_or_equal:today'],
             'status' => ['required', 'string', Rule::in(self::STATUSES)],
         ];
