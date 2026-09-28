@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Actions\RegraftBatch;
 use App\Models\Concerns\Archivable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,6 +23,11 @@ use Illuminate\Validation\Rule;
  *
  * Provisional default 1 (pending PRD `OD-3`): a newly established batch starts
  * with `available_count = total_grafted`.
+ *
+ * Phase 7B regraft flow (provisional, pending PRD `OD-6`): a regraft moves a
+ * quantity out of a parent batch into a linked sub-batch — see
+ * {@see RegraftBatch} — deducting `total_grafted`/`available_count`
+ * and incrementing the `regraft` counter on the parent.
  */
 class Batch extends Model
 {
@@ -51,9 +57,13 @@ class Batch extends Model
      * shared by the controller and the listing). Activity_Log is deliberately
      * excluded so a freshly created batch stays editable.
      *
+     * `subBatches` is included so a parent's counts are locked as soon as it
+     * has been regrafted; otherwise its `total_grafted` could be edited after a
+     * regraft and break the conservation invariant (Phase 7B).
+     *
      * @var list<string>
      */
-    public const OPERATIONAL_RELATIONS = ['mortalityRecords', 'replantingRecords', 'stockOutDetails'];
+    public const OPERATIONAL_RELATIONS = ['mortalityRecords', 'replantingRecords', 'stockOutDetails', 'subBatches'];
 
     protected $fillable = [
         'scion_variety_id',
@@ -124,6 +134,18 @@ class Batch extends Model
     }
 
     /**
+     * The regraft records that created this batch's sub-batches
+     * (`replanting_records.parent_batch_id = this batch`, ERD §3.11 / Phase
+     * 7B). A source batch's own `batch_id` rows are the records of the
+     * sub-batches it created as a child, so the regraft history of a source is
+     * read through this relation.
+     */
+    public function regraftRecordsAsParent(): HasMany
+    {
+        return $this->hasMany(ReplantingRecord::class, 'parent_batch_id', 'batch_id');
+    }
+
+    /**
      * Monthly Inventory snapshots for this batch (many rows — the old
      * one-row-per-batch balance is gone).
      */
@@ -176,31 +198,67 @@ class Batch extends Model
     }
 
     /**
-     * Total quantity replanted against this batch.
+     * Total quantity regrafted OUT of this batch — the cached
+     * `batches.regraft` counter, incremented by the regraft action by exactly
+     * the quantity moved into a linked sub-batch (Phase 7B).
+     *
+     * Provisional (pending PRD `OD-12`): the counter is the authoritative
+     * per-batch regraft total. The method name is kept so the existing KPI /
+     * listing code keeps working.
      */
     public function totalReplanted(): int
     {
-        return ReplantingRecord::totalForBatch($this->batch_id);
+        return (int) $this->regraft;
+    }
+
+    /**
+     * Quantity of this batch that may still be regrafted.
+     *
+     * Provisional (pending PRD `OD-6`): a dead root stock cannot be regrafted,
+     * so the cap is the tightest of the live available balance and the
+     * surviving grafted population:
+     * `max(0, min(available_count, total_grafted - effective mortality))`.
+     */
+    public function regraftableQuantity(): int
+    {
+        return max(0, min(
+            (int) $this->available_count,
+            (int) $this->total_grafted - $this->effectiveMortalityQuantity(),
+        ));
+    }
+
+    /**
+     * The next free sub-batch code for a regraft out of this batch.
+     *
+     * Provisional (pending PRD `OD-6`): the code is this batch's `batch_code`
+     * plus `-R` and the first free sequence number (`B001` → `B001-R1`,
+     * `B001-R2`, …). A sub-batch may itself be regrafted, producing a nested
+     * code (`B001-R1` → `B001-R1-R1`). Call only while the source row is
+     * locked so the uniqueness check cannot race.
+     */
+    public function nextSubBatchCode(): string
+    {
+        $sequence = 1;
+
+        do {
+            $candidate = $this->batch_code.'-R'.$sequence;
+            $sequence++;
+        } while (self::query()->where('batch_code', $candidate)->exists());
+
+        return $candidate;
     }
 
     /**
      * Replanting deficit for this batch.
      *
-     * Replanting Deficit = effective mortality - total replanted (floor 0).
+     * Replanting Deficit = effective mortality - total regrafted (floor 0).
      * This is the single definition shared by the listing and validation
-     * (RULE 6).
+     * (RULE 6). The formula is unchanged from Phase 7A; `totalReplanted()` now
+     * reads the cached `batches.regraft` counter (provisional, `OD-12`).
      */
     public function replantingDeficit(): int
     {
         return max(0, $this->effectiveMortalityQuantity() - $this->totalReplanted());
-    }
-
-    /**
-     * Remaining quantity that may still be recorded as replanting.
-     */
-    public function remainingReplantingCapacity(): int
-    {
-        return $this->replantingDeficit();
     }
 
     /**
