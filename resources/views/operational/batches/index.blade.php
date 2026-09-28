@@ -153,6 +153,7 @@
                 <thead class="table-light">
                     <tr>
                         <th class="ps-4">BATCH CODE</th>
+                        <th>PARENT BATCH</th>
                         <th>SCION VARIETY</th>
                         <th>GRAFTED</th>
                         <th class="text-end">TOTAL</th>
@@ -190,6 +191,7 @@
                                     <div class="text-muted small fw-normal">Archived {{ $batch->archived_at->format('M j, Y g:i A') }}</div>
                                 @endif
                             </td>
+                            <td class="text-muted">{{ $batch->parent?->batch_code ?? '—' }}</td>
                             <td>{{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}</td>
                             <td class="text-muted">{{ $batch->grafted_date?->format('M d, Y') ?? '—' }}</td>
                             <td class="text-end">{{ number_format($batch->total_grafted) }}</td>
@@ -234,7 +236,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-5">
+                            <td colspan="8" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 @if ($status === 'archived')
                                     No archived batches. Archived batches appear here and can be restored.

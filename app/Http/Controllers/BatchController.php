@@ -53,7 +53,7 @@ class BatchController extends Controller
         );
 
         $batches = (clone $visible)
-            ->with(['scionVariety', 'latestInventory'])
+            ->with(['scionVariety', 'latestInventory', 'parent'])
             ->withCount(['mortalityRecords', 'replantingRecords'])
             ->withExists(Batch::OPERATIONAL_RELATIONS)
             ->orderBy('batch_code')

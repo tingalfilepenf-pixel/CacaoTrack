@@ -41,7 +41,7 @@
 
 <!-- Summary -->
 <div class="row g-3 mb-4">
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm h-100 border-start border-4 border-warning">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Regraft Deficit</div>
@@ -50,7 +50,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Total Regrafted</div>
@@ -59,7 +59,16 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small fw-bold text-uppercase">Total Mortality</div>
+                <div class="fs-3 fw-bold text-danger">{{ number_format($totalMortality) }}</div>
+                <div class="text-muted small">Effective mortality for the current filters</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Batches With Deficit</div>
@@ -95,7 +104,7 @@
     </div>
 </div>
 
-<!-- Replanting Status by Batch -->
+<!-- Regraft Status by Batch -->
 <div class="card mb-4">
     <div class="card-header bg-white py-3">
         <h6 class="m-0 font-weight-bold text-primary">Regraft Status by Batch</h6>
@@ -107,9 +116,10 @@
                     <tr>
                         <th class="ps-4">BATCH</th>
                         <th>SCION VARIETY</th>
-                        <th>TOTAL MORTALITY</th>
-                        <th>REGRAFTED</th>
-                        <th>REMAINING (DEFICIT)</th>
+                        <th class="text-end">TOTAL GRAFTED</th>
+                        <th class="text-end">REGRAFT</th>
+                        <th class="text-end">MORTALITY</th>
+                        <th class="text-end">DEFICIT</th>
                         <th class="text-end pe-4">ACTION</th>
                     </tr>
                 </thead>
@@ -117,35 +127,38 @@
                     @forelse ($summaries as $summary)
                         @php
                             $batch = $summary['batch'];
-                            $history = $summary['history']->map(fn ($record) => [
-                                'date' => $record->replanting_date?->format('M j, Y'),
-                                'quantity' => (int) $record->quantity,
-                                'user' => $record->user?->name ?? 'Unknown user',
-                                'remark' => $record->remark,
-                            ])->values();
-                            $deficit = $summary['deficit'];
-                            $deficitClass = $deficit === 0 ? 'bg-success' : ($deficit <= 20 ? 'bg-warning text-dark' : 'bg-danger');
+                            $deficitClass = $summary['deficit'] === 0 ? 'bg-success' : ($summary['deficit'] <= 20 ? 'bg-warning text-dark' : 'bg-danger');
                         @endphp
                         <tr>
-                            <td class="ps-4 fw-medium">{{ $batch->batch_code }}</td>
+                            <td class="ps-4 fw-medium">
+                                {{ $batch->batch_code }}
+                                @if ($batch->isSubBatch())
+                                    <span class="badge bg-info text-dark ms-1">Sub-batch</span>
+                                @endif
+                            </td>
                             <td>{{ $batch->scionVariety?->scion_variety_name ?? '—' }}</td>
-                            <td>{{ number_format($summary['effective_mortality']) }}</td>
-                            <td><span class="text-success fw-bold">{{ number_format($summary['total_replanted']) }}</span></td>
-                            <td>
-                                <span class="badge {{ $deficitClass }} fs-6">{{ number_format($deficit) }}</span>
+                            <td class="text-end">{{ number_format($summary['total_grafted']) }}</td>
+                            <td class="text-end"><span class="text-success fw-bold">{{ number_format($summary['regraft']) }}</span></td>
+                            <td class="text-end">{{ number_format($summary['effective_mortality']) }}</td>
+                            <td class="text-end">
+                                <span class="badge {{ $deficitClass }} fs-6">{{ number_format($summary['deficit']) }}</span>
                             </td>
                             <td class="text-end pe-4">
-                                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#historyModal"
-                                    data-batch-code="{{ $batch->batch_code }}"
-                                    data-history="{{ $history->toJson() }}"
-                                    title="View History">
-                                    <i class="bi bi-clock-history"></i> History
-                                </button>
+                                @if ($summary['regraftable'] > 0 && ! $batch->isArchived())
+                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#recordReplantingModal"
+                                        data-batch-id="{{ $batch->batch_id }}" title="Record a regraft from this batch">
+                                        <i class="bi bi-arrow-repeat"></i> Regraft
+                                    </button>
+                                @elseif ($batch->isArchived())
+                                    <span class="text-muted small">Archived</span>
+                                @else
+                                    <span class="text-muted small">Nothing to regraft</span>
+                                @endif
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-5">
+                            <td colspan="7" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 No batches found for the current filters.
                             </td>
@@ -157,7 +170,62 @@
     </div>
 </div>
 
-<!-- Record Replanting Modal -->
+<!-- Regraft History -->
+<div class="card mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Regraft History</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">DATE</th>
+                        <th>SOURCE BATCH</th>
+                        <th>NEW SUB-BATCH</th>
+                        <th>SUB-BATCH VARIETY</th>
+                        <th class="text-end">QUANTITY</th>
+                        <th>REMARK</th>
+                        <th class="pe-4">RECORDED BY</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse ($history as $record)
+                        @php
+                            $source = $record->parent ?? $record->batch;
+                        @endphp
+                        <tr>
+                            <td class="ps-4">{{ $formatDate($record->replanting_date) }}</td>
+                            <td class="fw-medium">{{ $source?->batch_code ?? '—' }}</td>
+                            <td><span class="badge bg-info text-dark">{{ $record->batch?->batch_code ?? '—' }}</span></td>
+                            <td>{{ $record->batch?->scionVariety?->scion_variety_name ?? '—' }}</td>
+                            <td class="text-end fw-bold text-success">{{ number_format($record->quantity) }}</td>
+                            <td class="text-muted small">{{ $record->remark ?? '—' }}</td>
+                            <td class="pe-4">{{ $record->user?->name ?? 'Unknown user' }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                No regraft records found for the current filters.
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @if ($history->hasPages())
+        <div class="card-footer bg-white py-3 d-flex justify-content-between align-items-center border-top">
+            <span class="text-muted small">
+                Showing {{ $history->firstItem() ?? 0 }} to {{ $history->lastItem() ?? 0 }} of {{ $history->total() }} entries
+            </span>
+            {{ $history->links('pagination::bootstrap-5') }}
+        </div>
+    @endif
+</div>
+
+<!-- Record Regraft Modal -->
 <div class="modal fade" id="recordReplantingModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content border-warning">
@@ -165,87 +233,81 @@
                 <h5 class="modal-title">Record Regraft</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="{{ route('operational.replanting.records.store') }}">
+            <form method="POST" action="{{ route('operational.replanting.records.store') }}" id="recordReplantingForm">
                 @csrf
                 <div class="modal-body">
                     <div class="alert alert-info py-2 small">
-                        <i class="bi bi-info-circle me-1"></i> Recording a regraft will reduce the regraft deficit for the selected batch.
+                        <i class="bi bi-info-circle me-1"></i> Regrafted plants move to a new sub-batch (e.g. B001-R1) with its own 21-day cycle.
                     </div>
 
                     <div class="mb-3">
-                        <label for="recordBatch" class="form-label text-muted small fw-bold">Batch</label>
-                        <select class="form-select" id="recordBatch" name="batch_id" required>
+                        <label for="recordBatch" class="form-label text-muted small fw-bold">Source Batch <span class="text-danger">*</span></label>
+                        <select class="form-select @error('batch_id', 'replanting') is-invalid @enderror" id="recordBatch" name="batch_id" required>
                             <option value="" disabled @selected(old('batch_id') === null)>Select Batch</option>
-                            @foreach ($replantableBatches as $summary)
-                                <option value="{{ $summary['batch']->batch_id }}" @selected(old('batch_id') == $summary['batch']->batch_id)>
-                                    {{ $summary['batch']->batch_code }} ({{ $summary['batch']->scionVariety?->scion_variety_name ?? '—' }}) — deficit: {{ $summary['deficit'] }}
+                            @foreach ($regraftableBatches as $summary)
+                                @php $batch = $summary['batch']; @endphp
+                                <option value="{{ $batch->batch_id }}"
+                                    data-code="{{ $batch->batch_code }}"
+                                    data-variety-id="{{ $batch->scion_variety_id }}"
+                                    data-regraftable="{{ $summary['regraftable'] }}"
+                                    data-grafted-date="{{ $batch->grafted_date?->format('Y-m-d') }}"
+                                    @selected(old('batch_id') == $batch->batch_id)>
+                                    {{ $batch->batch_code }} ({{ $batch->scionVariety?->scion_variety_name ?? 'No scion' }}) — {{ $summary['regraftable'] }} regraftable
                                 </option>
                             @endforeach
                         </select>
-                        @if ($replantableBatches->isEmpty())
-                            <div class="form-text text-warning">No batches currently have a regraft deficit.</div>
+                        @error('batch_id', 'replanting')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                        @if ($regraftableBatches->isEmpty())
+                            <div class="form-text text-warning">No batches currently have a quantity available for regrafting.</div>
                         @endif
                     </div>
 
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label for="recordQuantity" class="form-label text-muted small fw-bold">Quantity Regrafted</label>
-                            <input type="number" class="form-control" id="recordQuantity" name="quantity" min="1" value="{{ old('quantity') }}" required>
+                            <label for="recordQuantity" class="form-label text-muted small fw-bold">Quantity <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control @error('quantity', 'replanting') is-invalid @enderror" id="recordQuantity"
+                                name="quantity" min="1" value="{{ old('quantity') }}" required>
+                            <div class="form-text" id="recordQuantityHint"></div>
+                            @error('quantity', 'replanting')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="col-md-6">
-                            <label for="recordDate" class="form-label text-muted small fw-bold">Regraft Date</label>
-                            <input type="date" class="form-control" id="recordDate" name="replanting_date" value="{{ old('replanting_date', now()->toDateString()) }}" required>
+                            <label for="recordDate" class="form-label text-muted small fw-bold">Regraft Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control @error('replanting_date', 'replanting') is-invalid @enderror" id="recordDate"
+                                name="replanting_date" max="{{ now()->toDateString() }}" value="{{ old('replanting_date', now()->toDateString()) }}" required>
+                            @error('replanting_date', 'replanting')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
                         </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="recordScionVariety" class="form-label text-muted small fw-bold">New Sub-Batch Scion Variety <span class="text-danger">*</span></label>
+                        <select class="form-select @error('scion_variety_id', 'replanting') is-invalid @enderror" id="recordScionVariety" name="scion_variety_id" required>
+                            <option value="" disabled @selected(old('scion_variety_id') === null)>Select Scion Variety</option>
+                            @foreach ($scionVarieties as $scionVariety)
+                                <option value="{{ $scionVariety->scion_variety_id }}" @selected(old('scion_variety_id') == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
+                            @endforeach
+                        </select>
+                        <div class="form-text">Defaults to the source batch's variety; the sub-batch may use a different one.</div>
+                        @error('scion_variety_id', 'replanting')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
                     </div>
 
                     <div class="mb-3">
                         <label for="recordRemark" class="form-label text-muted small fw-bold">Remarks</label>
                         <textarea class="form-control" id="recordRemark" name="remark" rows="2" maxlength="255" placeholder="Optional details...">{{ old('remark') }}</textarea>
                     </div>
-
-                    <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i> Regraft cannot exceed the batch's remaining deficit (effective mortality minus already regrafted).
-                    </p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning text-dark fw-bold">Save Regraft</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-bold" id="recordReplantingSubmitBtn">Save Regraft</button>
                 </div>
             </form>
-        </div>
-    </div>
-</div>
-
-<!-- Replanting History Modal -->
-<div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Regraft History — <span id="historyBatch">&mdash;</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Date</th>
-                                <th>Quantity</th>
-                                <th>Recorded By</th>
-                                <th>Remark</th>
-                            </tr>
-                        </thead>
-                        <tbody id="historyRows">
-                            <tr>
-                                <td colspan="4" class="text-center text-muted py-3">No regraft records.</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
         </div>
     </div>
 </div>
@@ -254,43 +316,60 @@
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const historyModal = document.getElementById('historyModal');
-        if (historyModal) {
-            historyModal.addEventListener('show.bs.modal', function (event) {
+        const modalEl = document.getElementById('recordReplantingModal');
+        const batchSelect = document.getElementById('recordBatch');
+        const quantityInput = document.getElementById('recordQuantity');
+        const varietySelect = document.getElementById('recordScionVariety');
+        const dateInput = document.getElementById('recordDate');
+        const hint = document.getElementById('recordQuantityHint');
+
+        const applyBatchConstraints = function () {
+            const option = batchSelect.options[batchSelect.selectedIndex];
+            const regraftable = option ? parseInt(option.getAttribute('data-regraftable') || '0', 10) : 0;
+            const varietyId = option ? option.getAttribute('data-variety-id') : null;
+            const graftedDate = option ? option.getAttribute('data-grafted-date') : null;
+
+            if (regraftable > 0) {
+                quantityInput.max = regraftable;
+                hint.textContent = 'Up to ' + regraftable + ' available for regrafting.';
+            } else {
+                quantityInput.removeAttribute('max');
+                hint.textContent = '';
+            }
+
+            if (graftedDate) {
+                dateInput.min = graftedDate;
+            } else {
+                dateInput.removeAttribute('min');
+            }
+
+            if (varietyId) {
+                varietySelect.value = varietyId;
+            }
+        };
+
+        if (batchSelect) {
+            batchSelect.addEventListener('change', applyBatchConstraints);
+        }
+
+        if (modalEl) {
+            modalEl.addEventListener('show.bs.modal', function (event) {
                 const button = event.relatedTarget;
-                if (!button) {
-                    return;
+                if (button && button.getAttribute('data-batch-id')) {
+                    batchSelect.value = button.getAttribute('data-batch-id');
                 }
 
-                document.getElementById('historyBatch').textContent = button.getAttribute('data-batch-code') || '—';
+                applyBatchConstraints();
+                quantityInput.focus();
+            });
+        }
 
-                let records = [];
-                try {
-                    records = JSON.parse(button.getAttribute('data-history') || '[]');
-                } catch (error) {
-                    records = [];
-                }
-
-                const tbody = document.getElementById('historyRows');
-                const escape = function (value) {
-                    const div = document.createElement('div');
-                    div.textContent = value == null ? '' : value;
-                    return div.innerHTML;
-                };
-
-                if (!records.length) {
-                    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No regraft records.</td></tr>';
-                    return;
-                }
-
-                tbody.innerHTML = records.map(function (record) {
-                    return '<tr>' +
-                        '<td>' + escape(record.date) + '</td>' +
-                        '<td class="fw-bold text-success">' + escape(record.quantity) + '</td>' +
-                        '<td>' + escape(record.user) + '</td>' +
-                        '<td>' + escape(record.remark) + '</td>' +
-                        '</tr>';
-                }).join('');
+        const form = document.getElementById('recordReplantingForm');
+        if (form) {
+            form.addEventListener('submit', function () {
+                const btn = document.getElementById('recordReplantingSubmitBtn');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
             });
         }
     });

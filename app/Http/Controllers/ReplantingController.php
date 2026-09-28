@@ -2,23 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\RegraftBatch;
 use App\Http\Requests\StoreReplantingRecordRequest;
-use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\ReplantingRecord;
+use App\Models\ScionVariety;
 use App\Support\DuplicateSubmissionGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class ReplantingController extends Controller
 {
     /**
-     * FR-05 Replanting listing. Replanting is linked to the batch and its
-     * deficit (effective mortality − total replanted); the removed scion stock
-     * pool is no longer involved.
+     * FR-05 Regraft listing (Phase 7B).
+     *
+     * Regrafting moves a quantity out of a source batch into a linked sub-batch,
+     * so the per-batch table reads the cached `batches.regraft` counter and the
+     * history reads the `parent_batch_id` link recorded by the regraft action.
      */
     public function index(Request $request): View
     {
@@ -27,45 +28,57 @@ class ReplantingController extends Controller
         ]);
 
         $batches = Batch::query()
-            ->with(['scionVariety', 'replantingRecords.user'])
+            ->with(['scionVariety', 'parent'])
             ->when($filters['batch_id'] ?? null, fn ($query, $batchId) => $query->where('batch_id', $batchId))
             ->orderBy('batch_code')
             ->get();
 
         $summaries = $batches->map(function (Batch $batch): array {
-            $effectiveMortality = $batch->effectiveMortalityQuantity();
-            $totalReplanted = $batch->totalReplanted();
-
             return [
                 'batch' => $batch,
-                'effective_mortality' => $effectiveMortality,
-                'total_replanted' => $totalReplanted,
-                'deficit' => max(0, $effectiveMortality - $totalReplanted),
-                'history' => $batch->replantingRecords
-                    ->sortByDesc('replanting_date')
-                    ->values(),
+                'total_grafted' => (int) $batch->total_grafted,
+                'regraft' => $batch->totalReplanted(),
+                'effective_mortality' => $batch->effectiveMortalityQuantity(),
+                'deficit' => $batch->replantingDeficit(),
+                'regraftable' => $batch->regraftableQuantity(),
             ];
         });
 
-        $replantableBatches = $summaries
-            ->where('deficit', '>', 0)
+        $regraftableBatches = $summaries
+            ->where('regraftable', '>', 0)
             ->reject(fn (array $summary) => $summary['batch']->isArchived())
             ->values();
 
+        $history = ReplantingRecord::query()
+            ->with(['batch.scionVariety', 'parent', 'user'])
+            ->when($filters['batch_id'] ?? null, fn ($query, $batchId) => $query->where(
+                fn ($subQuery) => $subQuery
+                    ->where('parent_batch_id', $batchId)
+                    ->orWhere('batch_id', $batchId),
+            ))
+            ->orderByDesc('replanting_date')
+            ->orderByDesc('replanting_id')
+            ->paginate(10)
+            ->withQueryString();
+
         return view('operational.replanting.index', [
             'summaries' => $summaries,
-            'replantableBatches' => $replantableBatches,
+            'regraftableBatches' => $regraftableBatches,
+            'history' => $history,
+            'scionVarieties' => ScionVariety::active()->orderBy('scion_variety_name')->get(),
             'filters' => $filters,
             'totalDeficit' => $summaries->sum('deficit'),
-            'totalReplanted' => $summaries->sum('total_replanted'),
+            'totalReplanted' => $summaries->sum('regraft'),
             'totalMortality' => $summaries->sum('effective_mortality'),
             'batchesWithDeficit' => $summaries->where('deficit', '>', 0)->count(),
         ]);
     }
 
     /**
-     * Record a replanting entry against the batch's remaining deficit. The
-     * removed Scion stock-pool lock/deduction is gone (revised ERD §6).
+     * Record a regraft: the single {@see RegraftBatch} action moves the quantity
+     * out of the source batch, creates the linked sub-batch and its regraft
+     * record inside one DB transaction. The duplicate-submission guard wraps the
+     * action so a double-clicked form cannot create two sub-batches.
      */
     public function store(StoreReplantingRecordRequest $request): RedirectResponse
     {
@@ -74,33 +87,15 @@ class ReplantingController extends Controller
         $fingerprint = DuplicateSubmissionGuard::assertFresh('replanting', $validated, 'replanting');
 
         try {
-            DB::transaction(function () use ($validated): void {
-                $batch = Batch::query()->lockForUpdate()->findOrFail($validated['batch_id']);
+            $source = Batch::query()->findOrFail($validated['batch_id']);
 
-                $deficit = $batch->replantingDeficit();
-
-                if ((int) $validated['quantity'] > $deficit) {
-                    $this->failValidation([
-                        'quantity' => "Regraft cannot exceed the batch's remaining deficit of {$deficit} for {$batch->batch_code}.",
-                    ], 'replanting');
-                }
-
-                ReplantingRecord::create([
-                    'batch_id' => $batch->batch_id,
-                    'user_id' => Auth::id(),
-                    'quantity' => $validated['quantity'],
-                    'replanting_date' => $validated['replanting_date'],
-                    'remark' => $validated['remark'] ?? null,
-                ]);
-
-                ActivityLog::record(
-                    $batch->batch_id,
-                    ActivityLog::TYPE_REPLANTING_RECORDED,
-                    "Recorded {$validated['quantity']} regraft for {$batch->batch_code}.",
-                    null,
-                    $validated['replanting_date'],
-                );
-            });
+            $subBatch = (new RegraftBatch)->execute(
+                $source,
+                (int) $validated['quantity'],
+                (int) $validated['scion_variety_id'],
+                $validated['replanting_date'],
+                $validated['remark'] ?? null,
+            );
         } catch (\Throwable $exception) {
             DuplicateSubmissionGuard::release('replanting', $fingerprint);
 
@@ -109,6 +104,6 @@ class ReplantingController extends Controller
 
         return redirect()
             ->route('operational.replanting')
-            ->with('success', 'Regraft record saved successfully.');
+            ->with('success', "Regraft recorded; sub-batch {$subBatch->batch_code} created.");
     }
 }
