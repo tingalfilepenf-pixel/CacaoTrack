@@ -324,10 +324,10 @@
                                     <option value="">Select batch</option>
                                     @foreach ($batches as $batch)
                                         <option value="{{ $batch->batch_id }}"
-                                            data-available="{{ (int) $batch->available_count }}"
+                                            data-available="{{ $batch->survivingQuantity() }}"
                                             data-batch-code="{{ $batch->batch_code }}"
                                             data-scion-variety="{{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}">
-                                            {{ $batch->batch_code }} — {{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }} (Available: {{ number_format((int) $batch->available_count) }})
+                                            {{ $batch->batch_code }} — {{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }} (Available: {{ number_format($batch->survivingQuantity()) }})
                                         </option>
                                     @endforeach
                                 </select>

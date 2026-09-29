@@ -215,6 +215,35 @@ class StockOutTest extends TestCase
         $this->assertSame(400, (int) $batch->fresh()->available_count);
     }
 
+    public function test_stock_out_form_hint_matches_the_surviving_quantity_for_a_batch_with_mortality(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, 'B001', 500);
+
+        // 400 deaths recorded; the raw available balance is still 500 (mortality
+        // never decrements it), so the raw and surviving figures differ. The
+        // form hint must show the same 100 the server enforces on submit.
+        MortalityRecord::create([
+            'batch_id' => $batch->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 400,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-08-01',
+        ]);
+
+        $surviving = $batch->fresh()->survivingQuantity();
+
+        $this->assertSame(100, $surviving);
+        $this->assertNotSame((int) $batch->fresh()->available_count, $surviving);
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-out'))
+            ->assertOk()
+            ->assertSee('data-available="'.$surviving.'"', false)
+            ->assertSee('(Available: '.number_format($surviving).')', false)
+            ->assertDontSee('data-available="500"', false);
+    }
+
     public function test_stock_out_rejects_a_batch_without_a_scion_variety(): void
     {
         $user = User::factory()->create();
