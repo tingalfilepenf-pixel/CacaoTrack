@@ -98,6 +98,17 @@ class AnalyticsMetrics
      * Crude Mortality Rate numerator/denominator (PRD §10 Dashboard / §11 Data
      * Consistency).
      *
+     * Denominator = `SUM(total_grafted - regraft)` across the filtered batches,
+     * the client-confirmed still-attributable/live population ("Grafted minus
+     * Regraft = mortality or yield for the parent batch").
+     *
+     * Why not the raw `SUM(total_grafted)`: a batch's `total_grafted` is a
+     * cumulative, non-decreasing log, so raw `SUM(total_grafted)` double-counts
+     * every regrafted plant — once in the source batch's total, again in the
+     * sub-batch's total, and a third time if that sub-batch is itself regrafted.
+     * `SUM(total_grafted - regraft)` counts each physical plant exactly once, at
+     * wherever it currently is.
+     *
      * @return array{numerator:int,denominator:int}
      */
     public static function mortalityRateComponents(
@@ -108,7 +119,7 @@ class AnalyticsMetrics
     ): array {
         return [
             'numerator' => self::effectiveMortality($batchId, $scionVarietyId, $from, $to),
-            'denominator' => (int) self::batchQuery($batchId, $scionVarietyId)->sum('total_grafted'),
+            'denominator' => (int) self::batchQuery($batchId, $scionVarietyId)->sum(DB::raw('total_grafted - regraft')),
         ];
     }
 
@@ -190,11 +201,15 @@ class AnalyticsMetrics
     }
 
     /**
-     * Surviving vs mortality split based on the grafted population.
+     * Surviving vs mortality split based on the still-attributable population.
      *
-     * Mortality never mutates `available_count`, so surviving =
-     * max(0, total_grafted - recorded mortality) and the two slices sum to the
-     * original grafted population (RULE 6).
+     * The population basis is `SUM(total_grafted - regraft)` across the filtered
+     * batches (client-confirmed: a batch's live population is
+     * `total_grafted - regraft`). Raw `SUM(total_grafted)` double-counts every
+     * regrafted plant (source + sub-batch, again if nested), so the two slices
+     * would not match the real plant count. Mortality never mutates
+     * `available_count`, so surviving = max(0, population - recorded mortality)
+     * and the two slices sum to the live population (RULE 6).
      *
      * @return array{surviving:int,mortality:int,totalGrafted:int}
      */
@@ -204,13 +219,13 @@ class AnalyticsMetrics
         ?string $from = null,
         ?string $to = null,
     ): array {
-        $totalGrafted = (int) self::batchQuery($batchId, $scionVarietyId)->sum('total_grafted');
+        $population = (int) self::batchQuery($batchId, $scionVarietyId)->sum(DB::raw('total_grafted - regraft'));
         $mortality = self::effectiveMortality($batchId, $scionVarietyId, $from, $to);
 
         return [
-            'surviving' => max(0, $totalGrafted - $mortality),
+            'surviving' => max(0, $population - $mortality),
             'mortality' => $mortality,
-            'totalGrafted' => $totalGrafted,
+            'totalGrafted' => $population,
         ];
     }
 

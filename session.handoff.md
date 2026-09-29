@@ -1,6 +1,20 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CJ — **`Total_Grafted` confirmed as a cumulative, non-decreasing log; a regraft no longer reduces it**)
+> ### ▶ Continue here (latest: Session CK — **Crude Mortality Rate denominator corrected to `SUM(total_grafted − regraft)`**)
+> - **▶ Session CK (DONE — follow-up to CJ: mortality-rate denominator de-double-counted, 2026-09-29):**
+>   `AnalyticsMetrics::mortalityRateComponents()` now returns denominator
+>   `SUM(total_grafted − regraft)` instead of raw `SUM(total_grafted)`, and
+>   `survivalVsMortality()` uses the same live-population basis (both otherwise double-counted every
+>   regrafted plant — source + sub-batch, and again if nested). Verified live on a fresh
+>   `db_capstone_test` seed: raw `SUM(total_grafted)` **880**, `SUM(regraft)` **130**,
+>   `SUM(total_grafted − regraft)` **750**; numerator 55 → **rate 7.33%** (back to the correct value
+>   CJ's 6.25% had wrong). PRD §10/§11/§19 and ERD §3.8 restated as `SUM(Total_Grafted − Regraft)`;
+>   `_REVISED` copies byte-identical. Full MySQL suite **329 passed / 1427 assertions**.
+>   **Explicitly checked and NOT changed** (see the CK write-up): `stockLedgerGrid().summary.grafted`
+>   (root batches only — no parent/sub double count); `batchSummary().totals.total_grafted` and
+>   `gapReport().totalExpected` (arithmetic/context sums of the per-batch cumulative column, not a
+>   claimed unique population — flagged for the already-open label decision); `InventoryController`
+>   `totalGrafted` (sums snapshot rows, a different aggregation). **No `db_capstone` change.**
 > - **▶ Session CJ (DONE — client-confirmed `Total_Grafted` semantics; two source changes + tests + docs, 2026-09-29):**
 >   the client confirmed (spreadsheet `RU-Summary.jpg`, row 4 / 10/2025 "re graft" = a new Grafted entry
 >   plus a Re Graft entry on the **same row**; direct statement *"Grafted minus Regraft = mortality or
@@ -15,8 +29,9 @@
 >   Phase 7C family-conservation assertions rewritten (the raw family sum is no longer conserved;
 >   `total_grafted − regraft` is). Full MySQL suite **329 passed / 1425 assertions** against
 >   `db_capstone_test` (was 328/1406). **Seeded family under the corrected rule:** B001 500/400/100 ·
->   B001-R1 100/50/30 · B001-R1-R1 30/30/0 · B002 150/150/0 · B003 100/100/0 → `Σtotal_grafted` **880**,
->   `Σavailable` **730**, `Σregraft` **130**; Crude Mortality Rate 55/880 = **6.25%** (was 7.33%);
+>   B001-R1 100/50/30 · B001-R1-R1 30/30/0 · B002 150/150/0 · B003 100/100/0 → raw `Σtotal_grafted`
+>   **880**, `Σavailable` **730**, `Σregraft` **130**; Crude Mortality Rate at that commit 55/880 =
+>   **6.25%** — **corrected in Session CK to 55/750 = 7.33%**;
 >   stock-ledger *Grafted* (roots only) **750**. **Docs:** `docs/CacaoTrack_PRD.md`
 >   §2.4/§10/§11 (new "Total Grafted")/§19 — the Total_Grafted clauses of `OD-4`, `OD-6`, `OD-10` are
 >   now **CONFIRMED** — and `docs/CacaoTrack_ERD.md` §2 rule 7/§3.8/§3.11; the `_REVISED` copies are
@@ -319,13 +334,15 @@
 >   (and the earlier CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ entries).
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session CJ (2026-09-29)** — the client **confirmed that `total_grafted` is a
+project after **Session CK (2026-09-29)** — a follow-up to CJ that corrected the **Crude Mortality
+Rate denominator** to `SUM(total_grafted − regraft)` (raw `SUM(total_grafted)` double-counted regrafted
+plants). In CJ the client **confirmed that `total_grafted` is a
 cumulative, non-decreasing log** (spreadsheet `RU-Summary.jpg`; *"Grafted minus Regraft = mortality or
-yield for the parent batch"*). In that session `App\Actions\RegraftBatch` stopped decrementing the
+yield for the parent batch"*): `App\Actions\RegraftBatch` stopped decrementing the
 source `total_grafted` (only `available_count` and `regraft` change), and
 `Batch::remainingMortalityCapacity()` / `Batch::regraftableQuantity()` now bound against
 `(total_grafted − regraft)`; the PRD/ERD `OD-4`/`OD-6`/`OD-10` Total_Grafted clauses are now
-**CONFIRMED**. The full MySQL suite is **329 passed / 1425 assertions** against `db_capstone_test`.
+**CONFIRMED**. The full MySQL suite is **329 passed / 1427 assertions** against `db_capstone_test`.
 **`db_capstone` was deliberately NOT reseeded** in Session CJ — it still holds the Phase 7D seed under
 the old arithmetic, so live rows do not yet satisfy `available_count ≤ total_grafted − regraft`; a
 fresh wipe + reseed needs fresh explicit sign-off. The substantive prior state is unchanged from

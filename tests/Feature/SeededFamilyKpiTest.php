@@ -14,8 +14,9 @@ use Tests\TestCase;
  * Seed (DatabaseSeeder), under the CONFIRMED cumulative rule: `total_grafted`
  * never decreases, so B001 keeps 500 and B001-R1 keeps 100. The B001 family is
  * B001 500 + B001-R1 100 + B001-R1-R1 30 (raw sum 630), plus B002 150 and
- * B003 100 — a grand raw sum of 880. The still-attributable population
- * (total_grafted - regraft) is what is conserved at 500.
+ * B003 100 — a grand raw sum of 880 (KPI denominator 750 after removing the 130
+ * regrafted plants). The still-attributable population (total_grafted - regraft)
+ * is what is conserved at 500.
  */
 class SeededFamilyKpiTest extends TestCase
 {
@@ -37,13 +38,23 @@ class SeededFamilyKpiTest extends TestCase
         );
     }
 
-    public function test_crude_mortality_rate_denominator_is_the_sum_of_total_grafted(): void
+    public function test_crude_mortality_rate_denominator_is_the_still_attributable_population(): void
     {
         $components = AnalyticsMetrics::mortalityRateComponents();
 
-        $this->assertSame((int) Batch::query()->sum('total_grafted'), $components['denominator']);
-        // Cumulative total_grafted: 500 + 100 + 30 + 150 + 100 = 880.
-        $this->assertSame(880, $components['denominator']);
+        // Denominator = SUM(total_grafted - regraft) = (500-100) + (100-30) +
+        // (30-0) + (150-0) + (100-0) = 400 + 70 + 30 + 150 + 100 = 750. The raw
+        // cumulative sum (880) would double-count the 130 regrafted plants.
+        $livePopulation = (int) Batch::query()
+            ->get()
+            ->sum(fn (Batch $batch) => (int) $batch->total_grafted - (int) $batch->regraft);
+
+        $this->assertSame($livePopulation, $components['denominator']);
+        $this->assertSame(750, $components['denominator']);
+
+        // numerator 55 / 750 * 100 = 7.33%.
+        $this->assertSame(55, $components['numerator']);
+        $this->assertSame(7.33, AnalyticsMetrics::crudeMortalityRate());
 
         // total_grafted is a cumulative, non-decreasing log, so the family's raw
         // sum grows: 500 + 100 + 30 = 630. What is conserved is the still-

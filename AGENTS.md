@@ -23,17 +23,20 @@
     `available_count -= q` and `regraft += q`.
   - `Batch::remainingMortalityCapacity() = max(0, (total_grafted − regraft) − effectiveMortalityQuantity())`.
   - `Batch::regraftableQuantity() = max(0, min(available_count, (total_grafted − regraft) − effectiveMortalityQuantity()))`.
+  - `AnalyticsMetrics::mortalityRateComponents()` denominator =
+    `SUM(total_grafted − regraft)` (and `survivalVsMortality()` uses the same live-population basis).
 - **Docs:** `docs/CacaoTrack_PRD.md` §2.4 / §10 / §11 (new "Total Grafted" subsection) / §19 — the
   Total_Grafted clauses of `OD-4`, `OD-6` and `OD-10` are now **CONFIRMED**; `docs/CacaoTrack_ERD.md`
   §2 rule 7 / §3.8 / §3.11. The `_REVISED` copies are kept byte-identical (SHA-256 match).
-- **Tests:** full MySQL suite **329 passed / 1425 assertions** against `db_capstone_test` (was
+- **Tests:** full MySQL suite **329 passed / 1427 assertions** against `db_capstone_test` (was
   328/1406). New `RegraftFlowTest::test_caps_are_computed_against_the_remaining_population_not_the_raw_total`;
   the Phase 7C family-conservation assertions were rewritten (raw family sum is **not** conserved any
-  more; `total_grafted − regraft` is).
+  more; `total_grafted − regraft` is). Session CK (follow-up) corrected the mortality-rate denominator
+  and updated `AnalyticsTest` / `SeededFamilyKpiTest` to the live-population basis.
 - **Seeded family under the corrected rule (fresh `db_capstone_test` seed):** B001 500/400/100,
-  B001-R1 100/50/30, B001-R1-R1 30/30/0, B002 150/150/0, B003 100/100/0 → `Σtotal_grafted` **880**,
-  `Σavailable` **730**, `Σregraft` **130**; Crude Mortality Rate 55/880 = **6.25%** (was 7.33%);
-  stock-ledger *Grafted* (root batches only) **750**.
+  B001-R1 100/50/30, B001-R1-R1 30/30/0, B002 150/150/0, B003 100/100/0 → raw `Σtotal_grafted` **880**,
+  KPI denominator `Σ(total_grafted − regraft)` **750**, `Σavailable` **730**, `Σregraft` **130**;
+  Crude Mortality Rate 55/750 = **7.33%**; stock-ledger *Grafted* (root batches only) **750**.
 - **⚠ `db_capstone` was deliberately NOT reseeded.** It still holds the Phase 7D seed produced under
   the old arithmetic (B001 total 400, `regraft` 100), so live rows do **not** yet satisfy
   `available_count ≤ total_grafted − regraft`. A fresh wipe + reseed needs fresh explicit sign-off
@@ -217,9 +220,9 @@
   Crude Mortality Rate denominator; B001 family total_grafted **500** conserved; `Σregraft` **130** ==
   `Σ(replanting_records.quantity)` **130**; Seedlings **800** (seedling-only) vs **1000** all Stock In;
   ledger grafted **650** / ready_to_plant **730**. Under the corrected cumulative rule these become
-  SUM total_grafted **880** / denominator **880** / rate **6.25%**, family sum **630** (with
-  `total_grafted − regraft` still **500**), and ledger grafted **750**; available **730**, regraft
-  **130**, seedlings **800** are unchanged.
+  raw SUM total_grafted **880** / denominator `SUM(total_grafted − regraft)` **750** / rate **7.33%**,
+  family sum **630** (with `total_grafted − regraft` still **500**), and ledger grafted **750**;
+  available **730**, regraft **130**, seedlings **800** are unchanged.
 - **`db_capstone` was upgraded + reseeded in Phase 7D (2026-09-29)** — the four `2026_09_27_*`
   migrations are applied and the live DB matches this schema. (They remained Pending through
   Phase 7C; applying them + the reseed was the separate, explicitly approved step executed in

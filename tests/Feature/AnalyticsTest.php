@@ -126,7 +126,7 @@ class AnalyticsTest extends TestCase
             ->assertOk()
             ->assertSee('Operational Analytics')
             ->assertSee('270')    // total active inventory (170 + 100)
-            ->assertSee('11.67')  // crude mortality rate = 35 / 300
+            ->assertSee('12.28')  // crude mortality rate = 35 / (200-15 + 100) = 35/285
             ->assertSee('20');    // total regraft deficit (B001 10 + B002 10)
     }
 
@@ -154,7 +154,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Total Active Inventory', $content);
         $this->assertStringContainsString('270', $content);
         $this->assertStringContainsString('Crude Mortality Rate', $content);
-        $this->assertStringContainsString('11.67%', $content);
+        $this->assertStringContainsString('12.28%', $content);
         $this->assertStringContainsString('Regraft Deficit', $content);
         $this->assertStringContainsString('Mortality Trend', $content);
         $this->assertStringContainsString('Inventory by Scion Variety', $content);
@@ -162,7 +162,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Trinitario', $content);
         $this->assertStringContainsString('Survival vs Mortality', $content);
         $this->assertStringContainsString('Surviving', $content);
-        $this->assertStringContainsString('265', $content); // surviving = total grafted 300 - mortality 35
+        $this->assertStringContainsString('250', $content); // surviving = live population 285 - mortality 35
     }
 
     public function test_operational_analytics_csv_export_renders_real_data(): void
@@ -177,7 +177,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Operational Analytics', $csv);
         $this->assertStringContainsString('Key Performance Indicators', $csv);
         $this->assertStringContainsString('Crude Mortality Rate', $csv);
-        $this->assertStringContainsString('11.67%', $csv);
+        $this->assertStringContainsString('12.28%', $csv);
         $this->assertStringContainsString('Mortality Trend (Last 6 Months)', $csv);
         $this->assertStringContainsString('Inventory by Scion Variety', $csv);
         $this->assertStringContainsString('Regraft Deficit by Batch', $csv);
@@ -191,16 +191,18 @@ class AnalyticsTest extends TestCase
     {
         $this->assertSame(270, AnalyticsMetrics::totalActiveInventory());
         $this->assertSame(20, AnalyticsMetrics::totalReplantingDeficit());
-        $this->assertSame(11.67, AnalyticsMetrics::crudeMortalityRate());
+        // Denominator = SUM(total_grafted - regraft) = (200-15) + 100 = 285;
+        // 35 / 285 = 12.28%.
+        $this->assertSame(12.28, AnalyticsMetrics::crudeMortalityRate());
 
         $components = AnalyticsMetrics::mortalityRateComponents();
         $this->assertSame(35, $components['numerator']);
-        $this->assertSame(300, $components['denominator']);
+        $this->assertSame(285, $components['denominator']);
 
         $survival = AnalyticsMetrics::survivalVsMortality();
-        $this->assertSame(300, $survival['totalGrafted']);
+        $this->assertSame(285, $survival['totalGrafted']);
         $this->assertSame(35, $survival['mortality']);
-        $this->assertSame(265, $survival['surviving']);
+        $this->assertSame(250, $survival['surviving']);
     }
 
     public function test_stock_ledger_shows_real_batch_data(): void
