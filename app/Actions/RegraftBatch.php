@@ -28,7 +28,7 @@ use Illuminate\Validation\ValidationException;
  * controller, the seeders and the tests all go through {@see execute()}.
  *
  * Regraft details implemented here:
- *  - the regraftable cap is `Batch::regraftableQuantity()`
+ *  - the regraftable cap is `Batch::survivingQuantity()`
  *    (`min(available_count, (total_grafted - regraft) - effective mortality)`);
  *  - the sub-batch code is `Batch::nextSubBatchCode()` (`B001` → `B001-R1`);
  *  - the {@see RegraftRecord} stores `batch_id` = the new sub-batch and
@@ -66,7 +66,7 @@ class RegraftBatch
                 ]);
             }
 
-            $regraftable = $locked->regraftableQuantity();
+            $regraftable = $locked->survivingQuantity();
 
             if ($quantity < 1 || $quantity > $regraftable) {
                 $this->fail([

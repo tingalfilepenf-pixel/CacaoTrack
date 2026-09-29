@@ -82,8 +82,11 @@ class StockOutController extends Controller
      * Record a Stock Out header and all of its detail lines inside one DB
      * transaction (revised PRD §8). Availability is validated per line against
      * that line's own batch AND per batch for the summed lines *before* any
-     * row is written, so a partial commit is impossible. `scion_variety_id`,
-     * `amount` and `total_amount` are never read from the request.
+     * row is written, so a partial commit is impossible. The cap is the batch's
+     * surviving quantity (`Batch::survivingQuantity()`), not the raw
+     * `available_count`, so plants already recorded as mortality can never be
+     * released. `scion_variety_id`, `amount` and `total_amount` are never read
+     * from the request.
      */
     public function store(StoreStockOutRequest $request): RedirectResponse
     {
@@ -191,9 +194,11 @@ class StockOutController extends Controller
                 ], 'stockout');
             }
 
-            if ((int) $line['quantity'] > (int) $batch->available_count) {
+            $surviving = $batch->survivingQuantity();
+
+            if ((int) $line['quantity'] > $surviving) {
                 $this->failValidation([
-                    "details.{$index}.quantity" => "Quantity exceeds available inventory for {$batch->batch_code}.",
+                    "details.{$index}.quantity" => "Quantity exceeds the {$surviving} surviving plants available for {$batch->batch_code}.",
                 ], 'stockout');
             }
         }
@@ -212,9 +217,11 @@ class StockOutController extends Controller
                 ], 'stockout');
             }
 
-            if ($requested > (int) $batch->available_count) {
+            $surviving = $batch->survivingQuantity();
+
+            if ($requested > $surviving) {
                 $this->failValidation([
-                    "details.{$firstIndex}.quantity" => "Quantity exceeds available inventory for {$batch->batch_code}.",
+                    "details.{$firstIndex}.quantity" => "Quantity exceeds the {$surviving} surviving plants available for {$batch->batch_code}.",
                 ], 'stockout');
             }
         }

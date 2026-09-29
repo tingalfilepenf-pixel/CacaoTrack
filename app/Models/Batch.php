@@ -216,14 +216,21 @@ class Batch extends Model
     }
 
     /**
-     * Quantity of this batch that may still be regrafted.
+     * The surviving / releasable quantity of this batch — the single cap shared
+     * by the regraft flow and Stock Out.
      *
-     * A dead root stock cannot be regrafted, so the cap is the tightest of the
-     * live available balance and the still-attributable, surviving population
-     * (`total_grafted − regraft − effective mortality`, client-confirmed):
+     * A dead root stock can neither be regrafted nor released, so the cap is the
+     * tightest of the live available balance and the still-attributable, surviving
+     * population (`total_grafted − regraft − effective mortality`,
+     * client-confirmed):
      * `max(0, min(available_count, (total_grafted - regraft) - effective mortality))`.
+     *
+     * It is used by {@see RegraftBatch} as the regraft cap and by the Stock Out
+     * controller as the release cap, so plants already recorded as mortality can
+     * never be regrafted or released. This is why mortality does not have to
+     * decrement `available_count` — the surviving cap accounts for it.
      */
-    public function regraftableQuantity(): int
+    public function survivingQuantity(): int
     {
         return max(0, min(
             (int) $this->available_count,

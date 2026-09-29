@@ -185,7 +185,7 @@ class RegraftFlowTest extends TestCase
 
         // regraftable = min(100, (100 - 0) - 90) = 10; dead root stock cannot be
         // regrafted.
-        $this->assertSame(10, $source->fresh()->regraftableQuantity());
+        $this->assertSame(10, $source->fresh()->survivingQuantity());
 
         $this->postRegraft($user, $source, 11)
             ->assertSessionHasErrors('quantity', null, 'regraft');
@@ -211,7 +211,7 @@ class RegraftFlowTest extends TestCase
         // Both caps are computed against (total_grafted - regraft) = 400, NOT
         // the raw total_grafted = 500.
         $this->assertSame(400, $source->remainingMortalityCapacity());
-        $this->assertSame(400, $source->regraftableQuantity());
+        $this->assertSame(400, $source->survivingQuantity());
 
         // 450 exceeds the 400 that actually remain -> rejected (a raw
         // total_grafted ceiling would have allowed it).
@@ -224,7 +224,7 @@ class RegraftFlowTest extends TestCase
         $this->mortality($source, $user, 50);
         $source->refresh();
         $this->assertSame(350, $source->remainingMortalityCapacity());
-        $this->assertSame(350, $source->regraftableQuantity());
+        $this->assertSame(350, $source->survivingQuantity());
 
         // 400 now exceeds the 350 still attributable -> rejected.
         $this->postRegraft($user, $source, 400)

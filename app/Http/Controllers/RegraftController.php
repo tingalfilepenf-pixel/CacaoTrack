@@ -40,7 +40,7 @@ class RegraftController extends Controller
                 'regraft' => $batch->totalRegrafted(),
                 'effective_mortality' => $batch->effectiveMortalityQuantity(),
                 'deficit' => $batch->regraftDeficit(),
-                'regraftable' => $batch->regraftableQuantity(),
+                'regraftable' => $batch->survivingQuantity(),
             ];
         });
 

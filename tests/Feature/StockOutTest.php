@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\Client;
+use App\Models\MortalityRecord;
 use App\Models\ScionVariety;
 use App\Models\StockOut;
 use App\Models\StockOutDetail;
@@ -169,6 +170,49 @@ class StockOutTest extends TestCase
 
         $this->assertSame(0, StockOut::count());
         $this->assertSame(100, (int) $batch->fresh()->available_count);
+    }
+
+    public function test_stock_out_is_capped_by_the_surviving_population_not_the_raw_available_balance(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, 'B001', 500);
+        $client = $this->createClient();
+
+        // 400 deaths are recorded, but mortality never decrements the live
+        // available balance (confirmed rule), so it still reads 500. Only 100
+        // plants actually survive and may be released.
+        MortalityRecord::create([
+            'batch_id' => $batch->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 400,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-08-01',
+        ]);
+
+        $this->assertSame(100, $batch->fresh()->survivingQuantity());
+
+        // 200 <= the raw 500 balance but > the 100 survivors -> rejected with a
+        // message naming the batch and the survivable quantity.
+        $this->actingAs($user)
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 200, 'unit' => 'pots'],
+            ]))
+            ->assertSessionHasErrors([
+                'details.0.quantity' => 'Quantity exceeds the 100 surviving plants available for B001.',
+            ], null, 'stockout');
+
+        $this->assertSame(0, StockOut::count());
+        $this->assertSame(500, (int) $batch->fresh()->available_count);
+
+        // Releasing exactly the 100 survivors succeeds and decrements the balance.
+        $this->actingAs($user)
+            ->post(route('inventory.stock-out.store'), $this->payload($client, [
+                ['batch_id' => $batch->batch_id, 'quantity' => 100, 'unit' => 'pots'],
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(1, StockOut::count());
+        $this->assertSame(400, (int) $batch->fresh()->available_count);
     }
 
     public function test_stock_out_rejects_a_batch_without_a_scion_variety(): void
