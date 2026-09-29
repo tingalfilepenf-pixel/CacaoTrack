@@ -149,8 +149,10 @@ class StockLedgerNestingTest extends TestCase
             'grafted_date' => '2026-09-08',
         ], $byCode['B001-R1-R1']);
 
-        // Cumulative raw sum: 500 + 100 + 30 + 150 + 100 = 880.
-        $this->assertSame(880, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['total_grafted']);
+        // Cross-batch total counts each plant once: SUM(total_grafted - regraft)
+        // = (500-100) + (100-30) + (30-0) + (150-0) + (100-0) = 750, NOT the raw
+        // cumulative 500 + 100 + 30 + 150 + 100 = 880.
+        $this->assertSame(750, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['total_grafted']);
         $this->assertSame(730, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['available']);
     }
 

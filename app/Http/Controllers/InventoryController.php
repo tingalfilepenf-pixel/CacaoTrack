@@ -98,7 +98,11 @@ class InventoryController extends Controller
             'scionVarieties' => ScionVariety::orderBy('scion_variety_name')->get(),
             'batches' => Batch::active()->with('scionVariety')->orderBy('batch_code')->get(),
             'filters' => $filters,
-            'totalGrafted' => (int) (clone $base)->sum('total_grafted'),
+            // Cross-batch total counts each physical plant once: `total_grafted`
+            // is a cumulative log, so summing the raw snapshot column would
+            // double-count every regrafted plant (total_grafted - regraft; same
+            // basis as the Crude Mortality Rate denominator).
+            'totalGrafted' => (int) (clone $base)->sum(DB::raw('total_grafted - regraft')),
             'totalSnapshots' => (clone $base)->count(),
             'activeSnapshots' => (clone $base)->where('status', Inventory::STATUS_ACTIVE)->count(),
             'depletedSnapshots' => (clone $base)->where('status', Inventory::STATUS_DEPLETED)->count(),

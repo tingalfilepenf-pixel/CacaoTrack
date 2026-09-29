@@ -3,9 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Batch;
+use App\Models\Inventory;
 use App\Models\RegraftRecord;
+use App\Models\User;
 use App\Support\AnalyticsMetrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -89,6 +92,43 @@ class SeededFamilyKpiTest extends TestCase
             0,
             Batch::query()->where('available_count', '<', 0)->count(),
         );
+    }
+
+    /**
+     * Regression: the three cross-batch totals that previously summed the raw
+     * cumulative `total_grafted` must now use `SUM(total_grafted - regraft)` so a
+     * regrafted plant is counted once, not once per batch it has passed through.
+     * The per-row `total_grafted` values stay raw (cumulative log).
+     */
+    public function test_cross_batch_totals_count_each_plant_once_not_the_raw_sum(): void
+    {
+        $rawSum = (int) Batch::query()->sum('total_grafted');
+        $livePopulation = (int) Batch::query()
+            ->get()
+            ->sum(fn (Batch $batch) => (int) $batch->total_grafted - (int) $batch->regraft);
+
+        $this->assertSame(880, $rawSum);
+        $this->assertSame(750, $livePopulation);
+
+        // 1. Stock Ledger nested Batch summary totals row.
+        $batchTotals = AnalyticsMetrics::batchSummary()['totals'];
+        $this->assertSame(750, $batchTotals['total_grafted']);
+        $this->assertNotSame($rawSum, $batchTotals['total_grafted']);
+
+        // 2. Gap Report expected total.
+        $gapTotal = AnalyticsMetrics::gapReport()['totalExpected'];
+        $this->assertSame(750, $gapTotal);
+        $this->assertNotSame($rawSum, $gapTotal);
+
+        // 3. Inventory snapshot total, both centralized and through the page.
+        $snapshotTotal = (int) Inventory::query()->sum(DB::raw('total_grafted - regraft'));
+        $this->assertSame(750, $snapshotTotal);
+        $this->assertNotSame($rawSum, $snapshotTotal);
+
+        $this->actingAs(User::where('email', 'admin@cacaotrack.test')->firstOrFail())
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('totalGrafted', 750);
     }
 
     public function test_ledger_summary_conserves_the_seeded_population(): void

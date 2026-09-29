@@ -502,7 +502,9 @@ class AnalyticsTest extends TestCase
         // of `available_count` on every validated release.
         $gap = AnalyticsMetrics::gapReport();
 
-        $this->assertSame(300, $gap['totalExpected']);   // total grafted 200 + 100
+        // Cross-batch total counts each plant once: SUM(total_grafted - regraft)
+        // = (200 - 15) + (100 - 0) = 285, NOT the raw total_grafted 200 + 100.
+        $this->assertSame(285, $gap['totalExpected']);
         $this->assertSame(270, $gap['totalActual']);     // available 170 + 100
         $this->assertSame(35, $gap['totalGap']);         // mortality 25 + 10
 
@@ -558,7 +560,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('B001', $content);
         $this->assertStringContainsString('B002', $content);
         $this->assertStringContainsString('Criollo', $content);
-        $this->assertStringContainsString('Expected: 300', $content);
+        $this->assertStringContainsString('Expected: 285', $content);
         $this->assertStringContainsString('Available: 270', $content);
         // FPDF escapes the parentheses in the label.
         $this->assertStringContainsString('Gap \(effective mortality\): 35', $content);
@@ -592,7 +594,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Batch,"Parent Batch",Variety,Expected,Available,"Pulled Out","Gap (Effective Mortality)"', $csv);
         $this->assertStringContainsString('B001,,Criollo,200,170,0,25', $csv);
         $this->assertStringContainsString('B002,,Trinitario,100,100,0,10', $csv);
-        $this->assertStringContainsString('Total,,,300,270,0,35', $csv);
+        $this->assertStringContainsString('Total,,,285,270,0,35', $csv);
     }
 
     public function test_gap_report_exports_reject_unknown_batch_filter(): void

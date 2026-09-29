@@ -464,6 +464,11 @@ class AnalyticsMetrics
      * (available_count) and `pulled_out` (summed Stock_Out_Detail quantity) are
      * retained as context columns only.
      *
+     * `totalExpected` is the cross-batch total: it uses `SUM(total_grafted -
+     * regraft)` so each physical plant is counted once, not once per batch it has
+     * passed through via regraft (same basis as the Crude Mortality Rate
+     * denominator, :122). The per-row `expected` values stay raw `total_grafted`.
+     *
      * @return array{rows:array<int,array{batch:string,parent:?string,parent_missing:bool,depth:int,variety:string,expected:int,actual:int,pulled_out:int,gap:int}>,totalExpected:int,totalActual:int,totalPulledOut:int,totalGap:int}
      */
     public static function gapReport(?int $batchId = null, ?int $scionVarietyId = null): array
@@ -479,6 +484,7 @@ class AnalyticsMetrics
             ->pluck('total', 'batch_id');
 
         $rows = [];
+        $livePopulation = 0;
 
         // Phase 7C: sub-batch rows are nested under their parent through the
         // single tree helper; the formula itself is unchanged (gap = effective
@@ -488,6 +494,11 @@ class AnalyticsMetrics
             $expected = (int) $batch->total_grafted;
             $actual = (int) $batch->available_count;
             $pulledOut = (int) ($stockOutByBatch[$batch->batch_id] ?? 0);
+
+            // Cross-batch total: `total_grafted` is a cumulative log, so the raw
+            // per-row sum double-counts every regrafted plant; count the live
+            // population once instead (total_grafted - regraft).
+            $livePopulation += $expected - (int) $batch->regraft;
 
             $rows[] = [
                 'batch' => $batch->batch_code,
@@ -504,7 +515,7 @@ class AnalyticsMetrics
 
         return [
             'rows' => $rows,
-            'totalExpected' => (int) collect($rows)->sum('expected'),
+            'totalExpected' => (int) $livePopulation,
             'totalActual' => (int) collect($rows)->sum('actual'),
             'totalPulledOut' => (int) collect($rows)->sum('pulled_out'),
             'totalGap' => (int) collect($rows)->sum('gap'),
@@ -803,7 +814,14 @@ class AnalyticsMetrics
         return [
             'rows' => $rows,
             'totals' => [
-                'total_grafted' => (int) collect($rows)->sum('total_grafted'),
+                // Cross-batch total counts each physical plant once:
+                // `total_grafted` is a cumulative, non-decreasing log, so summing
+                // the raw per-row values would double-count every regrafted plant
+                // (same basis as the Crude Mortality Rate denominator, :122).
+                // The per-row `total_grafted` values above stay raw.
+                'total_grafted' => (int) collect($rows)->sum(
+                    fn (array $row): int => (int) $row['total_grafted'] - (int) $row['regraft'],
+                ),
                 'available' => (int) collect($rows)->sum('available'),
                 'regraft' => (int) collect($rows)->sum('regraft'),
                 'mortality' => (int) collect($rows)->sum('mortality'),
