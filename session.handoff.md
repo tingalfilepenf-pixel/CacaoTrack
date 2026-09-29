@@ -1,6 +1,61 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CS — **read-only KPI audit; Crude Mortality Rate / Total Active Inventory traced + panelist flaw review**)
+> ### ▶ Continue here (latest: Session CU — **Stock Out form hint now shows the surviving quantity, matching the server gate**)
+> - **▶ Session CU (DONE — Stock Out form's client-side availability hint now reads `survivingQuantity()`; view-only + one view test, no schema/validation change, `db_capstone` untouched; commit `13e658e`; 2026-09-30):**
+>   - The batch `<option>`'s `data-available` attribute and its inline `(Available: …)` label in
+>     `resources/views/inventory/stock-out/index.blade.php` now call `$batch->survivingQuantity()`
+>     instead of the raw `(int) $batch->available_count`. The client-side `validate()` already reads
+>     `data-available`, so the hint (and the pre-submit check) now show the same number
+>     `StockOutController::lockAndValidateBatches` enforces (per-line `:197`, per-batch aggregate
+>     `:220`). Closes the CT "Scope note / follow-up". **No new formula/method** — reuses the existing
+>     centralized cap; no N+1 optimization added (same lazy pattern as `RegraftController`).
+>   - **Test:** new `StockOutTest::test_stock_out_form_hint_matches_the_surviving_quantity_for_a_batch_with_mortality`
+>     — batch `available_count=500` with 400 recorded deaths (raw **500** vs surviving **100**, i.e.
+>     deliberately not the trivial mortality-0 case where the two numbers coincide); asserts the page
+>     renders `data-available="100"` and `(Available: 100)` and **not** `data-available="500"`.
+>   - **Verified:** full MySQL suite **342 passed / 1484 assertions** on `db_capstone_test` (was
+>     341/1478); `vendor\bin\pint --test` + `php -l` clean on the changed file; `php artisan view:cache`
+>     clean. **`db_capstone` was NOT touched.**
+>   - **Still open (unchanged):** the `AGENTS.md` doc drift (CONFIRMED / Phase 7B sections still name
+>     `Batch::regraftableQuantity()`; the method is now `Batch::survivingQuantity()`) and the remaining
+>     Session CS Tier-1 items (log Inventory snapshots to `Activity_Log`; fix the "Total **Active**
+>     Inventory includes archived" label; point `phpunit.xml` at MySQL `db_capstone_test`).
+> - **▶ Session CT (DONE — landed the Session CS Tier-1 fixes: Stock Out surviving cap + read-only `cacao:health`; no schema change, no client sign-off, `db_capstone` untouched; 2026-09-30):**
+>   - **Fix 1 — Stock Out can no longer release already-dead plants.** Renamed
+>     `Batch::regraftableQuantity()` → **`Batch::survivingQuantity()`** (same formula
+>     `max(0, min(available_count, (total_grafted − regraft) − effectiveMortalityQuantity()))`; **no
+>     duplicate method**). Call sites updated: `App\Actions\RegraftBatch` (regraft cap),
+>     `RegraftController` (page summary), and `StockOutController` — the per-line check and the
+>     per-batch aggregate check now gate on `survivingQuantity()` instead of the raw `available_count`.
+>     Rejection message: `Quantity exceeds the {n} surviving plants available for {batch_code}.`
+>     Files: `app/Models/Batch.php`, `app/Actions/RegraftBatch.php`,
+>     `app/Http/Controllers/RegraftController.php`, `app/Http/Controllers/StockOutController.php`,
+>     `tests/Feature/RegraftFlowTest.php`, `tests/Feature/StockOutTest.php`.
+>   - **Fix 2 — read-only invariant health check.** New **`php artisan cacao:health`**
+>     (`app/Console/Commands/CacaoHealthCommand.php`, auto-discovered). Per batch it checks:
+>     `effective mortality ≤ total_grafted − regraft`; `available_count ≥ 0`;
+>     `available_count ≤ total_grafted − regraft`;
+>     `batches.regraft == SUM(regraft_records.quantity WHERE parent_batch_id = batch)`. A clean run
+>     prints `Cacao health check passed. N batch(es) satisfy all invariants.` and exits **0**;
+>     otherwise it prints a `Batch | Rule | Expected | Actual` table and exits **1**. **Strictly
+>     read-only** (no writes/repairs).
+>   - **Tests:** `StockOutTest::test_stock_out_is_capped_by_the_surviving_population_not_the_raw_available_balance`
+>     — grafted 500, mortality 400, `available_count` stays 500 (confirmed rule) → `survivingQuantity()`
+>     **100**; a 200 release is **rejected** (message names `B001` and `100`) and a 100 release
+>     **succeeds** (balance → 400). `tests/Feature/CacaoHealthTest.php` — a consistent dataset passes,
+>     and a batch corrupted by a direct DB update is reported (exit 1, batch code in output).
+>   - **Verified:** full MySQL suite **341 passed / 1478 assertions** on `db_capstone_test` (was
+>     338/1465); `vendor\bin\pint --test` + `php -l` clean; `cacao:health` against a freshly seeded
+>     `db_capstone_test` → **clean, exit 0** (`Cacao health check passed. 5 batch(es)...`).
+>     **`db_capstone` was NOT touched/reseeded.**
+>   - **Commits:** `b939aab` (baseline checkpoint of the pending Sessions CL–CR working tree — owner
+>     choice), `dccd154` (Fix 1), `7ec2f8c` (Fix 2). The two untracked `docs/cacao-*.csv` sample
+>     exports were deliberately left untracked.
+>   - **Scope note / follow-up:** the Stock Out form's client-side `data-available` hint still showed
+>     raw `available_count` at CT; the server gate was authoritative. **RESOLVED in Session CU** — the
+>     hint now reads `survivingQuantity()`. **Doc drift to fix later (not touched):** `AGENTS.md`
+>     (CONFIRMED / Phase 7B sections) still names `Batch::regraftableQuantity()`; the method is now
+>     `Batch::survivingQuantity()`.
 > - **▶ Session CS (DONE — read-only KPI audit + panelist-style flaw review; NO code/migration/DB/docs change, 2026-09-30):**
 >   traced the two headline KPIs live through the app and audited them. **No file was edited except this
 >   handoff; no migration, no schema and no `db_capstone` action.**
@@ -460,22 +515,25 @@
 >   "Ready to Plant" best-guess mapping. **There are no approved additive exceptions**
 >   (`scion_receivings` merged into `stock_ins`; `regraft_records` retracted).
 > - **▶ NEXT UP / where to pick up (vibecoding resume point):** **Phases 7A/7B/7C/7D are DONE**, the
->   **latest code change is Session CR** (owner-directed `replanting_records` → `regraft_records`
->   rename; table + PK/date columns, model, relations, `RegraftController`, route
->   `/operational/regraft`, view, factory, analytics, tests), and the **latest session is CS** — a
->   **read-only KPI audit** that traced Crude Mortality Rate (12.10% = 75/620) and Total Active
->   Inventory (730) and catalogued the flaws + tiered fixes (see the CS bullet at the very top).
->   Re-read the CS bullet before picking work; its **Tier 1** items are the safest next code changes.
->   Before CR: the **client-confirmed `total_grafted` cumulative rule** (Session CJ, commit `1a7ce78`)
+>   **previously-pending Sessions CL–CR are committed** (`b939aab` baseline), **CT** shipped the first
+>   two Session CS **Tier 1** items — (a) Stock Out is gated on the centralized
+>   **`Batch::survivingQuantity()`** cap (renamed from `regraftableQuantity()`), so dead plants can no
+>   longer be released, and (b) the read-only **`php artisan cacao:health`** invariant check + tests —
+>   and **CU (latest)** pointed the Stock Out form's client-side `data-available` hint at
+>   `survivingQuantity()` as well, so the hint can no longer contradict the server's rejection. See the
+>   CU/CT bullets at the very top. **Remaining Tier 1 (safe, code-only) items from Session CS:** log
+>   Inventory snapshots to `Activity_Log`; fix the "Total **Active** Inventory includes archived"
+>   label; point `phpunit.xml` at MySQL `db_capstone_test`. Prior
+>   context: the **client-confirmed `total_grafted` cumulative rule** (Session CJ, commit `1a7ce78`)
 >   with the **mortality-rate denominator follow-up** (Session CK, commit `4006b41`), the **Mortality
->   cause-of-death dropdown + "Others" description** (Session CL), the **Root-Cause Matrix `Others`
->   roll-up** (Session CM), the **Stock In Seedlings/Scion Type column + filter** (Session CN), the
->   **Seasonality Heatmap axis-label restyle** (Session CO, view-only), the **Stock Ledger printable
->   PDF font auto-fit** (Session CP, presentation-only) and the **Stock Out unit dropdown → Pots only**
->   (Session CQ; centralized `StockOutDetail::UNITS`). **Sessions CL, CM, CN, CO, CP, CQ and CR are all
->   uncommitted** — the latest commit is still `4006b41`; commit when ready.
->   **Full MySQL suite green: 338 passed / 1465 assertions** on `db_capstone_test` (CR's rename
->   adjusted a few structural assertions; was 338/1468 after CQ).
+>   cause-of-death dropdown + "Others" description** (CL), the **Root-Cause Matrix `Others` roll-up**
+>   (CM), the **Stock In Seedlings/Scion Type column + filter** (CN), the **Seasonality Heatmap
+>   axis-label restyle** (CO, view-only), the **Stock Ledger printable PDF font auto-fit** (CP), the
+>   **Stock Out unit dropdown → Pots only** (CQ; centralized `StockOutDetail::UNITS`) and the
+>   **`replanting_records` → `regraft_records` rename** (CR).
+>   **Full MySQL suite green: 342 passed / 1484 assertions** on `db_capstone_test` (was 341/1478;
+>   CU added 1 test). Latest commits: `13e658e` (CU), `7ec2f8c` (CT Fix 2), `dccd154` (CT Fix 1),
+>   `b939aab` (CL–CR baseline), `4006b41` (CK).
 >   Current source of truth: canonical `docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` (v2.0; the
 >   `_UPDATED` files are the untouched v1.0 provenance; the `_REVISED` copies must stay byte-identical —
 >   SHA-256 match). Pick one of:
@@ -507,15 +565,16 @@
 >     and `AGENTS.md` §"P6 deferred items".
 >   - **F. Verify current state first** before touching anything (command below).
 >   - **G. Session CS audit follow-ups (see the CS bullet at the top).** **Tier 1 (safe, code-only):**
->     gate Stock Out on a single centralized surviving-stock cap (reuse/rename
->     `Batch::regraftableQuantity()`), add a read-only KPI health-check command + invariant tests, log
->     Inventory snapshots to `Activity_Log`, fix the "Total **Active** Inventory includes archived"
->     label, point `phpunit.xml` at MySQL `db_capstone_test`. **Tier 2 (needs an owner/client
->     decision):** whether mortality should decrement `available_count`, Active-vs-archived basis, the
->     Regraft Deficit formula, and the date-filtered rate definition. **Tier 3 (needs an approved ERD
->     revision):** DB unique index for one monthly inventory snapshot per batch, Stock In↔Batch
->     traceability (`OD-8`), scion freshness (`OD-13`). Do **not** implement a Tier-2/3 item without
->     sign-off.
+>     ~~gate Stock Out on a single centralized surviving-stock cap~~ (**DONE — Session CT, Fix 1**:
+>     renamed `Batch::regraftableQuantity()` → `Batch::survivingQuantity()`); ~~add a read-only KPI
+>     health-check command + invariant tests~~ (**DONE — Session CT, Fix 2**: `php artisan
+>     cacao:health` + `CacaoHealthTest`); **remaining:** log Inventory snapshots to `Activity_Log`,
+>     fix the "Total **Active** Inventory includes archived" label, point `phpunit.xml` at MySQL
+>     `db_capstone_test`. **Tier 2 (needs an owner/client decision):** whether mortality should
+>     decrement `available_count`, Active-vs-archived basis, the Regraft Deficit formula, and the
+>     date-filtered rate definition. **Tier 3 (needs an approved ERD revision):** DB unique index for
+>     one monthly inventory snapshot per batch, Stock In↔Batch traceability (`OD-8`), scion freshness
+>     (`OD-13`). Do **not** implement a Tier-2/3 item without sign-off.
 > - **Standing rules:** tests only against `db_capstone_test` (never `db_capstone`). Three live-DB
 >   schema actions have been explicitly approved: the Session CA wipe + reseed (2026-09-26), the
 >   Phase 7D upgrade + reseed (2026-09-29), and the **Session CR rename migration** (2026-09-30,
@@ -525,17 +584,28 @@
 >   `...\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql` and
 >   `...\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql`.
 > - **Verify quickly:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->   (never point tests at `db_capstone`) — expect **338 passed / 1465 assertions**. Check the checkpoint
->   with `git log --oneline -3` (latest `4006b41`; Sessions CL + CM + CN + CO + CP + CQ + CR are
->   uncommitted). Full detail: the Session CR/CQ/CP/CO/CN/CM/CL/CK/CJ bullets in the banner above and
->   the Session CH entry in §2, plus §3, §5 and §6 (and the earlier CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ
->   entries).
+>   (never point tests at `db_capstone`) — expect **342 passed / 1484 assertions**. Also run
+>   `php artisan cacao:health` after a `migrate:fresh --seed` on `db_capstone_test` — it must pass
+>   clean (exit 0). Check the checkpoint with `git log --oneline -5` (latest `13e658e`, then
+>   `7ec2f8c`, `dccd154`, `b939aab`, `4006b41`). Full detail: the Session CU/CT/CS/CR/CQ/CP/CO/CN/CM/CL/CK/CJ bullets
+>   in the banner above and the Session CH entry in §2, plus §3, §5 and §6 (and the earlier
+>   CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ entries).
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session CS (2026-09-30)** — a **read-only KPI audit** (no code/DB change): it traced
-the live Crude Mortality Rate (**12.10%** = 75/620) and Total Active Inventory (**730** =
-`Σ available_count`) and catalogued 7 flaws + tiered fixes (see the CS bullet at the top). **The
-latest code change, immediately before, was Session CR** — the owner-directed rename of the
+project after **Session CU (2026-09-30)** — the **Stock Out form hint fix**: the batch dropdown's
+`data-available` attribute and inline `(Available: …)` label now read
+**`Batch::survivingQuantity()`** (`resources/views/inventory/stock-out/index.blade.php`) instead of raw
+`available_count`, so what the user sees matches what `StockOutController` enforces (per-line and
+per-batch). View-only + one new view test (`StockOutTest::test_stock_out_form_hint_matches_the_surviving_quantity_for_a_batch_with_mortality`,
+a mortality-bearing batch: raw 500 vs surviving 100); no schema/validation change; commit `13e658e`.
+Full suite **342/1484**; Pint + `php -l` + `view:cache` clean; `db_capstone` untouched. This closed
+the CT follow-up. **Before CU, Session CT (commits `dccd154` + `7ec2f8c`) shipped the two Session CS
+Tier-1 fixes** — (1) Stock Out is gated on the centralized **`Batch::survivingQuantity()`** cap
+(renamed from `regraftableQuantity()`), so plants already recorded as mortality can no longer be
+released; and (2) the read-only **`php artisan cacao:health`** invariant command + tests — on top of
+`b939aab`, which committed the previously-pending **Sessions CL–CR** (owner
+choice). Full suite **341/1478**; `cacao:health` clean on `db_capstone_test`; `db_capstone`
+untouched. **Before CT, the latest code change was Session CR** — the owner-directed rename of the
 `replanting_records` entity to **`regraft_records`**: table + PK `regraft_id` + date `regraft_date`,
 model `RegraftRecord`,
 `Batch::regraftRecords()`/`totalRegrafted()`/`regraftDeficit()`, `RegraftController` at
@@ -1028,31 +1098,37 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ Current quick start (latest: Session CS, 2026-09-30 — read-only KPI audit; no code/DB change):**
-  Session CS traced the live KPIs (Crude Mortality Rate **12.10%** = 75/620; Total Active Inventory
-  **730** = `Σ available_count`) and catalogued 7 flaws + tiered fixes (see the top banner CS bullet);
-  no file changed except this handoff. **The most recent code change was Session CR:** the
-  `replanting_records` entity was renamed to **`regraft_records`** (owner-directed) — table + PK
-  `regraft_id` + date `regraft_date`,
-  model **`RegraftRecord`**, `Batch::regraftRecords()`/`totalRegrafted()`/`regraftDeficit()`,
-  `RegraftController` at **`/operational/regraft`**, view **`operational/regraft`**,
-  `StoreRegraftRecordRequest` (error bag `regraft`, field `regraft_date`), `RegraftRecordFactory`,
-  `ActivityLog::TYPE_REGRAFT_RECORDED`, analytics `totalRegraftDeficit()`/`regraftDeficitByBatch()`.
-  Migration `2026_09_30_000001_rename_replanting_records_to_regraft_records_table` (reversible) was
-  applied to **live `db_capstone`** after sign-off (backup
-  `...\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql`); all key pages 200. Docs:
-  canonical PRD/ERD updated, `_REVISED` re-synced byte-identical, `_UPDATED` untouched, `AGENTS.md`
-  RENAME banner. Immediately before, Session CQ made the `/inventory/stock-out` per-line **Unit**
-  dropdown **Pots only** (`App\Models\StockOutDetail::UNITS = ['pots']`, RULE 6; no schema change),
-  Session CP auto-fit the Stock Ledger printable PDF fonts, Session CN added the Stock In
-  **Seedlings/Scion TYPE** column, and Session CM rolled `Others` mortality causes into one column.
-  Full MySQL suite green **338 passed / 1465 assertions**; Pint + `php -l` + `view:cache` clean.
-  **Sessions CL, CM, CN, CO, CP, CQ and CR are uncommitted** (prior checkpoint `4006b41`).
-  **Next options:** commit Sessions CL→CR, then the banner "NEXT UP" items — most safely the Session
-  **CS Tier 1** fixes (gate Stock Out on a centralized surviving-stock cap; health-check command +
-  invariant tests; log inventory snapshots; label fixes), or re-align live `db_capstone` to the
-  corrected `total_grafted` arithmetic (needs fresh sign-off) or confirm the remaining Open Decisions
-  (PRD §19).
+- **▶ Current quick start (latest: Session CU, 2026-09-30 — Stock Out form hint fix; view-only + test, no schema/DB change):**
+  Session CU pointed the Stock Out form's client-side availability hint at the server-enforced cap:
+  the batch `<option>`'s `data-available` attribute and inline `(Available: …)` label in
+  `resources/views/inventory/stock-out/index.blade.php` now call **`$batch->survivingQuantity()`**
+  instead of raw `(int) $batch->available_count`, so the hint (and the pre-submit `validate()`, which
+  reads `data-available`) can no longer contradict the `StockOutController` rejection
+  (`Quantity exceeds the {n} surviving plants available for {batch_code}.`, per-line `:197` and
+  per-batch `:220`). New view test
+  `StockOutTest::test_stock_out_form_hint_matches_the_surviving_quantity_for_a_batch_with_mortality`
+  (raw 500 vs surviving 100 — deliberately a mortality-bearing batch, not the trivial mortality-0 case).
+  **Commit `13e658e`.** Full MySQL suite green **342 passed / 1484 assertions**
+  (was 341/1478); `vendor\bin\pint --test` + `php -l` + `view:cache` clean; **`db_capstone` untouched.**
+  **Next options:** the **remaining Tier 1** CS items (log Inventory snapshots to `Activity_Log`; fix the
+  "Total **Active** Inventory includes archived" label; point `phpunit.xml` at MySQL), then re-align live
+  `db_capstone` to the corrected `total_grafted` arithmetic (needs fresh sign-off) or confirm the remaining
+  Open Decisions (PRD §19).
+- **▶ Session CT (DONE — Tier-1 fixes; no schema/DB change, 2026-09-30):** Session CT shipped the first
+  two **Session CS Tier 1** items: (1) **Stock Out surviving cap** — `Batch::regraftableQuantity()` was
+  renamed to **`Batch::survivingQuantity()`** (same formula) and is now the release cap in
+  `StockOutController` (per-line + per-batch aggregate), so plants already recorded as mortality can no
+  longer be released; and (2) the **read-only `php artisan cacao:health`** invariant command
+  (`app/Console/Commands/CacaoHealthCommand.php`) with `tests/Feature/CacaoHealthTest.php`.
+  Fix-1 test: `StockOutTest::test_stock_out_is_capped_by_the_surviving_population_not_the_raw_available_balance`.
+  **Commits:** `b939aab` (baseline checkpoint of the previously-pending Sessions CL–CR — owner
+  choice), `dccd154` (Fix 1), `7ec2f8c` (Fix 2). Full MySQL suite green **341 passed / 1478
+  assertions**; `vendor\bin\pint --test` + `php -l` clean; `cacao:health` clean on a freshly seeded
+  `db_capstone_test`; **`db_capstone` untouched.** (CU later resolved CT's leftover hint follow-up.)
+- **▶ Session CS (DONE — read-only KPI audit; no code/DB change, 2026-09-30):** traced Crude Mortality
+  Rate **12.10%** (75/620) and Total Active Inventory **730** and catalogued 7 flaws + three tiers of
+  fixes (see the CS bullet in the top banner). Nothing was fixed in CS itself; Session CT then landed
+  the first two Tier-1 items.
 - **▶ Session CH (DONE — Phase 7D, 2026-09-29):** **Phase 7D is DONE** — the live
   `db_capstone` was upgraded to the approved (Phase 7A) schema and reseeded
   (`php artisan migrate:fresh --seed --force`; the one approved destructive action, after a verified
@@ -5501,6 +5577,16 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
        viability and scion-receipt Edit/Archive/Details remain unbuilt (client-gated, deferred).
 
 ## 5. Verification status
+- **Session CU (Stock Out form hint → `survivingQuantity()`): full suite run and GREEN.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **342 passed / 1484 assertions, 0 failures** (was 341/1478; +1 `StockOutTest` view case asserting
+  the rendered hint equals `survivingQuantity()` for a mortality-bearing batch, raw 500 vs surviving
+  100, and is not `data-available="500"`). `vendor\bin\pint --test` clean on the changed file;
+  `php -l` clean; `php artisan view:cache` clean. **No migration; no schema/DB change** — the view
+  reuses the existing centralized `Batch::survivingQuantity()` cap; no formula was duplicated. **No
+  `db_capstone` read or write.** Committed `13e658e`. (Session CT — the surviving-cap gate + the
+  read-only `cacao:health` command + tests — was the prior green state at **341/1478**; its detail is
+  in the top banner and its own commits `dccd154`/`7ec2f8c`.)
 - **Session CQ (Stock Out per-line Unit dropdown → `pots` only): full suite run and GREEN.**
   MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
   **338 passed / 1468 assertions, 0 failures** (was 337/1465; +1 `StockOutTest` case asserting the
@@ -5925,7 +6011,7 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
-- **Latest sessions (CH–CQ) are captured in the top banner, the "Quick start for the next session"
+- **Latest sessions (CH–CU) are captured in the top banner, the "Quick start for the next session"
   section and §5.** Summary: **CH** = Phase 7D live-`db_capstone` upgrade + reseed; **CJ**/**CK** =
   client-confirmed cumulative `total_grafted` + corrected mortality-rate denominator
   (`SUM(total_grafted − regraft)`); **CL** = the Mortality cause-of-death dropdown + "Others"
@@ -5937,7 +6023,11 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   a 4.2pt floor; headers/value cells/nested summary; no schema/data/view change); **CQ** = the Stock Out
   per-line Unit dropdown is now **Pots only** (`StockOutDetail::UNITS = ['pots']`, one centralized
   constant feeding the form select + both validators; no schema/data change; legacy rows keep
-  `seedlings`). **Uncommitted:** Sessions CL + CM + CN + CO + CP + CQ. Everything below in this section
+  `seedlings`); **CR** = the owner-directed `replanting_records` → `regraft_records` rename; **CS** =
+  read-only KPI audit (no code change); **CT** = Stock Out gated on `Batch::survivingQuantity()` +
+  read-only `php artisan cacao:health`; **CU** = Stock Out form's client-side `data-available` hint now
+  reads `survivingQuantity()` (view-only + test). **Committed:** CL–CR in `b939aab`; CT in
+  `dccd154`+`7ec2f8c`; CU in `13e658e`. Everything below in this section
   is older context.
 - **▶ Session CG (DONE — Phase 7C: parent/sub-batch nesting + Stock Ledger / analytics alignment;
   commits `7c84843`, `59488db`, `cc89669`, `b780873`):** implemented PRD_UPDATED §9.3 / FR-08 nested
