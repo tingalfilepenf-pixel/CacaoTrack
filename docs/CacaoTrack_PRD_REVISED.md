@@ -13,6 +13,7 @@
 **Change log:**
 
 - **2.0 — 2026-09-28:** Corrected the client-approved baseline (`CacaoTrack_PRD_UPDATED.md`) for internal PRD/ERD contradictions and undefined rules. **No client-approved rule was changed.** Every new, unconfirmed rule carries the `[PROPOSED — pending client confirmation]` marker (rendered in bold) with an `(OD-n)` reference and is collected in **§19 Open Decisions**. The ERD (`CacaoTrack_ERD.md`) was corrected in step.
+- **2.0 — 2026-09-29 (confirmed):** `Total_Grafted` confirmed as a **cumulative, non-decreasing log** (client spreadsheet evidence + direct statement *"Grafted minus Regraft = mortality or yield for the parent batch"*); a batch's live population for mortality/regraft is `Total_Grafted − Regraft`. Updated §2.4, §10, §11 and §19 (`OD-4`, `OD-6`, `OD-10`); ERD §2/§3.8/§3.11 in step.
 - **1.0:** Client-approved revised working PRD. Preserved untouched as provenance in `CacaoTrack_PRD_UPDATED.md`.
 
 ---
@@ -70,7 +71,7 @@ Batch records must remain the central operational record for the grafted cacao.
 
 Grafting is part of establishing and maintaining a batch.
 
-A **Regraft** replaces a dead scion on a **living** root stock. When regrafting is required, the system uses the available **Scion Variety** according to the required variety. The quantity being regrafted is deducted from the parent batch's **Total Grafted** count, while the parent batch's **Regraft** counter is increased by the same quantity. The regrafted plants establish a new linked **sub-batch** under the parent batch (for example, appending `-R1` to the parent **Batch Code**, such as `B001-R1`). The sub-batch starts its own independent 21-day cycle and may be assigned a different Scion Variety than the parent.
+A **Regraft** replaces a dead scion on a **living** root stock. When regrafting is required, the system uses the available **Scion Variety** according to the required variety. **CONFIRMED (2026-09-29) — client spreadsheet evidence:** a regraft is recorded as a **new Grafted entry plus a Re Graft entry on the same row**, so **`Total Grafted` is a cumulative, non-decreasing log per batch and is never reduced by a regraft**. A regraft deducts the quantity from the parent batch's live **Available** count and increases the parent batch's **Regraft** counter by the same quantity. The batch's **still-attributable/live population** for mortality and regraft purposes is **`Total Grafted − Regraft`** (the client's rule: *"Grafted minus Regraft = mortality or yield for the parent batch"*). The regrafted plants establish a new linked **sub-batch** under the parent batch (for example, appending `-R1` to the parent **Batch Code**, such as `B001-R1`) whose own `Total Grafted` equals the regraft quantity. The sub-batch starts its own independent 21-day cycle and may be assigned a different Scion Variety than the parent.
 
 Sub-batch rules **[PROPOSED — pending client confirmation]** (OD-6):
 
@@ -728,7 +729,7 @@ Dashboard values must use the same definitions as the corresponding modules and 
 The dashboard panel requires the following three KPIs. Definitions **[PROPOSED — pending client confirmation]** (OD-10):
 
 - **Total Active Inventory** = `SUM(Available_Count)` across all batches and sub-batches, **including archived** (as currently implemented).
-- **Crude Mortality Rate** = `SUM(Mortality quantity) ÷ SUM(Total_Grafted) × 100`, across all batches and sub-batches. `Total_Grafted` is conserved across a regraft because the parent's decrease equals the sub-batch's initial value.
+- **Crude Mortality Rate** = `SUM(Mortality quantity) ÷ SUM(Total_Grafted) × 100`, across all batches and sub-batches. **`Total_Grafted` — CONFIRMED (2026-09-29):** it is a cumulative, non-decreasing log, so it is **not** conserved across a regraft — the parent keeps its full cumulative total and each sub-batch adds its own `Total_Grafted`. The denominator therefore sums the recorded grafted quantity of every batch and sub-batch (each regraft appears as a new Grafted entry). The **Regraft Deficit** KPI below remains OPEN.
 - **Regraft Deficit** = `Σ max(0, mortality − regraft)` (the currently implemented formula). Under the mortality/regraft rules, this compares populations that no longer offset each other, so this KPI's definition is an **OPEN DECISION** — no replacement formula is invented here (OD-10).
 
 ---
@@ -751,7 +752,16 @@ A strictly incrementing recorded quantity of plants that died according to the m
 
 ### Regraft
 
-The recorded quantity of plants moved from a parent Batch for regrafting. The same quantity is deducted from the parent Batch's Total Grafted count and added to its Regraft counter; the regrafted plants establish a linked sub-batch that may have a different Scion Variety. A Regraft replaces a dead scion on a living root stock; it does not offset Mortality, and dead root stock is never regrafted.
+The recorded quantity of plants moved from a parent Batch for regrafting. A regraft deducts the quantity from the parent Batch's **Available** count and adds it to its **Regraft** counter; it is **not** deducted from `Total Grafted`, which is a cumulative, non-decreasing log (CONFIRMED, 2026-09-29). The regrafted plants establish a linked sub-batch that may have a different Scion Variety and whose own `Total Grafted` equals the moved quantity. A Regraft replaces a dead scion on a living root stock; it does not offset Mortality, and dead root stock is never regrafted.
+
+### Total Grafted
+
+**CONFIRMED (2026-09-29)** — from the client's spreadsheet (the Regraft row records a new Grafted entry plus a Re Graft entry on the same row) and the client's direct statement *"Grafted minus Regraft = mortality or yield for the parent batch"*:
+
+- **`Total Grafted` is a cumulative, non-decreasing log per batch.** It only ever grows; a regraft does **not** reduce it, and Mortality does **not** reduce it.
+- The batch's **still-attributable/live population** for mortality and regraft purposes is **`Total Grafted − Regraft`**.
+- A sub-batch created by a regraft records the moved quantity as its own `Total Grafted`.
+- Consequently the mortality quantity bound (OD-4), the regraftable quantity bound (OD-6) and the crude-mortality-rate denominator (OD-10) are all defined on this cumulative basis.
 
 ### Available
 
@@ -968,18 +978,20 @@ The system should automate recording, validation, calculations, traceability, an
 
 ## 19. Open Decisions
 
-The following are **new** rules that the client has **not yet confirmed**. Each is marked in the text with the `[PROPOSED — pending client confirmation]` marker (rendered in bold) and an `(OD-n)` reference. Nothing here changes a client-approved rule; these are decisions to be confirmed. The corresponding ERD (`CacaoTrack_ERD.md`) cites the same `(OD-n)` identifiers.
+The following are **new** rules. Each is marked in the text with the `[PROPOSED — pending client confirmation]` marker (rendered in bold) and an `(OD-n)` reference, unless it has been **CONFIRMED** by the client. Nothing here changes a client-approved rule; these are decisions to be confirmed. The corresponding ERD (`CacaoTrack_ERD.md`) cites the same `(OD-n)` identifiers.
+
+**Confirmed 2026-09-29 (client spreadsheet evidence — a regraft is a new Grafted entry plus a Re Graft entry on the same row — and the client's direct statement *"Grafted minus Regraft = mortality or yield for the parent batch"*): `Total_Grafted` is a cumulative, non-decreasing log per batch; a batch's still-attributable/live population for mortality and regraft purposes is `Total_Grafted − Regraft`.** On that basis the Total_Grafted clause of **OD-4** (mortality bound), **OD-6** (regraft bound) and **OD-10** (Crude Mortality Rate denominator) is now CONFIRMED; the remaining clauses of OD-6 and the Regraft Deficit part of OD-10 stay open.
 
 - **OD-1 — Ordered quantity storage.** Ordered quantity is context only and is not stored; only the received quantity is recorded. *Alternative:* a nullable `Ordered_Quantity` column on Stock In. (§2.1, §11)
 - **OD-2 — Mortality plant condition.** Add a `Plant_Condition` (Root Stock / Scion) column to `Mortality_Record`. Open question: what does a **scion**-condition death mean for the regraft flow? If scion deaths are handled only through Regraft, the PRD requirement to record scion condition should be removed instead. (§2.5, FR-04; ERD §3.10)
 - **OD-3 — Available definition and Gap Report.** Confirm `Available_Count` = healthy plants on hand for pull-out, with the effects and invariant in §11. Consequence: Mortality does not currently reduce `Available_Count`, and the Gap Report's current meaning (recorded mortality) depends on that, so the Gap Report definition must be re-confirmed together with this decision. (§11, §9.5, FR-08)
-- **OD-4 — Mortality quantity bound.** Mortality quantity ≤ the batch's `Available_Count` at recording time. (FR-04)
+- **OD-4 — Mortality quantity bound — CONFIRMED (2026-09-29).** A death can only be recorded against the batch's still-attributable population: `mortality quantity ≤ (Total_Grafted − Regraft) − already-recorded effective mortality`. This follows from the client's confirmed rule *"Grafted minus Regraft = mortality or yield for the parent batch"* (client spreadsheet evidence: a regraft is a new Grafted entry plus a Re Graft entry on the same row, so `Total_Grafted` is cumulative and never decreases). (FR-04, §11)
 - **OD-5 — Corrections policy.** With Stock Reversal and Mortality Adjustments removed: transactional records are not editable by regular users; an Administrator may correct or remove a mistaken record; every correction is recorded in Activity History with before/after values; and a regraft that created a sub-batch with dependent Mortality, Stock Out, or Inventory records cannot be removed. (§7)
-- **OD-6 — Regraft sub-batch details.** Initial `Total_Grafted` = `Available` = regraft quantity; `Grafted_Date` = regraft date; the source batch may itself be a sub-batch; `Batch_Code` = source `Batch_Code` + `-R` + next sequence for that source (`B001-R1`, `B001-R1-R1`); `Batch_Code` unique; regraft quantity ≤ source `Available_Count`; Scion Variety required on the sub-batch. (§2.4, FR-06; ERD §3.8)
+- **OD-6 — Regraft sub-batch details.** **CONFIRMED (2026-09-29):** initial `Total_Grafted` = `Available` = regraft quantity; the regraftable quantity is bounded by the source's still-attributable surviving population `min(Available, (Total_Grafted − Regraft) − effective mortality)` (a dead root stock cannot be regrafted); the source's `Total_Grafted` is unchanged by the regraft. **Still [PROPOSED — pending client confirmation]:** `Grafted_Date` = regraft date; the source batch may itself be a sub-batch; `Batch_Code` = source `Batch_Code` + `-R` + next sequence for that source (`B001-R1`, `B001-R1-R1`); `Batch_Code` unique; Scion Variety required on the sub-batch. (§2.4, FR-06; ERD §3.8)
 - **OD-7 — 21-day cycle and Batch.Status.** No stored cycle column; cycle end = `Grafted_Date + 21 days` (derived); "during cycle" vs "after cycle" mortality derived from `Recorded_At`; Age Profile uses each batch's own `Grafted_Date`. `Batch.Status` enumerated values in the current implementation: `active`, `inactive`. (§2.6; ERD §3.8/§5)
 - **OD-8 — Stock In ↔ Batch traceability.** The system keeps no seedling stock balance and does not enforce Stock In → Batch traceability (intentional, consistent with "no stock balance"). (§11, FR-09; ERD §3.7)
 - **OD-9 — Inventory snapshot semantics.** Inventory values are captured from actual records at snapshot time (point-in-time, frozen); one snapshot per batch or sub-batch per month; "Applicable current quantity" maps to `Batch.Available_Count`. (FR-08; ERD §3.12)
-- **OD-10 — Dashboard KPIs.** Confirm the KPI definitions in §10 — Total Active Inventory, Crude Mortality Rate, and Regraft Deficit. **Regraft Deficit is an OPEN DECISION:** the current formula `Σ max(0, mortality − regraft)` compares populations that no longer offset each other; no replacement formula is proposed here. (§10)
+- **OD-10 — Dashboard KPIs.** **Total Active Inventory and the Crude Mortality Rate denominator — CONFIRMED (2026-09-29):** the crude-mortality-rate denominator is `SUM(Total_Grafted)`, where `Total_Grafted` is a cumulative, non-decreasing log (so it is not conserved across a regraft — see §11 Total Grafted). **Regraft Deficit remains an OPEN DECISION:** the current formula `Σ max(0, mortality − regraft)` compares populations that no longer offset each other; no replacement formula is proposed here. (§10)
 - **OD-11 — Replanting_Record.Sub_Batch_ID.** Replace the duplicate `Parent_Batch_ID` on `Replanting_Record` with a nullable `Sub_Batch_ID` (FK → Batch) identifying the sub-batch the record created; `Replanting_Record.Batch_ID` is the source batch. (ERD §3.11)
 - **OD-12 — Batch.Regraft cached total.** `Batch.Regraft` is a cached total that must equal `SUM(Replanting_Record.Quantity)` for that source batch, maintained inside the regraft transaction. (ERD §3.8/§3.11)
 - **OD-13 — Scion freshness/viability rule.** No usable-until value, no warning, and no blocking in this version; pending client confirmation of (a) the allowed freshness window and (b) whether the rule should warn or block. (ERD §3.7)

@@ -21,8 +21,9 @@ use Tests\TestCase;
  *
  * A regraft moves a quantity out of a source batch into a linked sub-batch
  * (its own 21-day cycle and possibly a different Scion Variety), deducting the
- * parent's `total_grafted`/`available_count` and incrementing its `regraft`
- * counter — all atomically through {@see RegraftBatch}.
+ * parent's live `available_count` and incrementing its `regraft` counter — all
+ * atomically through {@see RegraftBatch}. `total_grafted` is a cumulative,
+ * non-decreasing log (client-confirmed), so a regraft never reduces it.
  */
 class RegraftFlowTest extends TestCase
 {
@@ -90,7 +91,9 @@ class RegraftFlowTest extends TestCase
             ->assertSessionHas('success');
 
         $source->refresh();
-        $this->assertSame(400, (int) $source->total_grafted);
+        // total_grafted is cumulative and unchanged by the regraft; only the
+        // live available balance drops and the regraft counter rises.
+        $this->assertSame(500, (int) $source->total_grafted);
         $this->assertSame(400, (int) $source->available_count);
         $this->assertSame(100, (int) $source->regraft);
 
@@ -165,7 +168,7 @@ class RegraftFlowTest extends TestCase
         $user = User::factory()->create();
         $source = $this->batch($user, $this->variety(), 'B001', 100);
 
-        // available 100, total_grafted 100, no mortality -> regraftable 100.
+        // available 100, (total_grafted 100 - regraft 0) - mortality 0 -> 100.
         $this->postRegraft($user, $source, 101)
             ->assertSessionHasErrors('quantity', null, 'replanting');
 
@@ -180,13 +183,53 @@ class RegraftFlowTest extends TestCase
         $source = $this->batch($user, $this->variety(), 'B001', 100);
         $this->mortality($source, $user, 90);
 
-        // regraftable = min(100, 100 - 90) = 10; dead root stock cannot be regrafted.
+        // regraftable = min(100, (100 - 0) - 90) = 10; dead root stock cannot be
+        // regrafted.
         $this->assertSame(10, $source->fresh()->regraftableQuantity());
 
         $this->postRegraft($user, $source, 11)
             ->assertSessionHasErrors('quantity', null, 'replanting');
 
         $this->assertDatabaseCount('replanting_records', 0);
+    }
+
+    public function test_caps_are_computed_against_the_remaining_population_not_the_raw_total(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety(), 'B001', 500);
+
+        // Regraft 100 out of the 500. Under the confirmed cumulative rule the
+        // source's total_grafted stays 500; available drops to 400 and the
+        // regraft counter becomes 100.
+        $this->postRegraft($user, $source, 100)->assertSessionHas('success');
+
+        $source->refresh();
+        $this->assertSame(500, (int) $source->total_grafted);
+        $this->assertSame(400, (int) $source->available_count);
+        $this->assertSame(100, (int) $source->regraft);
+
+        // Both caps are computed against (total_grafted - regraft) = 400, NOT
+        // the raw total_grafted = 500.
+        $this->assertSame(400, $source->remainingMortalityCapacity());
+        $this->assertSame(400, $source->regraftableQuantity());
+
+        // 450 exceeds the 400 that actually remain -> rejected (a raw
+        // total_grafted ceiling would have allowed it).
+        $this->postRegraft($user, $source, 450)
+            ->assertSessionHasErrors('quantity', null, 'replanting');
+        $this->assertSame(1, Batch::where('parent_batch_id', $source->batch_id)->count());
+
+        // With mortality recorded, the cap falls from 400 to 350 because the
+        // denominator is (500 - 100) - 50, not 500 - 50.
+        $this->mortality($source, $user, 50);
+        $source->refresh();
+        $this->assertSame(350, $source->remainingMortalityCapacity());
+        $this->assertSame(350, $source->regraftableQuantity());
+
+        // 400 now exceeds the 350 still attributable -> rejected.
+        $this->postRegraft($user, $source, 400)
+            ->assertSessionHasErrors('quantity', null, 'replanting');
+        $this->assertSame(1, Batch::where('parent_batch_id', $source->batch_id)->count());
     }
 
     public function test_scion_variety_is_required_and_must_be_active(): void
@@ -326,8 +369,21 @@ class RegraftFlowTest extends TestCase
             $this->assertLessThanOrEqual((int) $batch->total_grafted, (int) $batch->available_count);
         }
 
-        // The family's grafted population is conserved.
-        $this->assertSame(500, (int) $source->total_grafted + (int) $sub->total_grafted);
+        // total_grafted is a cumulative, non-decreasing log: the source's
+        // total_grafted is unchanged by the regraft and the new sub-batch records
+        // the moved quantity as its own total_grafted.
+        $this->assertSame(500, (int) $source->total_grafted);
+        $this->assertSame(400, (int) $source->available_count);
+        $this->assertSame(100, (int) $source->regraft);
+        $this->assertSame(100, (int) $sub->total_grafted);
+
+        // What is conserved across the family is the still-attributable
+        // population, (total_grafted - regraft): parent 400 + sub-batch 100.
+        $this->assertSame(
+            500,
+            ((int) $source->total_grafted - (int) $source->regraft)
+                + ((int) $sub->total_grafted - (int) $sub->regraft),
+        );
 
         // The cached counter reconciles with the regraft records.
         $this->assertSame(
@@ -366,7 +422,9 @@ class RegraftFlowTest extends TestCase
             'recorded_at' => now()->subDays(2)->toDateString(),
         ]);
 
-        $this->assertSame(150, (int) $source->fresh()->total_grafted);
+        // The parent's total_grafted is cumulative and unchanged; the sub-batch
+        // mortality is independent of it.
+        $this->assertSame(200, (int) $source->fresh()->total_grafted);
         $this->assertSame(50, (int) $source->fresh()->regraft);
         $this->assertSame(5, $sub->fresh()->effectiveMortalityQuantity());
 
@@ -393,7 +451,9 @@ class RegraftFlowTest extends TestCase
             ->assertRedirect(route('operational.batches'));
 
         $source->refresh();
-        $this->assertSame(150, (int) $source->total_grafted);
+        // The rejected edit must not have changed the cumulative total_grafted,
+        // and the regraft's available deduction still stands.
+        $this->assertSame(200, (int) $source->total_grafted);
         $this->assertSame(150, (int) $source->available_count);
     }
 

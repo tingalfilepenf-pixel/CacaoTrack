@@ -8,6 +8,37 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## CONFIRMED — `total_grafted` is a cumulative, non-decreasing log (2026-09-29)
+- **Client-CONFIRMED, not a pending `OD-n`.** Evidence: the client's `RU-Summary.jpg` spreadsheet
+  records a regraft as a **new Grafted entry plus a Re Graft entry on the same row** (row 4, 10/2025,
+  "re graft"); the client stated directly: *"Grafted minus Regraft = mortality or yield for the
+  parent batch."*
+- **Rule:** a batch's `total_grafted` is a **cumulative, non-decreasing log**; a regraft **never**
+  reduces it. Only the parent's live `available_count` drops (by `q`) and its `regraft` counter rises
+  (by `q`). The new sub-batch records `total_grafted = available_count = q`. A batch's
+  **still-attributable / live population** for mortality and regraft purposes is
+  **`total_grafted − regraft`**.
+- **Code:**
+  - `App\Actions\RegraftBatch::execute()` no longer writes `source.total_grafted`; it only does
+    `available_count -= q` and `regraft += q`.
+  - `Batch::remainingMortalityCapacity() = max(0, (total_grafted − regraft) − effectiveMortalityQuantity())`.
+  - `Batch::regraftableQuantity() = max(0, min(available_count, (total_grafted − regraft) − effectiveMortalityQuantity()))`.
+- **Docs:** `docs/CacaoTrack_PRD.md` §2.4 / §10 / §11 (new "Total Grafted" subsection) / §19 — the
+  Total_Grafted clauses of `OD-4`, `OD-6` and `OD-10` are now **CONFIRMED**; `docs/CacaoTrack_ERD.md`
+  §2 rule 7 / §3.8 / §3.11. The `_REVISED` copies are kept byte-identical (SHA-256 match).
+- **Tests:** full MySQL suite **329 passed / 1425 assertions** against `db_capstone_test` (was
+  328/1406). New `RegraftFlowTest::test_caps_are_computed_against_the_remaining_population_not_the_raw_total`;
+  the Phase 7C family-conservation assertions were rewritten (raw family sum is **not** conserved any
+  more; `total_grafted − regraft` is).
+- **Seeded family under the corrected rule (fresh `db_capstone_test` seed):** B001 500/400/100,
+  B001-R1 100/50/30, B001-R1-R1 30/30/0, B002 150/150/0, B003 100/100/0 → `Σtotal_grafted` **880**,
+  `Σavailable` **730**, `Σregraft` **130**; Crude Mortality Rate 55/880 = **6.25%** (was 7.33%);
+  stock-ledger *Grafted* (root batches only) **750**.
+- **⚠ `db_capstone` was deliberately NOT reseeded.** It still holds the Phase 7D seed produced under
+  the old arithmetic (B001 total 400, `regraft` 100), so live rows do **not** yet satisfy
+  `available_count ≤ total_grafted − regraft`. A fresh wipe + reseed needs fresh explicit sign-off
+  (standing rule; tests run only against `db_capstone_test`).
+
 ## PHASE 7D DONE — live `db_capstone` upgraded to the approved schema + reseeded (2026-09-29)
 - **One approved destructive action — EXPLICITLY signed off by the project owner for this run only.
   Connection `mysql`, database `db_capstone`.** The standing rule is unchanged: tests run **only**
@@ -60,8 +91,10 @@
 - **Two provisional defaults (recorded as provisional — pending client sign-off):**
   1. **`OD-3`** — a new batch's `available_count = total_grafted` (`BatchController@store`, and the
      update path only while the batch has no operational records).
-  2. **`OD-4`** — `Batch::remainingMortalityCapacity() = max(0, total_grafted − effective mortality)`.
-     Mortality still does **not** change `available_count` or the `regraft` counter.
+  2. **`OD-4`** — `Batch::remainingMortalityCapacity() =
+     max(0, (total_grafted − regraft) − effective mortality)` (**CONFIRMED 2026-09-29** — see the
+     "CONFIRMED" section at the top). Mortality still does **not** change `available_count` or the
+     `regraft` counter.
 - **`db_capstone` was upgraded to this schema + reseeded in Phase 7D (2026-09-29)** — the four
   `2026_09_27_*` migrations are applied and the live DB no longer has `batches.viable_count`,
   `stock_ins.viable` or `inventories.viable`. (When Phase 7A landed the live DB was deliberately left
@@ -79,8 +112,9 @@
   the controller, the seeders and the tests all call `execute()`. One DB transaction: (1) lock the
   source `batches` row, (2) re-check not-archived + quantity, (3) form-request validates the shape;
   action re-checks not-archived source, `1 ≤ q ≤ regraftableQuantity()`, active scion variety, date
-  not before the source's `grafted_date`; (4) source `total_grafted -= q`, `available_count -= q`,
-  `regraft += q`; (5) create the sub-batch (`parent_batch_id = source`, `batch_code =
+  not before the source's `grafted_date`; (4) source `available_count -= q`, `regraft += q`
+  (`total_grafted` is a cumulative, non-decreasing log and is **NOT** reduced — CONFIRMED
+  2026-09-29); (5) create the sub-batch (`parent_batch_id = source`, `batch_code =
   nextSubBatchCode()`, `total_grafted = available_count = q`, `regraft = 0`, `grafted_date` = regraft
   date, status active, chosen variety, actor user); (6) create the `ReplantingRecord`
   (`batch_id = NEW sub-batch`, `parent_batch_id = source`); (7) `ActivityLog::record` (existing
@@ -100,8 +134,10 @@
   Batches list gained a **Parent Batch** column. Success message: `Regraft recorded; sub-batch {code}
   created.`
 - **Provisional defaults (each flagged `provisional — pending PRD OD-n`):**
-  1. **`OD-6`** — regraftable cap `max(0, min(available_count, total_grafted − effective mortality))`
-     (a dead root stock cannot be regrafted).
+  1. **`OD-6`** — regraftable cap
+     `max(0, min(available_count, (total_grafted − regraft) − effective mortality))` (a dead root
+     stock cannot be regrafted) — **CONFIRMED 2026-09-29** for the cap/sub-batch `total_grafted`
+     clause; the code-format details remain provisional.
   2. **`OD-6`** — sub-batch code = source `batch_code` + `-R` + first free sequence (`B001-R1`,
      `B001-R2`, …); nested (`B001-R1-R1`) when a sub-batch is itself regrafted.
   3. **ERD §3.11 reading** — the `ReplantingRecord` stores `batch_id` = the new sub-batch and
@@ -116,15 +152,17 @@
   record fields + Activity Log; `-R2` and nested `-R1-R1` sequencing; validation for 0/negative/
   non-numeric/over-cap/dead-stock/archived variety/archived source/future date/date-before-grafted;
   atomic rollback via a forced `ActivityLog` failure; duplicate-submission guard; 403 without
-  `record_operations`; invariants `0 ≤ available ≤ total_grafted` + family conservation + counter
-  reconciliation; parent/sub-batch independence; counts locked after regraft; Stock Out and Inventory
+  `record_operations`; invariants `0 ≤ available ≤ total_grafted` + `(total_grafted − regraft)`
+  conservation + counter reconciliation; parent/sub-batch independence; counts locked after regraft;
+  Stock Out and Inventory
   snapshots on a sub-batch; the page no longer shows the deficit cap). `ReplantingTest`,
   `BatchRelationshipsTest`, `CumulativeEventRecordsTest`, `AnalyticsTest`, `InventoryTest` updated to
   the Phase 7B semantics. **Verified:** full MySQL suite **299 passed / 1278 assertions**, Pint +
   `php -l` clean, `migrate:status` **0 Pending** on `db_capstone_test`, seeders clean + idempotent.
   Seeded invariants: `available_count > total_grafted` = **0**, `available_count < 0` = **0**,
-  family totals conserve (B001 400 + B001-R1 100 = original 500), `Σregraft` **100** ==
-  `Σ(records where parent_batch_id)` **100**.
+  family totals conserve (B001 400 + B001-R1 100 = original 500 — **superseded 2026-09-29**:
+  `total_grafted` is now cumulative, so `(total_grafted − regraft)` is what conserves), `Σregraft`
+  **100** == `Σ(records where parent_batch_id)` **100**.
 - **`db_capstone` was upgraded + reseeded in Phase 7D (2026-09-29)** — the four `2026_09_27_*`
   migrations are applied (no longer Pending) and the live DB matches this schema. (They remained
   Pending through Phase 7B; that step was executed later — see "PHASE 7D DONE" at the top.)
@@ -173,11 +211,15 @@
   seeded only through `RegraftBatch`, idempotent), and the current month's Inventory snapshot is
   written for the parent and both sub-batches through the app logic.
 - **Verified:** full MySQL suite **328 passed / 1406 assertions**, Pint clean, `php -l` clean,
-  `view:cache` clean, `migrate:status` **0 Pending** on `db_capstone_test`. Seeded invariants: SUM
-  available **730** == Total Active Inventory; SUM total_grafted **750** == Crude Mortality Rate
-  denominator; B001 family total_grafted **500** conserved; `Σregraft` **130** ==
+  `view:cache` clean, `migrate:status` **0 Pending** on `db_capstone_test`. Seeded invariants (at
+  Phase 7C, under the old `total_grafted` arithmetic — **superseded 2026-09-29**, see the CONFIRMED
+  section at the top): SUM available **730** == Total Active Inventory; SUM total_grafted **750** ==
+  Crude Mortality Rate denominator; B001 family total_grafted **500** conserved; `Σregraft` **130** ==
   `Σ(replanting_records.quantity)` **130**; Seedlings **800** (seedling-only) vs **1000** all Stock In;
-  ledger grafted **650** / ready_to_plant **730**.
+  ledger grafted **650** / ready_to_plant **730**. Under the corrected cumulative rule these become
+  SUM total_grafted **880** / denominator **880** / rate **6.25%**, family sum **630** (with
+  `total_grafted − regraft` still **500**), and ledger grafted **750**; available **730**, regraft
+  **130**, seedlings **800** are unchanged.
 - **`db_capstone` was upgraded + reseeded in Phase 7D (2026-09-29)** — the four `2026_09_27_*`
   migrations are applied and the live DB matches this schema. (They remained Pending through
   Phase 7C; applying them + the reseed was the separate, explicitly approved step executed in

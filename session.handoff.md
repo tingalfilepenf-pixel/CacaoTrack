@@ -1,6 +1,65 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CH — **Phase 7D: live `db_capstone` upgraded to the approved schema + reseeded**)
+> ### ▶ Continue here (latest: Session CJ — **`Total_Grafted` confirmed as a cumulative, non-decreasing log; a regraft no longer reduces it**)
+> - **▶ Session CJ (DONE — client-confirmed `Total_Grafted` semantics; two source changes + tests + docs, 2026-09-29):**
+>   the client confirmed (spreadsheet `RU-Summary.jpg`, row 4 / 10/2025 "re graft" = a new Grafted entry
+>   plus a Re Graft entry on the **same row**; direct statement *"Grafted minus Regraft = mortality or
+>   yield for the parent batch"*) that **`total_grafted` is a cumulative, non-decreasing log per batch**
+>   and a regraft never reduces it. A batch's still-attributable/live population for mortality and
+>   regraft is **`total_grafted − regraft`**. **Two source changes (shipped together):**
+>   `App\Actions\RegraftBatch::execute()` no longer writes `source.total_grafted` (only
+>   `available_count -= q`, `regraft += q`); and `Batch::remainingMortalityCapacity()` /
+>   `Batch::regraftableQuantity()` now bound against `(total_grafted − regraft) − effective mortality`
+>   instead of raw `total_grafted`. **Tests:** new
+>   `RegraftFlowTest::test_caps_are_computed_against_the_remaining_population_not_the_raw_total`; the
+>   Phase 7C family-conservation assertions rewritten (the raw family sum is no longer conserved;
+>   `total_grafted − regraft` is). Full MySQL suite **329 passed / 1425 assertions** against
+>   `db_capstone_test` (was 328/1406). **Seeded family under the corrected rule:** B001 500/400/100 ·
+>   B001-R1 100/50/30 · B001-R1-R1 30/30/0 · B002 150/150/0 · B003 100/100/0 → `Σtotal_grafted` **880**,
+>   `Σavailable` **730**, `Σregraft` **130**; Crude Mortality Rate 55/880 = **6.25%** (was 7.33%);
+>   stock-ledger *Grafted* (roots only) **750**. **Docs:** `docs/CacaoTrack_PRD.md`
+>   §2.4/§10/§11 (new "Total Grafted")/§19 — the Total_Grafted clauses of `OD-4`, `OD-6`, `OD-10` are
+>   now **CONFIRMED** — and `docs/CacaoTrack_ERD.md` §2 rule 7/§3.8/§3.11; the `_REVISED` copies are
+>   byte-identical (SHA-256 match). **`db_capstone` was deliberately NOT reseeded** (per instruction):
+>   it still holds the Phase 7D seed produced under the old arithmetic (B001 total 400, regraft 100),
+>   so live rows do not yet satisfy `available_count ≤ total_grafted − regraft`. Standing rule
+>   unchanged: tests only against `db_capstone_test`; any further destructive action on the live DB
+>   needs fresh explicit sign-off.
+> - **▶ Session CI (DONE — read-only audit of the seeded regraft family's quantities; NO code, migration, seeder or test change, 2026-09-29):**
+>   investigated a report that the SOURCE batch's `available_count` was not decremented when
+>   `RegraftBatch` ran. **Verdict: no code bug and no data bug — no fix required.**
+>   `App\Actions\RegraftBatch::execute()` decrements **both** `total_grafted` and `available_count` by
+>   `q` and increments `regraft`, all under the same `lockForUpdate` transaction
+>   (`app/Actions/RegraftBatch.php:98-100`) — there is no missing update statement.
+>   **Live `db_capstone` is internally consistent** (read-only): B001 400/400 regraft 100 · B001-R1
+>   70/50 regraft 30 · B001-R1-R1 30/30 · B002 150/150 · B003 100/100; **SUM total_grafted 750,
+>   SUM available 730, SUM regraft 130 == Σ `replanting_records.quantity` 130**. Per batch,
+>   `available_count + regraftedOut + stockOut` = that batch's original graft (B001 400+100 = 500;
+>   B001-R1 50+30+20 = 100). **The reported discrepancy was an arithmetic-base error:** the
+>   *post-regraft* `total_grafted` (400 / 70) was used as the pre-regraft base, but the seeded bases are
+>   **500** (B001, `database/seeders/DatabaseSeeder.php:105-107`) and **100** (B001-R1), so the live
+>   400 / 50 are correct. The cited dump
+>   `...\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql` **predates the Phase 7D reseed**
+>   (old schema; `B001 200/180/180`, no `B001-R1` row) and cannot be the source of those numbers.
+>   `tests/Feature/RegraftFlowTest.php:94` asserts `source.available_count == 400` (also
+>   `:173`/`:397`/`:418`); the file was run against `db_capstone_test` — **21 passed / 104 assertions**.
+>   **Recorded semantics (relevant to `OD-3`/`OD-12`):** a **single batch's `total_grafted` is a live
+>   residual, not "originally grafted"** — it falls on every regraft. Only the **family/global SUM**
+>   reads as "plants ever grafted" (gross) and is conserved across regrafting because a regraft is a
+>   transfer (source `−q`, sub-batch `+q`); that SUM is therefore the correct crude-mortality-rate
+>   denominator (`AnalyticsMetrics` `:111`/`:207`). Per-batch residual `total_grafted` is still labelled
+>   **"Total Grafted"** and shown on its own row by: the **Batches page**
+>   (`resources/views/operational/batches/partials/batch-row.blade.php:62`), the **Stock Ledger** grid
+>   Grafted row (**root batches only**, `AnalyticsMetrics.php:554`), the Stock Ledger
+>   **"Batch summary (nested)"** table/PDF/CSV (`AnalyticsMetrics.php:777`,
+>   `analytics/stock-ledger.blade.php:275`, `StockLedgerPdf.php:364`, `AnalyticsController.php:300`),
+>   the **Inventory** row (`inventory/index.blade.php:184`), the **Gap Report** `expected`
+>   (`AnalyticsMetrics.php:471`) and the **Replanting** summary
+>   (`operational/replanting/index.blade.php:140`). **Age Profile does not show `total_grafted` at all**
+>   — it uses `available_count` (`AnalyticsMetrics.php:394`/`:418`). **The only open item is
+>   cosmetic/label** (is "Total Grafted" the right label for a per-batch residual?) and it belongs to the
+>   pending `OD-3`/`OD-12` client decisions — **do not change it unprompted.** A throwaway inspection
+>   script in `...\Temp\opencode` was deleted; no repo file other than this handoff was written.
 > - **▶ Session CH (DONE — Phase 7D: live `db_capstone` upgraded to the approved schema + reseeded;
 >   the one approved destructive action, 2026-09-29):** with the project owner's explicit sign-off,
 >   `php artisan migrate:fresh --seed --force` was run against **connection `mysql` / database
@@ -260,17 +319,26 @@
 >   (and the earlier CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ entries).
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session CH (2026-09-29)** — **Phases 7A, 7B and 7C, plus the Phase 7D live-DB
-upgrade + reseed, are done:** the seedling viability
+project after **Session CJ (2026-09-29)** — the client **confirmed that `total_grafted` is a
+cumulative, non-decreasing log** (spreadsheet `RU-Summary.jpg`; *"Grafted minus Regraft = mortality or
+yield for the parent batch"*). In that session `App\Actions\RegraftBatch` stopped decrementing the
+source `total_grafted` (only `available_count` and `regraft` change), and
+`Batch::remainingMortalityCapacity()` / `Batch::regraftableQuantity()` now bound against
+`(total_grafted − regraft)`; the PRD/ERD `OD-4`/`OD-6`/`OD-10` Total_Grafted clauses are now
+**CONFIRMED**. The full MySQL suite is **329 passed / 1425 assertions** against `db_capstone_test`.
+**`db_capstone` was deliberately NOT reseeded** in Session CJ — it still holds the Phase 7D seed under
+the old arithmetic, so live rows do not yet satisfy `available_count ≤ total_grafted − regraft`; a
+fresh wipe + reseed needs fresh explicit sign-off. The substantive prior state is unchanged from
+**Session CH**: **Phases 7A, 7B
+and 7C, plus the Phase 7D live-DB upgrade + reseed, are done:** the seedling viability
 count is removed, the regraft / sub-batch flow (`App\Actions\RegraftBatch`) moves a quantity from a
 source batch into a linked sub-batch, and parent batches and their regraft sub-batches are now shown
 nested (via `App\Support\BatchTree`) across the Batches, Inventory, Stock Ledger, Age Profile and Gap
 Report pages, with the Stock Ledger Grafted/Regraft/Seedlings sections realigned to the Phase 7B
-model. `db_capstone` now runs the approved schema and is reseeded (Phase 7D, 2026-09-29; verified
-backup `db_capstone_pre_phase7d_20260929_000206.sql`, 35,131 B), and the
-provisional defaults (`OD-3`/`OD-4` from 7A; `OD-6`/`OD-12` and the ERD §3.11 reading from 7B) await
-sign-off.** The full MySQL suite was last fully verified green (**328 passed / 1406 assertions**,
-Session CG). The next session starts from the **"NEXT UP"
+model. `db_capstone` runs the approved schema and was reseeded (Phase 7D, 2026-09-29; verified
+backup `db_capstone_pre_phase7d_20260929_000206.sql`, 35,131 B), and the remaining
+provisional defaults (`OD-3` from 7A; the `OD-6` code-format details/`OD-12` and the ERD §3.11 reading
+from 7B) await sign-off.** The next session starts from the **"NEXT UP"
 bullet in the banner above** and §6. (Historical context follows: Phase 5 (Analytics/reports) was
 **implemented in Session BQ**; the Gap formula was corrected in Session BS; the Replanting→Regraft
 display rename landed in Session BT; Session BU audited the consolidation; Session BV added the

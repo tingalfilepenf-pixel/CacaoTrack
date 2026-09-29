@@ -14,8 +14,8 @@ use Tests\TestCase;
 /**
  * Mortality Tracking on the client-approved model: record-only
  * (Mortality_Adjustments was removed), the cap is
- * `max(0, total_grafted - effective mortality)`, and recording NEVER mutates
- * `batches.available_count` or the `regraft` counter.
+ * `max(0, (total_grafted - regraft) - effective mortality)`, and recording NEVER
+ * mutates `batches.available_count` or the `regraft` counter.
  */
 class MortalityTest extends TestCase
 {

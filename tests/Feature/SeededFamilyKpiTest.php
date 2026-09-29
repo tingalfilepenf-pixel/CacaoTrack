@@ -9,10 +9,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Phase 7C: the seeded family conserves its KPI population.
+ * Phase 7C: the seeded family's KPI population.
  *
- * Seed (DatabaseSeeder): the original B001 family of 500 is now B001 400 +
- * B001-R1 70 + B001-R1-R1 30 (conservation), plus B002 150 and B003 100.
+ * Seed (DatabaseSeeder), under the CONFIRMED cumulative rule: `total_grafted`
+ * never decreases, so B001 keeps 500 and B001-R1 keeps 100. The B001 family is
+ * B001 500 + B001-R1 100 + B001-R1-R1 30 (raw sum 630), plus B002 150 and
+ * B003 100 — a grand raw sum of 880. The still-attributable population
+ * (total_grafted - regraft) is what is conserved at 500.
  */
 class SeededFamilyKpiTest extends TestCase
 {
@@ -39,12 +42,20 @@ class SeededFamilyKpiTest extends TestCase
         $components = AnalyticsMetrics::mortalityRateComponents();
 
         $this->assertSame((int) Batch::query()->sum('total_grafted'), $components['denominator']);
-        $this->assertSame(750, $components['denominator']);
+        // Cumulative total_grafted: 500 + 100 + 30 + 150 + 100 = 880.
+        $this->assertSame(880, $components['denominator']);
 
-        // The B001 family's original 500 is conserved across parent + sub-batches.
+        // total_grafted is a cumulative, non-decreasing log, so the family's raw
+        // sum grows: 500 + 100 + 30 = 630. What is conserved is the still-
+        // attributable population (total_grafted - regraft) = 400 + 70 + 30.
+        $family = Batch::query()
+            ->whereIn('batch_code', ['B001', 'B001-R1', 'B001-R1-R1'])
+            ->get();
+
+        $this->assertSame(630, (int) $family->sum('total_grafted'));
         $this->assertSame(
             500,
-            (int) Batch::query()->whereIn('batch_code', ['B001', 'B001-R1', 'B001-R1-R1'])->sum('total_grafted'),
+            (int) $family->sum(fn (Batch $batch) => (int) $batch->total_grafted - (int) $batch->regraft),
         );
     }
 
@@ -73,8 +84,9 @@ class SeededFamilyKpiTest extends TestCase
     {
         $grid = AnalyticsMetrics::stockLedgerGrid();
 
-        // Grafted = root batches only; Available (Ready to Plant) = every batch.
-        $this->assertSame(650, $grid['summary']['grafted']);
+        // Grafted = root batches only (B001 500 + B002 150 + B003 100);
+        // Available (Ready to Plant) = every batch.
+        $this->assertSame(750, $grid['summary']['grafted']);
         $this->assertSame(730, $grid['summary']['ready_to_plant']);
         $this->assertSame(130, $grid['summary']['regraft']);
         $this->assertSame(800, $grid['summary']['seedlings']);

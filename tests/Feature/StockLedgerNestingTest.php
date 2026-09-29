@@ -47,8 +47,8 @@ class StockLedgerNestingTest extends TestCase
     {
         $grid = AnalyticsMetrics::stockLedgerGrid();
 
-        // Root batches only: B001 400 + B002 150 + B003 100.
-        $this->assertSame(650, $grid['summary']['grafted']);
+        // Root batches only (cumulative totals): B001 500 + B002 150 + B003 100.
+        $this->assertSame(750, $grid['summary']['grafted']);
 
         $graftedCodes = collect($this->events())
             ->filter(fn (array $event) => str_starts_with((string) $event['description'], 'Batch '))
@@ -113,7 +113,7 @@ class StockLedgerNestingTest extends TestCase
             'parent_missing' => false,
             'depth' => 0,
             'variety' => 'Batangas',
-            'total_grafted' => 400,
+            'total_grafted' => 500,
             'available' => 400,
             'regraft' => 100,
             'mortality' => 25,
@@ -127,7 +127,7 @@ class StockLedgerNestingTest extends TestCase
             'parent_missing' => false,
             'depth' => 1,
             'variety' => 'Toledo',
-            'total_grafted' => 70,
+            'total_grafted' => 100,
             'available' => 50,
             'regraft' => 30,
             'mortality' => 5,
@@ -149,7 +149,8 @@ class StockLedgerNestingTest extends TestCase
             'grafted_date' => '2026-09-08',
         ], $byCode['B001-R1-R1']);
 
-        $this->assertSame(750, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['total_grafted']);
+        // Cumulative raw sum: 500 + 100 + 30 + 150 + 100 = 880.
+        $this->assertSame(880, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['total_grafted']);
         $this->assertSame(730, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['available']);
     }
 
@@ -216,7 +217,7 @@ class StockLedgerNestingTest extends TestCase
 
         // Only B001 itself; the sub-batches are separate (exact-match) filters.
         $this->assertSame(1, $summary['batches']);
-        $this->assertSame(400, $summary['grafted']);
+        $this->assertSame(500, $summary['grafted']);
         $this->assertSame(400, $summary['ready_to_plant']);
         // The sub-batch's regraft record is not pulled in by the parent filter.
         $this->assertSame(0, $summary['regraft']);

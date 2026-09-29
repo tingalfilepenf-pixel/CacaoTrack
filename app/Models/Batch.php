@@ -15,19 +15,22 @@ use Illuminate\Validation\Rule;
 /**
  * Client-approved ERD entity `Batch` (ERD §3.8).
  *
- * A batch is the established grafted cacao record. `total_grafted` is the batch
- * population, `regraft` is its regraft counter, and `available_count` is the
- * live available balance (never decremented by mortality). A regraft sub-batch
- * links to its parent through `parent_batch_id` and has its own 21-day cycle.
- * The monthly operational status lives in the related Inventory snapshots.
+ * A batch is the established grafted cacao record. `total_grafted` is a
+ * **cumulative, non-decreasing log** of plants grafted into the batch
+ * (client-confirmed), `regraft` is its regraft counter, and `available_count`
+ * is the live available balance (never decremented by mortality). The still-
+ * attributable/live population of a batch is `total_grafted − regraft`. A
+ * regraft sub-batch links to its parent through `parent_batch_id` and has its
+ * own 21-day cycle. The monthly operational status lives in the related
+ * Inventory snapshots.
  *
  * Provisional default 1 (pending PRD `OD-3`): a newly established batch starts
  * with `available_count = total_grafted`.
  *
- * Phase 7B regraft flow (provisional, pending PRD `OD-6`): a regraft moves a
- * quantity out of a parent batch into a linked sub-batch — see
- * {@see RegraftBatch} — deducting `total_grafted`/`available_count`
- * and incrementing the `regraft` counter on the parent.
+ * Phase 7B regraft flow: a regraft moves a quantity out of a parent batch into
+ * a linked sub-batch — see {@see RegraftBatch} — deducting `available_count`
+ * and incrementing the `regraft` counter on the parent. `total_grafted` is left
+ * unchanged (it is cumulative).
  */
 class Batch extends Model
 {
@@ -187,14 +190,15 @@ class Batch extends Model
     /**
      * Remaining quantity that may still be recorded as mortality.
      *
-     * Provisional default 2 (pending PRD `OD-4`): the mortality quantity is
-     * bounded by the batch's grafted population, so the cap is
-     * `max(0, total_grafted - effective mortality)`. Recording mortality still
-     * does **not** mutate `available_count` or the `regraft` counter.
+     * The mortality quantity is bounded by the batch's still-attributable
+     * population (`total_grafted − regraft`, client-confirmed), so the cap is
+     * `max(0, (total_grafted - regraft) - effective mortality)`. Recording
+     * mortality still does **not** mutate `available_count` or the `regraft`
+     * counter.
      */
     public function remainingMortalityCapacity(): int
     {
-        return max(0, (int) $this->total_grafted - $this->effectiveMortalityQuantity());
+        return max(0, ((int) $this->total_grafted - (int) $this->regraft) - $this->effectiveMortalityQuantity());
     }
 
     /**
@@ -214,16 +218,16 @@ class Batch extends Model
     /**
      * Quantity of this batch that may still be regrafted.
      *
-     * Provisional (pending PRD `OD-6`): a dead root stock cannot be regrafted,
-     * so the cap is the tightest of the live available balance and the
-     * surviving grafted population:
-     * `max(0, min(available_count, total_grafted - effective mortality))`.
+     * A dead root stock cannot be regrafted, so the cap is the tightest of the
+     * live available balance and the still-attributable, surviving population
+     * (`total_grafted − regraft − effective mortality`, client-confirmed):
+     * `max(0, min(available_count, (total_grafted - regraft) - effective mortality))`.
      */
     public function regraftableQuantity(): int
     {
         return max(0, min(
             (int) $this->available_count,
-            (int) $this->total_grafted - $this->effectiveMortalityQuantity(),
+            ((int) $this->total_grafted - (int) $this->regraft) - $this->effectiveMortalityQuantity(),
         ));
     }
 

@@ -15,19 +15,21 @@ use Illuminate\Validation\ValidationException;
  * The single, atomic regraft / sub-batch creation flow (Phase 7B).
  *
  * Client-approved process (PRD §2.4 / §8 "Regrafting / Sub-Batch Creation";
- * ERD §2 rules 5-8, §3.8, §3.10, §3.11): when a batch is regrafted, the
- * regrafted quantity is deducted from the parent batch's `Total_Grafted`, the
+ * ERD §2 rules 5-8, §3.8, §3.10, §3.11): when a batch is regrafted, the moved
+ * quantity is deducted from the parent batch's live `Available_Count`, the
  * parent `Regraft` counter is increased by the same quantity, and the moved
  * plants establish a linked sub-batch with its own independent 21-day cycle and
- * its own Scion Variety.
+ * its own Scion Variety. `Total_Grafted` is a **cumulative, non-decreasing log**
+ * (client-confirmed — see `docs/CacaoTrack_PRD.md` §2.4), so a regraft never
+ * reduces it; the batch's still-attributable population is
+ * `Total_Grafted − Regraft`.
  *
  * This class is the **only** place the regraft steps live (RULE 6). The
  * controller, the seeders and the tests all go through {@see execute()}.
  *
- * Provisional regraft details (pending PRD `OD-3`/`OD-6`/`OD-12`) implemented
- * here:
+ * Regraft details implemented here:
  *  - the regraftable cap is `Batch::regraftableQuantity()`
- *    (`min(available_count, total_grafted - effective mortality)`);
+ *    (`min(available_count, (total_grafted - regraft) - effective mortality)`);
  *  - the sub-batch code is `Batch::nextSubBatchCode()` (`B001` → `B001-R1`);
  *  - the {@see ReplantingRecord} stores `batch_id` = the new sub-batch and
  *    `parent_batch_id` = the source batch;
@@ -92,10 +94,11 @@ class RegraftBatch
                 ]);
             }
 
-            // 4. Parent batch: move the quantity out of the grafted population
-            //    and into the regraft counter (provisional OD-3/OD-6: keeps
-            //    0 <= available_count <= total_grafted).
-            $locked->total_grafted = (int) $locked->total_grafted - $quantity;
+            // 4. Parent batch: move the quantity out of the live available
+            //    balance and into the regraft counter. `total_grafted` is a
+            //    cumulative, non-decreasing log (client-confirmed), so it is
+            //    deliberately NOT reduced here — the batch's still-attributable
+            //    population is `total_grafted - regraft`.
             $locked->available_count = (int) $locked->available_count - $quantity;
             $locked->regraft = (int) $locked->regraft + $quantity;
             $locked->save();
