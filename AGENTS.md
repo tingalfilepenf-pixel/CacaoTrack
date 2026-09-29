@@ -53,7 +53,9 @@
   - `App\Actions\RegraftBatch::execute()` no longer writes `source.total_grafted`; it only does
     `available_count -= q` and `regraft += q`.
   - `Batch::remainingMortalityCapacity() = max(0, (total_grafted − regraft) − effectiveMortalityQuantity())`.
-  - `Batch::regraftableQuantity() = max(0, min(available_count, (total_grafted − regraft) − effectiveMortalityQuantity()))`.
+  - `Batch::survivingQuantity() = max(0, min(available_count, (total_grafted − regraft) − effectiveMortalityQuantity()))`
+    — renamed from `regraftableQuantity()` in Session CT; it is now the shared cap for **both** Regraft
+    and Stock Out (the Stock Out gate was previously raw `available_count`).
   - `AnalyticsMetrics::mortalityRateComponents()` denominator =
     `SUM(total_grafted − regraft)` (and `survivalVsMortality()` uses the same live-population basis).
 - **Docs:** `docs/CacaoTrack_PRD.md` §2.4 / §10 / §11 (new "Total Grafted" subsection) / §19 — the
@@ -68,10 +70,46 @@
   B001-R1 100/50/30, B001-R1-R1 30/30/0, B002 150/150/0, B003 100/100/0 → raw `Σtotal_grafted` **880**,
   KPI denominator `Σ(total_grafted − regraft)` **750**, `Σavailable` **730**, `Σregraft` **130**;
   Crude Mortality Rate 55/750 = **7.33%**; stock-ledger *Grafted* (root batches only) **750**.
-- **⚠ `db_capstone` was deliberately NOT reseeded.** It still holds the Phase 7D seed produced under
-  the old arithmetic (B001 total 400, `regraft` 100), so live rows do **not** yet satisfy
-  `available_count ≤ total_grafted − regraft`. A fresh wipe + reseed needs fresh explicit sign-off
-  (standing rule; tests run only against `db_capstone_test`).
+- **✅ `db_capstone` WAS reseeded under the corrected rule** (2026-09-30, owner-approved one-time
+  destructive action — see "RESEED EXECUTED" below). It now holds the corrected seed
+  (B001 500/400/100, B001-R1 100/50/30, B001-R1-R1 30/30/0, B002 150/150/0, B003 100/100/0), so every
+  live row satisfies `available_count ≤ total_grafted − regraft`; `php artisan cacao:health` passes.
+  Tests still run only against `db_capstone_test`.
+
+## RESEED EXECUTED — live `db_capstone` realigned to the corrected `total_grafted` rule (2026-09-30)
+- **One explicitly approved destructive action (project-owner sign-off), connection `mysql` / database
+  `db_capstone`.** The standing rule is unchanged: tests run **only** against `db_capstone_test`; any
+  further destructive or schema action on the live DB needs fresh sign-off.
+- **Backup first (verified, left untouched outside the git repo):**
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_reseed_20260930_034319.sql`
+  — **37,510 B**, **23 `CREATE TABLE`** (byte-for-byte the same 23 tables as the live DB), dumped with
+  `--single-transaction --routines --triggers --events`, includes `CREATE DATABASE`/`USE db_capstone`,
+  clean `-- Dump completed on 2026-09-30  3:43:19` trailer.
+- **Before (raw):** `migrate:status` 53 Ran / **0 Pending**; **`cacao:health` FAILED (exit 1)** — 2
+  violations of `available_count ≤ total_grafted − regraft` (B001 expected 300 actual 400; B001-R1
+  expected 40 actual 50) — i.e. the stale Phase-7D arithmetic. This was the first real-world run of
+  `cacao:health` against actually-stale data, and it caught the expected violations.
+- **Run:** `php artisan migrate:fresh --seed --force` against `db_capstone` — all **53** migrations ran,
+  `DatabaseSeeder` + `ActivityLogSeeder` seeded, exit code **0**.
+- **After (raw):** `migrate:status` 53 Ran / **0 Pending**; **`cacao:health` PASSED (exit 0)**
+  (`Cacao health check passed. 5 batch(es) satisfy all invariants.`).
+- **Row counts before → after (`db_capstone`):** batches 5 → 5, stock_ins 4 → 4, stock_outs 1 → 1,
+  stock_out_details 1 → 1, mortality_records 8 → 4, regraft_records 2 → 2, inventories 5 → 5,
+  scion_varieties 5 → 5, suppliers 3 → 3, clients 3 → 3, users 3 → 1, activity_logs 17 → 11,
+  analytics 0 → 0, sessions 2 → 0; all other tables 0.
+- **Seeded family (verified live):** B001 Batangas 500/400/100 · B001-R1 Toledo 100/50/30 ·
+  B001-R1-R1 Criollo 30/30/0 · B002 Trinitario 150/150/0 · B003 Forastero 100/100/0. Aggregates:
+  `Σtotal_grafted` **880**, live population `Σ(total_grafted − regraft)` **750**, `Σavailable` **730**,
+  `Σregraft` **130**; **0** invariant violations (`available > total_grafted − regraft` = 0,
+  negative available = 0, `batches.regraft` counter vs `regraft_records` = 0).
+- **KPIs (centralized `AnalyticsMetrics`):** Total Active Inventory **730**, Crude Mortality Rate
+  **7.33%** (numerator 55 / denominator 750), Regraft Deficit **25**, Gap total **55**.
+- **End-to-end (read-only, seeded administrator via the HTTP kernel):** all **20 sidebar GET pages
+  return 200**; the Stock Out page's rendered `data-available` hint equals `survivingQuantity()` for
+  every batch (B001 **375** vs raw `available_count` 400; B002 135 vs 150; B003 90 vs 100);
+  `GET /analytics/stock-ledger/export/csv` returns **200** (`text/csv`).
+- **This removes the last live-DB divergence:** live `db_capstone` now satisfies the client-confirmed
+  cumulative `total_grafted` rule and `cacao:health` is clean.
 
 ## PHASE 7D DONE — live `db_capstone` upgraded to the approved schema + reseeded (2026-09-29)
 - **One approved destructive action — EXPLICITLY signed off by the project owner for this run only.
@@ -145,7 +183,8 @@
 - **One action — `App\Actions\RegraftBatch`** is the single place the regraft steps live (RULE 6);
   the controller, the seeders and the tests all call `execute()`. One DB transaction: (1) lock the
   source `batches` row, (2) re-check not-archived + quantity, (3) form-request validates the shape;
-  action re-checks not-archived source, `1 ≤ q ≤ regraftableQuantity()`, active scion variety, date
+  action re-checks not-archived source, `1 ≤ q ≤ survivingQuantity()` (then called
+  `regraftableQuantity()`), active scion variety, date
   not before the source's `grafted_date`; (4) source `available_count -= q`, `regraft += q`
   (`total_grafted` is a cumulative, non-decreasing log and is **NOT** reduced — CONFIRMED
   2026-09-29); (5) create the sub-batch (`parent_batch_id = source`, `batch_code =
@@ -153,7 +192,8 @@
   date, status active, chosen variety, actor user); (6) create the `RegraftRecord`
   (`batch_id = NEW sub-batch`, `parent_batch_id = source`); (7) `ActivityLog::record` (existing
   `regraft_recorded` type) attributed to the actor. Any failure rolls all of it back.
-- **Model changes:** `Batch` gained `regraftableQuantity()`, `nextSubBatchCode()` and
+- **Model changes:** `Batch` gained `regraftableQuantity()` (now `survivingQuantity()`, Session CT),
+  `nextSubBatchCode()` and
   `regraftRecordsAsParent()`; `totalRegrafted()` now returns the cached `batches.regraft` counter;
   `remainingReplantingCapacity()` was **removed**; `subBatches` was added to
   `Batch::OPERATIONAL_RELATIONS` so a parent's counts lock once it has been regrafted.
@@ -440,7 +480,7 @@ retracted). `inventories.regraft` (monthly aggregate) is unchanged.
 - **Account:** Activity History, User Management, Profile, Logout
 - Removed nav items: Batch Monitoring, Variety, Stock Reversal, Scion, Pot Type.
 
-## Locked refactor plan (Session BH — P0–P5 done, P6 pending)
+## Locked refactor plan (Session BH — P0–P6 DONE)
 - **P0 Safety/docs (DONE):** back up `db_capstone`; replace PRD/ERD with the revised content;
   update `AGENTS.md`. Backup: `...\Temp\opencode\db_capstone_pre_revised_refactor_20260925.sql`.
 - **P1 Migrations (DONE):** created `scion_varieties` + `stock_out_details`; altered `batches`,
@@ -537,14 +577,14 @@ P5 open-flags note above).
 - (c) `stock_ins.origin` is **NOT NULL**; the 8 legacy rows were backfilled to `''` and P3 enforces a
   non-empty origin for new records (`StoreStockInRequest`). No other P1 decision remains.
 
-## Current code state (DB + models + controllers + views + analytics = NEW (P1–P5 done); seeders/tests = OLD — P6 migrates them)
+## Current code state (all layers match the revised 15-entity model — P0–P6 DONE)
 `db_capstone` (P1), `app/Models` (P2 — Session BM), `app/Http/Controllers` + `routes/web.php`
 (P3 — Session BN, checkpoint `3d3f9f9`), the **view layer (Blade + sidebar)** (P4 — Session BO,
-checkpoint `0803bdf`) and the **analytics/report layer** (P5 — checkpoint `d139286`:
-`AnalyticsMetrics`, PDF/CSV classes, Dashboard, Stock Ledger monthly grid, Matrix, Historical)
-all match the revised model. **The seeders/tests still implement the previous 19-table model**, so the
-test suite fails until P6 rewrites them. `/` (Dashboard) returns **200**. The mapping below records
-the P1–P3 schema transition (now complete); P6 rewrites tests + docs. (For full historical detail see
+checkpoint `0803bdf`), the **analytics/report layer** (P5 — checkpoint `d139286`:
+`AnalyticsMetrics`, PDF/CSV classes, Dashboard, Stock Ledger monthly grid, Matrix, Historical) and the
+**seeders/tests/factories** (P6 — Session BZ) all match the revised model; the full MySQL suite is
+green (latest **342 passed / 1484 assertions**, Session CU). `/` (Dashboard) returns **200**. The
+mapping below records the P1–P3 schema transition (now complete). (For full historical detail see
 `session.handoff.md` §2.)
 
 | Revised entity | Current state | Action |
