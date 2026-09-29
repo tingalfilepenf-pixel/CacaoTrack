@@ -44,7 +44,7 @@ class OperationalAnalyticsPdf extends FPDF
      * @param  array<int,array{label:string,value:string}>  $kpis
      * @param  array{labels:array<int,string>,values:array<int,int>,total:int}  $mortalityTrend
      * @param  array{labels:array<int,string>,values:array<int,int>}  $inventoryByVariety
-     * @param  array{labels:array<int,string>,values:array<int,int>}  $replantingDeficitByBatch
+     * @param  array{labels:array<int,string>,values:array<int,int>}  $regraftDeficitByBatch
      * @param  array{surviving:int,mortality:int,totalGrafted:int}  $survivalVsMortality
      */
     public function __construct(
@@ -53,7 +53,7 @@ class OperationalAnalyticsPdf extends FPDF
         private readonly array $kpis,
         private readonly array $mortalityTrend,
         private readonly array $inventoryByVariety,
-        private readonly array $replantingDeficitByBatch,
+        private readonly array $regraftDeficitByBatch,
         private readonly array $survivalVsMortality,
     ) {
         parent::__construct('P', 'mm', 'A4');
@@ -149,7 +149,7 @@ class OperationalAnalyticsPdf extends FPDF
         $this->sectionTable(
             'Regraft Deficit by Batch',
             'Batch',
-            $this->zip($this->replantingDeficitByBatch['labels'], $this->replantingDeficitByBatch['values']),
+            $this->zip($this->regraftDeficitByBatch['labels'], $this->regraftDeficitByBatch['values']),
             'Deficit',
         );
 

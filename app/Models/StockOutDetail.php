@@ -25,12 +25,13 @@ class StockOutDetail extends Model
     public $timestamps = false;
 
     /**
-     * The fixed list of accepted units (locked decision b: the unit column is
-     * a fixed list, not free text). Single source of truth (RULE 6).
+     * The fixed list of accepted units (the unit column is a fixed list, not
+     * free text). Single source of truth (RULE 6) for both the Stock Out form
+     * and server-side validation.
      *
      * @var list<string>
      */
-    public const UNITS = ['seedlings', 'pieces', 'bags'];
+    public const UNITS = ['pots'];
 
     protected $fillable = [
         'stock_out_id',

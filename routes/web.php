@@ -10,7 +10,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MortalityController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\ReplantingController;
+use App\Http\Controllers\RegraftController;
 use App\Http\Controllers\ScionVarietyController;
 use App\Http\Controllers\StockInController;
 use App\Http\Controllers\StockOutController;
@@ -26,7 +26,7 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-// Operational Routes — Batches, Mortality, Replanting and the checklist all
+// Operational Routes — Batches, Mortality, Regraft and the checklist all
 // require the `record_operations` access restriction (PRD §5).
 Route::prefix('operational')->middleware(['auth', 'permission:record_operations'])->group(function () {
     Route::get('/checklist', [DailyChecklistController::class, 'index'])->name('operational.checklist');
@@ -43,8 +43,8 @@ Route::prefix('operational')->middleware(['auth', 'permission:record_operations'
     Route::get('/mortality', [MortalityController::class, 'index'])->name('operational.mortality');
     Route::post('/mortality/records', [MortalityController::class, 'store'])->name('operational.mortality.records.store');
 
-    Route::get('/replanting', [ReplantingController::class, 'index'])->name('operational.replanting');
-    Route::post('/replanting/records', [ReplantingController::class, 'store'])->name('operational.replanting.records.store');
+    Route::get('/regraft', [RegraftController::class, 'index'])->name('operational.regraft');
+    Route::post('/regraft/records', [RegraftController::class, 'store'])->name('operational.regraft.records.store');
 
     // Batches moved from `/inventory/batches` to `/operational/batches` (P3
     // decision f): a batch is the central operational record (PRD §5).

@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -41,14 +41,14 @@ class CumulativeEventRecordsTest extends TestCase
                 'parent_batch_id' => $source->batch_id,
             ]);
 
-            ReplantingRecord::factory()->create([
+            RegraftRecord::factory()->create([
                 'batch_id' => $sub->batch_id,
                 'parent_batch_id' => $source->batch_id,
                 'quantity' => $quantity,
             ]);
         }
 
-        $this->assertSame(195, ReplantingRecord::totalRegraftedFromBatch($source->batch_id));
+        $this->assertSame(195, RegraftRecord::totalRegraftedFromBatch($source->batch_id));
         $this->assertSame(3, $source->regraftRecordsAsParent()->count());
     }
 
@@ -74,16 +74,16 @@ class CumulativeEventRecordsTest extends TestCase
             'recorded_at' => '2026-09-01 08:30:00',
         ]);
 
-        $replanting = ReplantingRecord::factory()->create([
+        $regraft = RegraftRecord::factory()->create([
             'batch_id' => $batch->batch_id,
-            'replanting_date' => '2026-09-03',
+            'regraft_date' => '2026-09-03',
         ]);
 
         $this->assertInstanceOf(Carbon::class, $mortality->recorded_at);
         $this->assertSame('2026-09-01 08:30:00', $mortality->recorded_at->format('Y-m-d H:i:s'));
 
-        $this->assertInstanceOf(Carbon::class, $replanting->replanting_date);
-        $this->assertSame('2026-09-03', $replanting->replanting_date->format('Y-m-d'));
+        $this->assertInstanceOf(Carbon::class, $regraft->regraft_date);
+        $this->assertSame('2026-09-03', $regraft->regraft_date->format('Y-m-d'));
     }
 
     public function test_stock_in_dates_are_handled_as_dates_for_seedling_and_scion_rows(): void

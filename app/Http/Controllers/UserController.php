@@ -231,7 +231,7 @@ class UserController extends Controller
      * The revised 15-entity model has no `stock_reversals` or
      * `mortality_adjustments` tables (removed in P1), so those legacy checks
      * are gone. Every remaining FK that references a user is covered:
-     * batches/mortality/replanting/stock_ins/stock_outs/analytics/activity_logs
+     * batches/mortality/regraft/stock_ins/stock_outs/analytics/activity_logs
      * by `user_id`, and task_completes by both `user_id` and `verified_by_id`.
      */
     private function hasOperationalRecords(int $userId): bool
@@ -239,7 +239,7 @@ class UserController extends Controller
         $tables = [
             'batches' => 'user_id',
             'mortality_records' => 'user_id',
-            'replanting_records' => 'user_id',
+            'regraft_records' => 'user_id',
             'stock_ins' => 'user_id',
             'stock_outs' => 'user_id',
             'analytics' => 'user_id',

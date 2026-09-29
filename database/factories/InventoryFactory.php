@@ -39,7 +39,7 @@ class InventoryFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'batch_id' => $batch->batch_id,
             'total_grafted' => (int) $batch->total_grafted,
-            'regraft' => $batch->totalReplanted(),
+            'regraft' => $batch->totalRegrafted(),
             'mortality' => $batch->effectiveMortalityQuantity(),
         ]);
     }

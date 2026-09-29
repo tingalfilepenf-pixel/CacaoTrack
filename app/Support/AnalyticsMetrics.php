@@ -5,7 +5,7 @@ namespace App\Support;
 use App\Models\Analytic;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\StockOutDetail;
@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
  * through one of these definitions (RULE 12). Formulas that already exist on
  * the models are reused rather than re-implemented:
  *  - Total Active Inventory  -> Batch::totalAvailableQuantity()
- *  - Replanting Deficit      -> Batch::replantingDeficit()
+ *  - Regraft Deficit         -> Batch::regraftDeficit()
  *  - Effective mortality     -> MortalityRecord::effectiveQuantity()
  *
  * Definitions (approved, revised 15-entity model):
@@ -87,11 +87,11 @@ class AnalyticsMetrics
         return Batch::totalAvailableQuantity();
     }
 
-    public static function totalReplantingDeficit(): int
+    public static function totalRegraftDeficit(): int
     {
         return (int) Batch::query()
             ->get()
-            ->sum(fn (Batch $batch) => $batch->replantingDeficit());
+            ->sum(fn (Batch $batch) => $batch->regraftDeficit());
     }
 
     /**
@@ -186,17 +186,17 @@ class AnalyticsMetrics
     }
 
     /**
-     * Replanting deficit grouped by batch.
+     * Regraft deficit grouped by batch.
      *
      * @return array{labels:array<int,string>,values:array<int,int>}
      */
-    public static function replantingDeficitByBatch(): array
+    public static function regraftDeficitByBatch(): array
     {
         $batches = Batch::query()->orderBy('batch_code')->get();
 
         return [
             'labels' => $batches->pluck('batch_code')->all(),
-            'values' => $batches->map(fn (Batch $batch) => $batch->replantingDeficit())->all(),
+            'values' => $batches->map(fn (Batch $batch) => $batch->regraftDeficit())->all(),
         ];
     }
 
@@ -255,7 +255,9 @@ class AnalyticsMetrics
 
         foreach ($records as $record) {
             $varietyName = $record->batch?->scionVariety?->scion_variety_name ?? 'Unassigned';
-            $cause = $record->cause ?: 'Unspecified';
+            // `Others` is a single reporting category: every `Others: <description>`
+            // row collapses to `Others` so a spec does not split the column (RULE 6).
+            $cause = MortalityRecord::normalizeCause($record->cause);
             $effective = $record->effectiveQuantity();
 
             $causeSet[$cause] = true;
@@ -631,20 +633,20 @@ class AnalyticsMetrics
         }
 
         // Re Graft per Scion Variety. Regraft and Replanting are the same
-        // recorded procedure (the separate Regraft_Record table was retracted),
-        // so the ledger reads the real `replanting_records` rows. Phase 7C: the
+        // recorded procedure, so the ledger reads the real `regraft_records`
+        // rows. Phase 7C: the
         // column is the SUB-BATCH's scion variety and the description names the
         // source → sub-batch move.
-        $replantingRecords = ReplantingRecord::query()
+        $regraftRecords = RegraftRecord::query()
             ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
-            ->when($from, fn (Builder $q) => $q->whereDate('replanting_date', '>=', $from))
-            ->when($to, fn (Builder $q) => $q->whereDate('replanting_date', '<=', $to))
+            ->when($from, fn (Builder $q) => $q->whereDate('regraft_date', '>=', $from))
+            ->when($to, fn (Builder $q) => $q->whereDate('regraft_date', '<=', $to))
             ->when($scionVarietyId, fn (Builder $q) => $q->whereHas('batch', fn (Builder $b) => $b->where('scion_variety_id', $scionVarietyId)))
             ->with(['batch', 'parent'])
-            ->orderBy('replanting_date')
+            ->orderBy('regraft_date')
             ->get();
 
-        foreach ($replantingRecords as $record) {
+        foreach ($regraftRecords as $record) {
             $varietyId = $record->batch?->scion_variety_id ? (int) $record->batch->scion_variety_id : null;
 
             if ($varietyId !== null) {
@@ -655,7 +657,7 @@ class AnalyticsMetrics
             $subBatchCode = $record->batch?->batch_code ?? '—';
 
             $events[] = [
-                'date' => $record->replanting_date->toDateString(),
+                'date' => $record->regraft_date->toDateString(),
                 'description' => 'Regraft '.$sourceCode.' → '.$subBatchCode.($record->remark ? ' — '.$record->remark : ''),
                 'seedlings' => 0,
                 'grafted' => [],
@@ -945,8 +947,11 @@ class AnalyticsMetrics
             return ['hasBaseline' => false, 'causes' => [], 'cells' => []];
         }
 
-        $previousTotals = is_array($baseline['totalsByCause'] ?? null) ? $baseline['totalsByCause'] : [];
-        $currentTotals = is_array($current['totalsByCause'] ?? null) ? $current['totalsByCause'] : [];
+        // Older snapshots may still hold a split `Others: <description>` key; roll
+        // those into the single `Others` category before comparing so a stored
+        // spec never reads as a brand-new cause that "increased" (RULE 6).
+        $previousTotals = self::normalizeCauseMap(is_array($baseline['totalsByCause'] ?? null) ? $baseline['totalsByCause'] : []);
+        $currentTotals = self::normalizeCauseMap(is_array($current['totalsByCause'] ?? null) ? $current['totalsByCause'] : []);
 
         $causes = [];
 
@@ -964,13 +969,15 @@ class AnalyticsMetrics
             }
         }
 
-        $previousCells = is_array($baseline['cellsByVariety'] ?? null) ? $baseline['cellsByVariety'] : [];
+        $previousCells = collect(is_array($baseline['cellsByVariety'] ?? null) ? $baseline['cellsByVariety'] : [])
+            ->map(fn ($rowCells) => self::normalizeCauseMap(is_array($rowCells) ? $rowCells : []))
+            ->all();
         $cells = [];
 
         foreach ((array) ($current['rows'] ?? []) as $row) {
             $variety = (string) ($row['variety'] ?? '');
 
-            foreach ((array) ($row['cells'] ?? []) as $cause => $currentValue) {
+            foreach (self::normalizeCauseMap((array) ($row['cells'] ?? [])) as $cause => $currentValue) {
                 $currentValue = (int) $currentValue;
                 $previousValue = (int) ($previousCells[$variety][$cause] ?? 0);
 
@@ -990,6 +997,26 @@ class AnalyticsMetrics
     }
 
     /**
+     * Re-key a cause=>quantity map by the shared reporting category
+     * ({@see MortalityRecord::normalizeCause()}), summing any values that
+     * collapse together. Keeps the `Others` roll-up in one place (RULE 6).
+     *
+     * @param  array<string|int,int|string>  $map
+     * @return array<string,int>
+     */
+    protected static function normalizeCauseMap(array $map): array
+    {
+        $normalized = [];
+
+        foreach ($map as $cause => $value) {
+            $category = MortalityRecord::normalizeCause((string) $cause);
+            $normalized[$category] = ($normalized[$category] ?? 0) + (int) $value;
+        }
+
+        return $normalized;
+    }
+
+    /**
      * Compact summary persisted with a generated report (RULE 12 traceability).
      *
      * @param  array{date_from?:?string,date_to?:?string,scion_variety_id?:?int,batch_id?:?int,variety_id?:?int}  $filters
@@ -1006,7 +1033,7 @@ class AnalyticsMetrics
             Analytic::TYPE_OPERATIONAL => [
                 'total_active_inventory' => self::totalActiveInventory(),
                 'crude_mortality_rate' => self::crudeMortalityRate($batchId, $scionVarietyId, $from, $to),
-                'total_replanting_deficit' => self::totalReplantingDeficit(),
+                'total_regraft_deficit' => self::totalRegraftDeficit(),
             ],
             Analytic::TYPE_STOCK_LEDGER => self::stockLedgerSummary($batchId, $scionVarietyId, $from, $to),
             Analytic::TYPE_MORTALITY_MATRIX => self::mortalityMatrixSummary($batchId, $scionVarietyId, $from, $to),

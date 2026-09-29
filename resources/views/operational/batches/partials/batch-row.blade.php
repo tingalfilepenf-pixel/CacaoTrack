@@ -15,7 +15,7 @@
         'available_count' => (int) $batch->available_count,
         'status' => $batch->status,
         'mortality' => (int) $batch->mortality_records_count,
-        'replanting' => (int) $batch->replanting_records_count,
+        'regraft' => (int) $batch->regraft_records_count,
         'inventory_date' => $latestInventory?->inventory_date?->format('M d, Y'),
         'inventory_status' => $latestInventory?->status,
         'stock_outs' => $stockOutCount,

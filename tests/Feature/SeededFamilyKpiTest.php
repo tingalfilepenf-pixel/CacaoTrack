@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Batch;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Support\AnalyticsMetrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -73,7 +73,7 @@ class SeededFamilyKpiTest extends TestCase
     public function test_the_seeded_family_regraft_counter_matches_its_records(): void
     {
         $regraft = (int) Batch::query()->sum('regraft');
-        $records = (int) ReplantingRecord::query()->sum('quantity');
+        $records = (int) RegraftRecord::query()->sum('quantity');
 
         $this->assertSame(130, $regraft);
         $this->assertSame($records, $regraft);

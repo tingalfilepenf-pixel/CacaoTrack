@@ -3,19 +3,19 @@
 namespace Database\Factories;
 
 use App\Models\Batch;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<ReplantingRecord>
+ * @extends Factory<RegraftRecord>
  *
- * Regraft and Replanting are the same recorded procedure (the separate
- * `regraft_records` table was retracted), so this factory covers both.
+ * Regraft and Replanting are the same recorded procedure, so this factory
+ * covers the single `regraft_records` table.
  */
-class ReplantingRecordFactory extends Factory
+class RegraftRecordFactory extends Factory
 {
-    protected $model = ReplantingRecord::class;
+    protected $model = RegraftRecord::class;
 
     /**
      * @return array<string, mixed>
@@ -26,7 +26,7 @@ class ReplantingRecordFactory extends Factory
             'batch_id' => Batch::factory(),
             'user_id' => User::factory(),
             'quantity' => $this->faker->numberBetween(1, 20),
-            'replanting_date' => $this->faker->dateTimeBetween('-3 months', 'now')->format('Y-m-d'),
+            'regraft_date' => $this->faker->dateTimeBetween('-3 months', 'now')->format('Y-m-d'),
             'remark' => $this->faker->optional()->sentence(),
         ];
     }

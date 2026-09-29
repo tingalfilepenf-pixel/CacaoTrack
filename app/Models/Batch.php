@@ -66,7 +66,7 @@ class Batch extends Model
      *
      * @var list<string>
      */
-    public const OPERATIONAL_RELATIONS = ['mortalityRecords', 'replantingRecords', 'stockOutDetails', 'subBatches'];
+    public const OPERATIONAL_RELATIONS = ['mortalityRecords', 'regraftRecords', 'stockOutDetails', 'subBatches'];
 
     protected $fillable = [
         'scion_variety_id',
@@ -131,21 +131,21 @@ class Batch extends Model
         return $this->hasMany(MortalityRecord::class, 'batch_id', 'batch_id');
     }
 
-    public function replantingRecords(): HasMany
+    public function regraftRecords(): HasMany
     {
-        return $this->hasMany(ReplantingRecord::class, 'batch_id', 'batch_id');
+        return $this->hasMany(RegraftRecord::class, 'batch_id', 'batch_id');
     }
 
     /**
      * The regraft records that created this batch's sub-batches
-     * (`replanting_records.parent_batch_id = this batch`, ERD §3.11 / Phase
+     * (`regraft_records.parent_batch_id = this batch`, ERD §3.11 / Phase
      * 7B). A source batch's own `batch_id` rows are the records of the
      * sub-batches it created as a child, so the regraft history of a source is
      * read through this relation.
      */
     public function regraftRecordsAsParent(): HasMany
     {
-        return $this->hasMany(ReplantingRecord::class, 'parent_batch_id', 'batch_id');
+        return $this->hasMany(RegraftRecord::class, 'parent_batch_id', 'batch_id');
     }
 
     /**
@@ -210,7 +210,7 @@ class Batch extends Model
      * per-batch regraft total. The method name is kept so the existing KPI /
      * listing code keeps working.
      */
-    public function totalReplanted(): int
+    public function totalRegrafted(): int
     {
         return (int) $this->regraft;
     }
@@ -253,16 +253,16 @@ class Batch extends Model
     }
 
     /**
-     * Replanting deficit for this batch.
+     * Regraft deficit for this batch.
      *
-     * Replanting Deficit = effective mortality - total regrafted (floor 0).
+     * Regraft Deficit = effective mortality - total regrafted (floor 0).
      * This is the single definition shared by the listing and validation
-     * (RULE 6). The formula is unchanged from Phase 7A; `totalReplanted()` now
+     * (RULE 6). The formula is unchanged from Phase 7A; `totalRegrafted()` now
      * reads the cached `batches.regraft` counter (provisional, `OD-12`).
      */
-    public function replantingDeficit(): int
+    public function regraftDeficit(): int
     {
-        return max(0, $this->effectiveMortalityQuantity() - $this->totalReplanted());
+        return max(0, $this->effectiveMortalityQuantity() - $this->totalRegrafted());
     }
 
     /**

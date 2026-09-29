@@ -98,9 +98,26 @@ document.addEventListener('DOMContentLoaded', function () {
                 return varieties[params.data[1]] + '<br/>' + months[params.data[0]] + ': ' + params.data[2] + ' trees';
             }
         },
-        grid: { top: '5%', bottom: '15%', left: '10%', right: '5%' },
-        xAxis: { type: 'category', data: months, splitArea: { show: true } },
-        yAxis: { type: 'category', data: varieties, splitArea: { show: true } },
+        grid: { top: '14%', bottom: '20%', left: '12%', right: '6%' },
+        xAxis: {
+            type: 'category',
+            data: months,
+            name: 'Month',
+            nameLocation: 'middle',
+            nameGap: 28,
+            nameTextStyle: { color: '#0d6efd', fontWeight: 'bold' },
+            splitArea: { show: true }
+        },
+        yAxis: {
+            type: 'category',
+            data: varieties,
+            name: 'Scion Variety',
+            nameLocation: 'end',
+            nameRotate: 0,
+            nameGap: 18,
+            nameTextStyle: { color: '#0d6efd', fontWeight: 'bold' },
+            splitArea: { show: true }
+        },
         visualMap: {
             min: 0,
             max: {{ max($heatmap['max'], 1) }},

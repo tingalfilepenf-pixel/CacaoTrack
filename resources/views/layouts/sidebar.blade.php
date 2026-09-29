@@ -51,7 +51,7 @@
                     <i class="bi bi-heart-pulse"></i>
                     <span>Mortality Tracking</span>
                 </a>
-                <a href="{{ route('operational.replanting') }}" class="nav-link {{ request()->routeIs('operational.replanting') ? 'active' : '' }}">
+                <a href="{{ route('operational.regraft') }}" class="nav-link {{ request()->routeIs('operational.regraft') ? 'active' : '' }}">
                     <i class="bi bi-arrow-repeat"></i>
                     <span>Regraft</span>
                 </a>

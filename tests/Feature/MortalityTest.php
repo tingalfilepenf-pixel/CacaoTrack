@@ -173,6 +173,65 @@ class MortalityTest extends TestCase
             ->assertSessionHasErrors(['batch_id', 'cause'], null, 'mortality');
     }
 
+    public function test_others_cause_is_stored_with_the_supplied_description(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user);
+
+        $this->actingAs($user)
+            ->post(route('operational.mortality.records.store'), [
+                'batch_id' => $batch->batch_id,
+                'quantity' => 5,
+                'cause' => MortalityRecord::CAUSE_OTHERS,
+                'cause_other' => 'Anthracnose infection',
+                'recorded_at' => '2026-09-01',
+            ])
+            ->assertRedirect(route('operational.mortality'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('mortality_records', [
+            'batch_id' => $batch->batch_id,
+            'quantity' => 5,
+            'cause' => 'Others: Anthracnose infection',
+        ]);
+    }
+
+    public function test_others_cause_requires_a_description(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user);
+
+        $this->actingAs($user)
+            ->from(route('operational.mortality'))
+            ->post(route('operational.mortality.records.store'), [
+                'batch_id' => $batch->batch_id,
+                'quantity' => 5,
+                'cause' => MortalityRecord::CAUSE_OTHERS,
+                'recorded_at' => '2026-09-01',
+            ])
+            ->assertSessionHasErrors(['cause_other'], null, 'mortality');
+
+        $this->assertDatabaseCount('mortality_records', 0);
+    }
+
+    public function test_unknown_cause_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user);
+
+        $this->actingAs($user)
+            ->from(route('operational.mortality'))
+            ->post(route('operational.mortality.records.store'), [
+                'batch_id' => $batch->batch_id,
+                'quantity' => 5,
+                'cause' => 'Lightning Strike',
+                'recorded_at' => '2026-09-01',
+            ])
+            ->assertSessionHasErrors(['cause'], null, 'mortality');
+
+        $this->assertDatabaseCount('mortality_records', 0);
+    }
+
     public function test_the_mortality_adjustment_route_no_longer_exists(): void
     {
         // Regression guard: the removed Mortality_Adjustments entity must not
@@ -196,6 +255,15 @@ class MortalityTest extends TestCase
 
         $this->assertSame(235, $batch->fresh()->effectiveMortalityQuantity());
         $this->assertSame(235, (int) MortalityRecord::where('batch_id', $batch->batch_id)->sum('quantity'));
+    }
+
+    public function test_normalize_cause_collapses_others_specifications(): void
+    {
+        $this->assertSame('Others', MortalityRecord::normalizeCause('Others'));
+        $this->assertSame('Others', MortalityRecord::normalizeCause('Others: Anthracnose infection'));
+        $this->assertSame('Disease', MortalityRecord::normalizeCause('Disease'));
+        $this->assertSame('Unspecified', MortalityRecord::normalizeCause(''));
+        $this->assertSame('Unspecified', MortalityRecord::normalizeCause(null));
     }
 
     public function test_mortality_page_filters_by_batch_and_date(): void

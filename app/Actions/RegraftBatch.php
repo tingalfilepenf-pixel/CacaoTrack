@@ -4,7 +4,7 @@ namespace App\Actions;
 
 use App\Models\ActivityLog;
 use App\Models\Batch;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -31,7 +31,7 @@ use Illuminate\Validation\ValidationException;
  *  - the regraftable cap is `Batch::regraftableQuantity()`
  *    (`min(available_count, (total_grafted - regraft) - effective mortality)`);
  *  - the sub-batch code is `Batch::nextSubBatchCode()` (`B001` → `B001-R1`);
- *  - the {@see ReplantingRecord} stores `batch_id` = the new sub-batch and
+ *  - the {@see RegraftRecord} stores `batch_id` = the new sub-batch and
  *    `parent_batch_id` = the source batch;
  *  - `batches.regraft` is the authoritative per-batch regrafted total.
  */
@@ -51,13 +51,13 @@ class RegraftBatch
         Batch $source,
         int $quantity,
         int $scionVarietyId,
-        string $replantingDate,
+        string $regraftDate,
         ?string $remark = null,
         ?int $userId = null,
     ): Batch {
         $actorId = $userId ?? Auth::id();
 
-        return DB::transaction(function () use ($source, $quantity, $scionVarietyId, $replantingDate, $remark, $actorId): Batch {
+        return DB::transaction(function () use ($source, $quantity, $scionVarietyId, $regraftDate, $remark, $actorId): Batch {
             $locked = Batch::query()->lockForUpdate()->findOrFail($source->batch_id);
 
             if ($locked->isArchived()) {
@@ -85,12 +85,12 @@ class RegraftBatch
                 ]);
             }
 
-            $date = Carbon::parse($replantingDate)->startOfDay();
+            $date = Carbon::parse($regraftDate)->startOfDay();
             $graftedDate = $locked->grafted_date?->copy()->startOfDay();
 
             if ($graftedDate !== null && $date->lt($graftedDate)) {
                 $this->fail([
-                    'replanting_date' => "The regraft date cannot be before the source batch's grafted date ({$graftedDate->format('M j, Y')}).",
+                    'regraft_date' => "The regraft date cannot be before the source batch's grafted date ({$graftedDate->format('M j, Y')}).",
                 ]);
             }
 
@@ -119,19 +119,19 @@ class RegraftBatch
 
             // 6. The regraft record: attached to the new sub-batch and linked
             //    back to the source (provisional reading of ERD §3.11).
-            ReplantingRecord::create([
+            RegraftRecord::create([
                 'batch_id' => $subBatch->batch_id,
                 'parent_batch_id' => $locked->batch_id,
                 'user_id' => $actorId,
                 'quantity' => $quantity,
-                'replanting_date' => $date->toDateString(),
+                'regraft_date' => $date->toDateString(),
                 'remark' => $remark,
             ]);
 
             // 7. Traceable activity history for the sub-batch.
             ActivityLog::record(
                 $subBatch->batch_id,
-                ActivityLog::TYPE_REPLANTING_RECORDED,
+                ActivityLog::TYPE_REGRAFT_RECORDED,
                 "Regrafted {$quantity} from {$locked->batch_code} into {$subBatch->batch_code} ({$scionVariety->scion_variety_name}).",
                 $actorId,
                 $date,
@@ -146,6 +146,6 @@ class RegraftBatch
      */
     private function fail(array $messages): never
     {
-        throw ValidationException::withMessages($messages)->errorBag('replanting');
+        throw ValidationException::withMessages($messages)->errorBag('regraft');
     }
 }

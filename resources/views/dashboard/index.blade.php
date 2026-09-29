@@ -56,7 +56,7 @@
                             <div class="small fw-bold text-warning text-uppercase mb-1">
                                 Regraft Deficit
                             </div>
-                            <div class="h3 mb-0 fw-bold text-dark">{{ number_format($totalReplantingDeficit) }}</div>
+                            <div class="h3 mb-0 fw-bold text-dark">{{ number_format($totalRegraftDeficit) }}</div>
                             <div class="text-muted small mt-1">Trees pending regraft</div>
                         </div>
                         <div class="col-auto">

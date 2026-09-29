@@ -6,13 +6,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class ReplantingRecord extends Model
+class RegraftRecord extends Model
 {
     use HasFactory;
 
-    protected $table = 'replanting_records';
+    protected $table = 'regraft_records';
 
-    protected $primaryKey = 'replanting_id';
+    protected $primaryKey = 'regraft_id';
 
     public $timestamps = false;
 
@@ -21,14 +21,14 @@ class ReplantingRecord extends Model
         'parent_batch_id',
         'user_id',
         'quantity',
-        'replanting_date',
+        'regraft_date',
         'remark',
     ];
 
     protected function casts(): array
     {
         return [
-            'replanting_date' => 'date',
+            'regraft_date' => 'date',
         ];
     }
 
@@ -82,7 +82,7 @@ class ReplantingRecord extends Model
     }
 
     /**
-     * Total replanted quantity across a set of batches (RULE 6: same definition
+     * Total regrafted quantity across a set of batches (RULE 6: same definition
      * as totalForBatch, set-based for scion-level aggregation).
      *
      * @param  iterable<int, int|string>  $batchIds

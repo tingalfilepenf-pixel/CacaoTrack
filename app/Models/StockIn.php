@@ -76,6 +76,14 @@ class StockIn extends Model
     }
 
     /**
+     * Display/query keys for a stock-in's entry type (presentation only — there
+     * is deliberately no stored discriminator column; ERD §3.7).
+     */
+    public const TYPE_SEEDLING = 'seedling';
+
+    public const TYPE_SCION = 'scion';
+
+    /**
      * Whether this stock-in includes scion material.
      *
      * There is no separate "type" column: a row is a scion entry when
@@ -86,6 +94,25 @@ class StockIn extends Model
     public function isScionEntry(): bool
     {
         return $this->scion_variety_id !== null;
+    }
+
+    /**
+     * Centralized entry-type key for a stock-in (RULE 6): `scion` when the row
+     * carries scion material, else `seedling`. Derived from `isScionEntry()` —
+     * never stored.
+     */
+    public function entryType(): string
+    {
+        return $this->isScionEntry() ? self::TYPE_SCION : self::TYPE_SEEDLING;
+    }
+
+    /**
+     * Human-readable label for the entry type, shown in the Stock In log so a
+     * row is identifiable as a scion or seedling receiving at a glance.
+     */
+    public function entryTypeLabel(): string
+    {
+        return $this->isScionEntry() ? 'Scion' : 'Seedlings';
     }
 
     /**

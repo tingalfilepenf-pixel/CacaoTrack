@@ -29,10 +29,13 @@ class StockInController extends Controller
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,supplier_id'],
+            'type' => ['nullable', 'in:'.StockIn::TYPE_SEEDLING.','.StockIn::TYPE_SCION],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
 
+        // The entry type is derived from `scion_variety_id` (ERD §3.7): a scion
+        // row has it set, a seedling-only row leaves it null.
         $base = StockIn::query()
             ->when($filters['search'] ?? null, function ($query, $search): void {
                 $query->where(function ($subQuery) use ($search): void {
@@ -45,6 +48,11 @@ class StockInController extends Controller
             })
             ->when($filters['supplier_id'] ?? null, fn ($query, $supplierId) => $query
                 ->where('supplier_id', $supplierId))
+            ->when($filters['type'] ?? null, function ($query, string $type): void {
+                $type === StockIn::TYPE_SCION
+                    ? $query->whereNotNull('scion_variety_id')
+                    : $query->whereNull('scion_variety_id');
+            })
             ->when($filters['date_from'] ?? null, fn ($query, $dateFrom) => $query
                 ->whereDate('date_received', '>=', $dateFrom))
             ->when($filters['date_to'] ?? null, fn ($query, $dateTo) => $query

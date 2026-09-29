@@ -10,39 +10,42 @@ use Tests\TestCase;
  * Part D: structural regression guards for the revised 15-entity model.
  *
  * These tests fail if anyone reintroduces: a link between Mortality_Record and
- * Replanting_Record, a scion stock pool/balance, a separate regraft table, or
- * any of the entities/columns the ERD explicitly removed.
+ * Regraft_Record, a scion stock pool/balance, a duplicate/retired replanting
+ * table, or any of the entities/columns the ERD explicitly removed.
  */
 class StructuralIndependenceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_mortality_and_replanting_records_remain_structurally_independent(): void
+    public function test_mortality_and_regraft_records_remain_structurally_independent(): void
     {
         $mortalityColumns = Schema::getColumnListing('mortality_records');
-        $replantingColumns = Schema::getColumnListing('replanting_records');
+        $regraftColumns = Schema::getColumnListing('regraft_records');
 
         // No cross-referencing columns in either direction.
         foreach ($mortalityColumns as $column) {
-            $this->assertStringNotContainsString('replanting', $column);
             $this->assertStringNotContainsString('regraft', $column);
         }
 
-        foreach ($replantingColumns as $column) {
+        foreach ($regraftColumns as $column) {
             $this->assertStringNotContainsString('mortality', $column);
         }
 
         // No foreign key between the two tables in either direction.
         $mortalityFks = collect(Schema::getForeignKeys('mortality_records'))->pluck('foreign_table');
-        $replantingFks = collect(Schema::getForeignKeys('replanting_records'))->pluck('foreign_table');
+        $regraftFks = collect(Schema::getForeignKeys('regraft_records'))->pluck('foreign_table');
 
-        $this->assertFalse($mortalityFks->contains('replanting_records'));
-        $this->assertFalse($replantingFks->contains('mortality_records'));
+        $this->assertFalse($mortalityFks->contains('regraft_records'));
+        $this->assertFalse($regraftFks->contains('mortality_records'));
     }
 
-    public function test_a_separate_regraft_table_does_not_exist(): void
+    public function test_the_retired_replanting_records_table_no_longer_exists(): void
     {
-        $this->assertFalse(Schema::hasTable('regraft_records'));
+        // Regraft and Replanting are the same recorded procedure, so there is a
+        // single table. It was renamed from `replanting_records` to
+        // `regraft_records`; the old name must be gone and no duplicate may exist.
+        $this->assertFalse(Schema::hasTable('replanting_records'));
+        $this->assertTrue(Schema::hasTable('regraft_records'));
     }
 
     public function test_the_removed_entities_do_not_exist(): void
@@ -80,7 +83,9 @@ class StructuralIndependenceTest extends TestCase
         $this->assertTrue(Schema::hasColumn('batches', 'available_count'));
         $this->assertTrue(Schema::hasColumn('batches', 'regraft'));
         $this->assertTrue(Schema::hasColumn('batches', 'parent_batch_id'));
-        $this->assertTrue(Schema::hasColumn('replanting_records', 'parent_batch_id'));
+        $this->assertTrue(Schema::hasColumn('regraft_records', 'parent_batch_id'));
+        $this->assertTrue(Schema::hasColumn('regraft_records', 'regraft_id'));
+        $this->assertTrue(Schema::hasColumn('regraft_records', 'regraft_date'));
         $this->assertTrue(Schema::hasColumn('stock_ins', 'origin'));
         $this->assertTrue(Schema::hasColumn('inventories', 'inventory_date'));
     }

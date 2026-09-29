@@ -14,7 +14,7 @@
 
 ## 1. Purpose
 
-This ERD keeps only the entities and relationships needed for the current CacaoTrack business process. It follows the company's current operational terms and does not introduce a separate Batch Monitoring process. User-facing screens use **Regraft**; the internal entity/table name remains `Replanting_Record` / `replanting_records`.
+This ERD keeps only the entities and relationships needed for the current CacaoTrack business process. It follows the company's current operational terms and does not introduce a separate Batch Monitoring process. User-facing screens use **Regraft**; the internal entity/table name is `Regraft_Record` / `regraft_records` (renamed from `Replanting_Record` / `replanting_records` on 2026-09-30 so the internal name matches the company term).
 
 ## 2. Current Business Process
 
@@ -48,7 +48,7 @@ CLIENT
 4. **Scion Variety** is used when grafting/regrafting requires a particular scion variety. There is **no scion stock balance**: selecting a variety is informational and staff decide (OD-14).
 5. If the **root stock is dead**, it cannot be regrafted and is recorded as **Mortality**. Dead root stock is never regrafted.
 6. Mortality is a **strictly incrementing counter** and is recorded against the exact Batch or sub-batch where the death occurred. Recording mortality does not decrease or modify the Regraft counter.
-7. **Regraft** (recorded internally as `Replanting_Record`) replaces a **dead scion on a living root stock**. **CONFIRMED (2026-09-29) — client spreadsheet evidence:** a regraft is recorded as a **new Grafted entry plus a Re Graft entry on the same row**, so **`Total_Grafted` is a cumulative, non-decreasing log per batch and is never reduced by a regraft**. When regrafting occurs, only the parent Batch's live `Available_Count` decreases by q, the parent `Regraft` counter increases by the same quantity, and a linked sub-batch is created with its own `Total_Grafted = q`. **The batch's still-attributable/live population for mortality and regraft purposes is `Total_Grafted − Regraft`** (client statement: *"Grafted minus Regraft = mortality or yield for the parent batch"*). A Regraft does **not** offset Mortality.
+7. **Regraft** (recorded internally as `Regraft_Record`) replaces a **dead scion on a living root stock**. **CONFIRMED (2026-09-29) — client spreadsheet evidence:** a regraft is recorded as a **new Grafted entry plus a Re Graft entry on the same row**, so **`Total_Grafted` is a cumulative, non-decreasing log per batch and is never reduced by a regraft**. When regrafting occurs, only the parent Batch's live `Available_Count` decreases by q, the parent `Regraft` counter increases by the same quantity, and a linked sub-batch is created with its own `Total_Grafted = q`. **The batch's still-attributable/live population for mortality and regraft purposes is `Total_Grafted − Regraft`** (client statement: *"Grafted minus Regraft = mortality or yield for the parent batch"*). A Regraft does **not** offset Mortality.
 8. A regraft sub-batch has its own independent 21-day cycle and may use a different **Scion Variety** from its parent Batch.
 9. **Inventory** is recorded per month and follows the established Batches and sub-batches, including `Total_Grafted`, `Regraft`, and `Mortality`.
 10. **Stock Out / Pull Out** counts healthy cacao from the applicable Batch or sub-batch and records the cacao delivered to a Client.
@@ -201,7 +201,7 @@ CLIENT
 
 **Regraft rule** (OD-6 — the cap and the sub-batch `Total_Grafted` are **CONFIRMED**, 2026-09-29; the remaining code-format details are **[PROPOSED — pending client confirmation]**): a regraft sub-batch uses a linked `Parent_Batch_ID`, receives its own `Batch_Code` formed as the source `Batch_Code` + `-R` + the next sequence number for that source (for example `B001-R1`, and `B001-R1-R1` for a sub-batch of a sub-batch), starts a new independent 21-day cycle, and may reference a different `Scion_Variety_ID`. `Batch_Code` must be **unique**. The sub-batch's initial `Total_Grafted` equals its `Available_Count`, which equals the regraft quantity. Its `Grafted_Date` is the regraft date. A regraft quantity must not exceed the source batch's still-attributable surviving population, `min(Available_Count, (Total_Grafted − Regraft) − effective Mortality)` — a dead root stock cannot be regrafted. **Scion Variety is required** on the sub-batch.
 
-**Regraft cached total [PROPOSED — pending client confirmation]** (OD-12): `Regraft` is a cached total that must equal `SUM(Replanting_Record.Quantity)` for that source batch, maintained inside the regraft transaction.
+**Regraft cached total [PROPOSED — pending client confirmation]** (OD-12): `Regraft` is a cached total that must equal `SUM(Regraft_Record.Quantity)` for that source batch, maintained inside the regraft transaction.
 
 **21-day cycle [PROPOSED — pending client confirmation]** (OD-7): the cycle is **not stored**. The cycle end is derived as `Grafted_Date + 21 days`, and "during cycle" vs "after cycle" mortality is derived from `Mortality_Record.Recorded_At`. `Status` is an enumerated value; the current implementation uses `active` and `inactive`.
 
@@ -240,25 +240,25 @@ CLIENT
 
 ---
 
-### 3.11 `Replanting_Record`
+### 3.11 `Regraft_Record`
 
 | Key | Attribute |
 |---|---|
-| PK | `Replanting_ID` |
+| PK | `Regraft_ID` |
 | FK | `Batch_ID` *(the source batch)* |
 | FK | `User_ID` |
 | FK | `Sub_Batch_ID` *(nullable — the sub-batch this record created)* **[PROPOSED — pending client confirmation]** (OD-11) |
 | — | `Quantity` |
-| — | `Replanting_Date` |
+| — | `Regraft_Date` |
 | — | `Remark` |
 
-**Purpose:** Records a **Regraft**: replacing a **dead scion on a living root stock**. It does **not** offset Mortality, and dead root stock is never regrafted. **Regraft is recorded internally as a `Replanting_Record`** — there is no separate Regraft event table. The regrafting transaction deducts the quantity from the parent Batch's live `Available_Count`, increases the parent `Regraft` counter by the same quantity, and creates the linked sub-batch. The parent Batch's `Total_Grafted` is **not** changed — it is a cumulative, non-decreasing log (CONFIRMED, 2026-09-29; see §3.8).
+**Purpose:** Records a **Regraft**: replacing a **dead scion on a living root stock**. It does **not** offset Mortality, and dead root stock is never regrafted. **Regraft is recorded internally as a `Regraft_Record`** (table `regraft_records`; renamed from `Replanting_Record` / `replanting_records` on 2026-09-30) — there is no separate Regraft event table. The regrafting transaction deducts the quantity from the parent Batch's live `Available_Count`, increases the parent `Regraft` counter by the same quantity, and creates the linked sub-batch. The parent Batch's `Total_Grafted` is **not** changed — it is a cumulative, non-decreasing log (CONFIRMED, 2026-09-29; see §3.8).
 
-**Transaction rule:** Parent-batch update, `Replanting_Record` creation, and sub-batch creation must succeed or fail together. The completed regraft/sub-batch operation is recorded in `Activity_Log`. `Batch.Regraft` is the cached total described in §3.8 (OD-12).
+**Transaction rule:** Parent-batch update, `Regraft_Record` creation, and sub-batch creation must succeed or fail together. The completed regraft/sub-batch operation is recorded in `Activity_Log`. `Batch.Regraft` is the cached total described in §3.8 (OD-12).
 
 **Note:** `Parent_Batch_ID` on this record is **not** used (it duplicates `Batch.Parent_Batch_ID`); the proposed `Sub_Batch_ID` identifies the sub-batch the record created (OD-11), while `Batch_ID` is the source batch.
 
-**History:** the brief `regraft_records` / `Regraft_Record` proposal and its retraction are recorded in **Appendix A — Decision Log**.
+**History:** the entity was renamed from `Replanting_Record` to `Regraft_Record` on 2026-09-30 (same table, `regraft_records`; columns `regraft_id` / `regraft_date`). The earlier brief `regraft_records` proposal and its retraction are recorded in **Appendix A — Decision Log**.
 
 ---
 
@@ -344,7 +344,7 @@ Users
  ├──< Stock_In
  ├──< Batch
  ├──< Mortality_Record
- ├──< Replanting_Record
+ ├──< Regraft_Record
  └──< Stock_Out
 
 Supplier
@@ -362,7 +362,7 @@ Scion_Variety
 Batch
  ├──< Activity_Log
  ├──< Mortality_Record
- ├──< Replanting_Record
+ ├──< Regraft_Record
  ├──< Inventory
  ├──< Stock_Out_Detail
  └──< Batch (sub-batch; Parent_Batch_ID)
@@ -476,7 +476,7 @@ The current company terms **Batches, Inventory, Mortality, Regraft, Stock In, St
 
 ## 7. Current Sidebar Supported by This ERD
 
-**Terminology note:** user-facing screens use **Regraft**; the internal entity/table name remains `Replanting_Record` / `replanting_records`.
+**Terminology note:** user-facing screens use **Regraft**; the internal entity/table name is `Regraft_Record` / `regraft_records` (renamed from `Replanting_Record` on 2026-09-30).
 
 ### Dashboard
 
@@ -519,7 +519,7 @@ The current company terms **Batches, Inventory, Mortality, Regraft, Stock In, St
 
 The ERD should represent the company's actual workflow without creating duplicate processes:
 
-**Stock In records the seedlings actually received; Batch represents the grafted cacao; Scion Variety supports grafting/regrafting; Mortality records deaths against the exact Batch or sub-batch and strictly increments; Regraft (recorded internally as `Replanting_Record`) replaces a dead scion on a living root stock and creates linked sub-batches without offsetting Mortality; Inventory records the monthly Batch/sub-batch status; and Stock Out / Pull Out records healthy cacao delivered to Clients.**
+**Stock In records the seedlings actually received; Batch represents the grafted cacao; Scion Variety supports grafting/regrafting; Mortality records deaths against the exact Batch or sub-batch and strictly increments; Regraft (recorded internally as `Regraft_Record`) replaces a dead scion on a living root stock and creates linked sub-batches without offsetting Mortality; Inventory records the monthly Batch/sub-batch status; and Stock Out / Pull Out records healthy cacao delivered to Clients.**
 
 ---
 
@@ -527,6 +527,8 @@ The ERD should represent the company's actual workflow without creating duplicat
 
 This appendix preserves development history that is not part of the current data model, so the entities above stay clean.
 
-### A.1 `regraft_records` / `Regraft_Record` — proposed then retracted (P5 Part B)
+### A.1 `regraft_records` / `Regraft_Record` — proposed then retracted (P5 Part B); name later adopted (2026-09-30)
 
-An additional `regraft_records` / `Regraft_Record` table was briefly proposed and created during the P5 analytics work, but it duplicated `Replanting_Record`. After confirming the duplication, it was retracted: the table held **0 rows**, so it was dropped with **no data migration** needed, and the Stock Ledger's Regraft column reads `Replanting_Record` directly. Regraft and the company's replanting step are the same recorded procedure. See §3.11.
+An additional `regraft_records` / `Regraft_Record` table was briefly proposed and created during the P5 analytics work, but it duplicated `Replanting_Record`. After confirming the duplication, it was retracted: the table held **0 rows**, so it was dropped with **no data migration** needed, and the Stock Ledger's Regraft column read `Replanting_Record` directly.
+
+On **2026-09-30** the `Replanting_Record` entity was **renamed** to `Regraft_Record` (table `replanting_records` → `regraft_records`; `replanting_id` → `regraft_id`; `replanting_date` → `regraft_date`) so the internal name matches the company term used throughout the UI. This is the *same* single table (no duplicate was reintroduced); the earlier P5 table had already been dropped. See §3.11.

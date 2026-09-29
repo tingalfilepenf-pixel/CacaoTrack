@@ -144,7 +144,7 @@ class InventoryController extends Controller
                     'batch_id' => $batch->batch_id,
                     'inventory_date' => $inventoryDate->toDateString(),
                     'total_grafted' => (int) $batch->total_grafted,
-                    'regraft' => $batch->totalReplanted(),
+                    'regraft' => $batch->totalRegrafted(),
                     'mortality' => $batch->effectiveMortalityQuantity(),
                     'last_update' => now(),
                 ]);

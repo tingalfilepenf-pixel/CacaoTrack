@@ -4,7 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\ActivityLog;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\StockIn;
 use App\Models\StockOut;
 use App\Models\TaskComplete;
@@ -38,7 +38,7 @@ class ActivityLogSeeder extends Seeder
             );
         }
 
-        foreach (ReplantingRecord::with(['batch.scionVariety', 'parent'])->get() as $record) {
+        foreach (RegraftRecord::with(['batch.scionVariety', 'parent'])->get() as $record) {
             if (! $record->batch) {
                 continue;
             }
@@ -52,10 +52,10 @@ class ActivityLogSeeder extends Seeder
 
             $this->log(
                 $record->batch_id,
-                ActivityLog::TYPE_REPLANTING_RECORDED,
+                ActivityLog::TYPE_REGRAFT_RECORDED,
                 $description,
                 (int) $record->user_id,
-                $record->replanting_date,
+                $record->regraft_date,
             );
         }
 

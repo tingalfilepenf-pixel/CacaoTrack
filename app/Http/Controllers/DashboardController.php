@@ -20,7 +20,7 @@ class DashboardController extends Controller
         return view('dashboard.index', [
             'totalActiveInventory' => AnalyticsMetrics::totalActiveInventory(),
             'crudeMortalityRate' => AnalyticsMetrics::crudeMortalityRate(),
-            'totalReplantingDeficit' => AnalyticsMetrics::totalReplantingDeficit(),
+            'totalRegraftDeficit' => AnalyticsMetrics::totalRegraftDeficit(),
             'mortalityTrend' => AnalyticsMetrics::mortalityTrend(6),
             'inventoryByScionVariety' => AnalyticsMetrics::inventoryByScionVariety(),
             'survivalVsMortality' => AnalyticsMetrics::survivalVsMortality(),

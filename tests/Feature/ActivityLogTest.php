@@ -218,7 +218,7 @@ class ActivityLogTest extends TestCase
         $user = User::factory()->create();
         $batch = $this->createBatch($user);
 
-        $log = ActivityLog::record($batch->batch_id, ActivityLog::TYPE_REPLANTING_RECORDED, 'Recorded regraft.', $user->id);
+        $log = ActivityLog::record($batch->batch_id, ActivityLog::TYPE_REGRAFT_RECORDED, 'Recorded regraft.', $user->id);
 
         $this->assertTrue($log->user->is($user));
         $this->assertTrue($log->batch->is($batch));

@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Support\AnalyticsMetrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,7 +32,7 @@ class GapReportTest extends TestCase
 
         MortalityRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 207]);
         MortalityRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 28]);
-        ReplantingRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 100]);
+        RegraftRecord::factory()->create(['batch_id' => $batch->batch_id, 'quantity' => 100]);
 
         $gap = AnalyticsMetrics::gapReport();
 

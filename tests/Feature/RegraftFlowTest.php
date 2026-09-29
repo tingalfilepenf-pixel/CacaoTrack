@@ -8,7 +8,7 @@ use App\Models\Batch;
 use App\Models\Client;
 use App\Models\Inventory;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Models\StockOutDetail;
 use App\Models\User;
@@ -68,12 +68,12 @@ class RegraftFlowTest extends TestCase
         $variety ??= $source->scionVariety;
 
         return $this->actingAs($user)
-            ->from(route('operational.replanting'))
-            ->post(route('operational.replanting.records.store'), [
+            ->from(route('operational.regraft'))
+            ->post(route('operational.regraft.records.store'), [
                 'batch_id' => $source->batch_id,
                 'quantity' => $quantity,
                 'scion_variety_id' => $variety?->scion_variety_id,
-                'replanting_date' => $date ?? now()->subDays(5)->toDateString(),
+                'regraft_date' => $date ?? now()->subDays(5)->toDateString(),
                 'remark' => 'Replaced affected stock.',
             ]);
     }
@@ -87,7 +87,7 @@ class RegraftFlowTest extends TestCase
         $this->mortality($source, $user, 25);
 
         $this->postRegraft($user, $source, 100, $toledo)
-            ->assertRedirect(route('operational.replanting'))
+            ->assertRedirect(route('operational.regraft'))
             ->assertSessionHas('success');
 
         $source->refresh();
@@ -106,7 +106,7 @@ class RegraftFlowTest extends TestCase
         $this->assertSame($user->id, (int) $sub->user_id);
         $this->assertSame(now()->subDays(5)->toDateString(), $sub->grafted_date->format('Y-m-d'));
 
-        $this->assertDatabaseHas('replanting_records', [
+        $this->assertDatabaseHas('regraft_records', [
             'batch_id' => $sub->batch_id,
             'parent_batch_id' => $source->batch_id,
             'user_id' => $user->id,
@@ -116,7 +116,7 @@ class RegraftFlowTest extends TestCase
 
         $this->assertDatabaseHas('activity_logs', [
             'batch_id' => $sub->batch_id,
-            'activity_type' => ActivityLog::TYPE_REPLANTING_RECORDED,
+            'activity_type' => ActivityLog::TYPE_REGRAFT_RECORDED,
         ]);
     }
 
@@ -156,10 +156,10 @@ class RegraftFlowTest extends TestCase
 
         foreach ([0, -5, 'abc'] as $quantity) {
             $this->postRegraft($user, $source, $quantity)
-                ->assertSessionHasErrors('quantity', null, 'replanting');
+                ->assertSessionHasErrors('quantity', null, 'regraft');
         }
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
         $this->assertSame(100, (int) $source->fresh()->total_grafted);
     }
 
@@ -170,9 +170,9 @@ class RegraftFlowTest extends TestCase
 
         // available 100, (total_grafted 100 - regraft 0) - mortality 0 -> 100.
         $this->postRegraft($user, $source, 101)
-            ->assertSessionHasErrors('quantity', null, 'replanting');
+            ->assertSessionHasErrors('quantity', null, 'regraft');
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
         $this->assertSame(100, (int) $source->fresh()->available_count);
         $this->assertSame(0, (int) $source->fresh()->regraft);
     }
@@ -188,9 +188,9 @@ class RegraftFlowTest extends TestCase
         $this->assertSame(10, $source->fresh()->regraftableQuantity());
 
         $this->postRegraft($user, $source, 11)
-            ->assertSessionHasErrors('quantity', null, 'replanting');
+            ->assertSessionHasErrors('quantity', null, 'regraft');
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
     }
 
     public function test_caps_are_computed_against_the_remaining_population_not_the_raw_total(): void
@@ -216,7 +216,7 @@ class RegraftFlowTest extends TestCase
         // 450 exceeds the 400 that actually remain -> rejected (a raw
         // total_grafted ceiling would have allowed it).
         $this->postRegraft($user, $source, 450)
-            ->assertSessionHasErrors('quantity', null, 'replanting');
+            ->assertSessionHasErrors('quantity', null, 'regraft');
         $this->assertSame(1, Batch::where('parent_batch_id', $source->batch_id)->count());
 
         // With mortality recorded, the cap falls from 400 to 350 because the
@@ -228,7 +228,7 @@ class RegraftFlowTest extends TestCase
 
         // 400 now exceeds the 350 still attributable -> rejected.
         $this->postRegraft($user, $source, 400)
-            ->assertSessionHasErrors('quantity', null, 'replanting');
+            ->assertSessionHasErrors('quantity', null, 'regraft');
         $this->assertSame(1, Batch::where('parent_batch_id', $source->batch_id)->count());
     }
 
@@ -237,21 +237,21 @@ class RegraftFlowTest extends TestCase
         $user = User::factory()->create();
         $source = $this->batch($user, $this->variety());
 
-        $this->actingAs($user)->from(route('operational.replanting'))
-            ->post(route('operational.replanting.records.store'), [
+        $this->actingAs($user)->from(route('operational.regraft'))
+            ->post(route('operational.regraft.records.store'), [
                 'batch_id' => $source->batch_id,
                 'quantity' => 10,
-                'replanting_date' => now()->subDays(5)->toDateString(),
+                'regraft_date' => now()->subDays(5)->toDateString(),
             ])
-            ->assertSessionHasErrors('scion_variety_id', null, 'replanting');
+            ->assertSessionHasErrors('scion_variety_id', null, 'regraft');
 
         $archived = $this->variety('Archived');
         $archived->update(['archived_at' => now()]);
 
         $this->postRegraft($user, $source, 10, $archived)
-            ->assertSessionHasErrors('scion_variety_id', null, 'replanting');
+            ->assertSessionHasErrors('scion_variety_id', null, 'regraft');
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
     }
 
     public function test_archived_source_batch_is_rejected(): void
@@ -261,9 +261,9 @@ class RegraftFlowTest extends TestCase
         $source->update(['archived_at' => now()]);
 
         $this->postRegraft($user, $source, 10)
-            ->assertSessionHasErrors('batch_id', null, 'replanting');
+            ->assertSessionHasErrors('batch_id', null, 'regraft');
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
     }
 
     public function test_future_regraft_date_is_rejected(): void
@@ -272,9 +272,9 @@ class RegraftFlowTest extends TestCase
         $source = $this->batch($user, $this->variety());
 
         $this->postRegraft($user, $source, 10, null, now()->addDay()->toDateString())
-            ->assertSessionHasErrors('replanting_date', null, 'replanting');
+            ->assertSessionHasErrors('regraft_date', null, 'regraft');
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
     }
 
     public function test_regraft_date_cannot_precede_the_source_grafted_date(): void
@@ -284,9 +284,9 @@ class RegraftFlowTest extends TestCase
         $source->update(['grafted_date' => now()->subDays(5)->toDateString()]);
 
         $this->postRegraft($user, $source, 10, null, now()->subDays(20)->toDateString())
-            ->assertSessionHasErrors('replanting_date', null, 'replanting');
+            ->assertSessionHasErrors('regraft_date', null, 'regraft');
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
     }
 
     public function test_a_failure_after_the_source_update_rolls_everything_back(): void
@@ -319,7 +319,7 @@ class RegraftFlowTest extends TestCase
         $this->assertSame(100, (int) $source->total_grafted);
         $this->assertSame(100, (int) $source->available_count);
         $this->assertSame(0, (int) $source->regraft);
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
         $this->assertDatabaseMissing('batches', ['batch_code' => 'B001-R1']);
     }
 
@@ -331,7 +331,7 @@ class RegraftFlowTest extends TestCase
         $this->postRegraft($user, $source, 20)->assertSessionHas('success');
 
         $this->postRegraft($user, $source->fresh(), 20)
-            ->assertSessionHasErrors('submission', null, 'replanting');
+            ->assertSessionHasErrors('submission', null, 'regraft');
 
         $this->assertSame(1, Batch::where('parent_batch_id', $source->batch_id)->count());
     }
@@ -342,15 +342,15 @@ class RegraftFlowTest extends TestCase
         $source = $this->batch($user, $this->variety());
 
         $this->actingAs($user)
-            ->post(route('operational.replanting.records.store'), [
+            ->post(route('operational.regraft.records.store'), [
                 'batch_id' => $source->batch_id,
                 'quantity' => 10,
                 'scion_variety_id' => $source->scion_variety_id,
-                'replanting_date' => now()->subDays(5)->toDateString(),
+                'regraft_date' => now()->subDays(5)->toDateString(),
             ])
             ->assertForbidden();
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
     }
 
     public function test_invariants_hold_after_a_regraft(): void
@@ -387,10 +387,10 @@ class RegraftFlowTest extends TestCase
 
         // The cached counter reconciles with the regraft records.
         $this->assertSame(
-            $source->totalReplanted(),
-            ReplantingRecord::totalRegraftedFromBatch($source->batch_id),
+            $source->totalRegrafted(),
+            RegraftRecord::totalRegraftedFromBatch($source->batch_id),
         );
-        $this->assertSame(100, ReplantingRecord::totalRegraftedFromBatch($source->batch_id));
+        $this->assertSame(100, RegraftRecord::totalRegraftedFromBatch($source->batch_id));
     }
 
     public function test_mortality_and_regraft_are_independent_across_the_family(): void
@@ -470,7 +470,7 @@ class RegraftFlowTest extends TestCase
             'client_id' => $client->client_id,
             'release_date' => now()->subDay()->toDateString(),
             'details' => [
-                ['batch_id' => $sub->batch_id, 'quantity' => 20, 'unit' => 'seedlings'],
+                ['batch_id' => $sub->batch_id, 'quantity' => 20, 'unit' => 'pots'],
             ],
         ])->assertRedirect(route('inventory.stock-out'));
 
@@ -506,11 +506,11 @@ class RegraftFlowTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->get(route('operational.replanting'))
+            ->get(route('operational.regraft'))
             ->assertOk()
             ->assertSee('Regrafted plants move to a new sub-batch')
             ->assertDontSee('remaining deficit', false)
-            ->assertDontSee('remainingReplantingCapacity');
+            ->assertDontSee('remainingRegraftCapacity');
     }
 
     public function test_regraft_ledger_page_lists_source_and_sub_batch(): void
@@ -521,7 +521,7 @@ class RegraftFlowTest extends TestCase
         $this->postRegraft($user, $source, 50);
 
         $this->actingAs($user)
-            ->get(route('operational.replanting'))
+            ->get(route('operational.regraft'))
             ->assertOk()
             ->assertSee('Regraft History')
             ->assertSee('B001')
@@ -542,7 +542,7 @@ class RegraftFlowTest extends TestCase
             'client_id' => $client->client_id,
             'release_date' => now()->subDay()->toDateString(),
             'details' => [
-                ['batch_id' => $sub->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+                ['batch_id' => $sub->batch_id, 'quantity' => 10, 'unit' => 'pots'],
             ],
         ]);
 

@@ -223,19 +223,24 @@
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label for="recordCause" class="form-label text-muted small fw-bold">Cause <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control @error('cause', 'mortality') is-invalid @enderror" id="recordCause"
-                            name="cause" list="causeOptions" maxlength="255" value="{{ old('cause') }}" placeholder="Select or type a cause" required>
+                        <label for="recordCause" class="form-label text-muted small fw-bold">Cause of Death <span class="text-danger">*</span></label>
+                        <select class="form-select @error('cause', 'mortality') is-invalid @enderror" id="recordCause" name="cause" required>
+                            <option value="" disabled @selected(old('cause') === null)>Select cause of death</option>
+                            @foreach (\App\Models\MortalityRecord::CAUSES as $causeOption)
+                                <option value="{{ $causeOption }}" @selected(old('cause') === $causeOption)>{{ $causeOption }}</option>
+                            @endforeach
+                        </select>
                         @error('cause', 'mortality')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
-                        <datalist id="causeOptions">
-                            <option value="Disease"></option>
-                            <option value="Pest"></option>
-                            <option value="Drought"></option>
-                            <option value="Physical Damage"></option>
-                            <option value="Other"></option>
-                        </datalist>
+                    </div>
+                    <div class="mb-3 d-none" id="recordCauseOtherWrapper">
+                        <label for="recordCauseOther" class="form-label text-muted small fw-bold">Description <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control @error('cause_other', 'mortality') is-invalid @enderror" id="recordCauseOther"
+                            name="cause_other" maxlength="200" value="{{ old('cause_other') }}" placeholder="Specify the cause of death">
+                        @error('cause_other', 'mortality')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
                     </div>
                     <p class="text-muted small mb-0">
                         <i class="bi bi-info-circle me-1"></i>Mortality records are record-only and cannot be edited later. A dead root
@@ -333,9 +338,34 @@
             });
         }
 
+        const othersCause = @json(\App\Models\MortalityRecord::CAUSE_OTHERS);
+        const causeSelect = document.getElementById('recordCause');
+        const causeOtherWrapper = document.getElementById('recordCauseOtherWrapper');
+        const causeOtherInput = document.getElementById('recordCauseOther');
+
+        const syncCauseOther = function () {
+            if (!causeSelect || !causeOtherWrapper) {
+                return;
+            }
+
+            const isOthers = causeSelect.value === othersCause;
+            causeOtherWrapper.classList.toggle('d-none', !isOthers);
+
+            if (causeOtherInput) {
+                causeOtherInput.required = isOthers;
+            }
+        };
+
+        if (causeSelect) {
+            causeSelect.addEventListener('change', syncCauseOther);
+            syncCauseOther();
+        }
+
         const form = document.getElementById('recordMortalityForm');
         if (form) {
             form.addEventListener('submit', function () {
+                syncCauseOther();
+
                 const btn = document.getElementById('recordMortalitySubmitBtn');
                 btn.disabled = true;
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';

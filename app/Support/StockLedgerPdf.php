@@ -315,10 +315,12 @@ class StockLedgerPdf extends FPDF
 
         foreach ($headers as $key => $label) {
             $align = in_array($key, ['total_grafted', 'available', 'regraft', 'mortality', 'stock_out'], true) ? 'R' : 'L';
+            [$size, $text] = $this->fitText($label, self::SUMMARY_COLUMNS[$key] - 1.4, 'B', 6.8);
             $this->SetFillColor(...self::BRAND);
             $this->SetTextColor(255, 255, 255);
+            $this->SetFont('Helvetica', 'B', $size);
             $this->SetXY($x, $y);
-            $this->Cell(self::SUMMARY_COLUMNS[$key], 6.4, $this->txt($label), 1, 0, $align, true);
+            $this->Cell(self::SUMMARY_COLUMNS[$key], 6.4, $this->txt($text), 1, 0, $align, true);
             $x += self::SUMMARY_COLUMNS[$key];
         }
 
@@ -358,9 +360,9 @@ class StockLedgerPdf extends FPDF
         }
 
         $cells = [
-            'batch' => [$this->clip($label, 30), 'L', self::TEXT, 'B'],
+            'batch' => [$label, 'L', self::TEXT, 'B'],
             'parent' => [(string) ($row['parent'] ?? '—'), 'L', self::MUTED, ''],
-            'variety' => [$this->clip((string) ($row['variety'] ?? '—'), 26), 'L', self::TEXT, ''],
+            'variety' => [(string) ($row['variety'] ?? '—'), 'L', self::TEXT, ''],
             'total_grafted' => [number_format((int) $row['total_grafted']), 'R', self::TEXT, ''],
             'available' => [number_format((int) $row['available']), 'R', self::TEXT, ''],
             'regraft' => [number_format((int) $row['regraft']), 'R', self::WARNING, ''],
@@ -372,10 +374,12 @@ class StockLedgerPdf extends FPDF
         $cursor = $x;
 
         foreach ($cells as $key => [$text, $align, $color, $style]) {
-            $this->SetFont('Helvetica', $style, 7);
+            $cellWidth = self::SUMMARY_COLUMNS[$key] - 2;
+            [$size, $display] = $this->fitText($text, $cellWidth - 0.4, $style, 7.0);
+            $this->SetFont('Helvetica', $style, $size);
             $this->SetTextColor(...$color);
             $this->SetXY($cursor + 1, $y + (($height - 4) / 2));
-            $this->Cell(self::SUMMARY_COLUMNS[$key] - 2, 4, $this->txt($text), 0, 0, $align);
+            $this->Cell($cellWidth, 4, $this->txt($display), 0, 0, $align);
             $cursor += self::SUMMARY_COLUMNS[$key];
         }
 
@@ -446,9 +450,42 @@ class StockLedgerPdf extends FPDF
         $this->SetX(12);
     }
 
-    private function clip(string $text, int $length): string
+    /**
+     * Fit a string into a cell: shrink the font (down to a floor) so it fits,
+     * and only truncate with an ellipsis if it is still too wide at the floor.
+     * The caller sets the font; the returned text still needs `txt()`.
+     *
+     * @return array{0:float,1:string}
+     */
+    private function fitText(string $text, float $width, string $style, float $size, float $floor = 4.2): array
     {
-        return strlen($text) > $length ? substr($text, 0, $length - 1).'…' : $text;
+        $display = $this->txt($text);
+
+        if ($display === '' || $width <= 0) {
+            return [$size, $text];
+        }
+
+        $this->SetFont('Helvetica', $style, $size);
+
+        if ($this->GetStringWidth($display) <= $width) {
+            return [$size, $text];
+        }
+
+        $scaled = $size * ($width / $this->GetStringWidth($display));
+
+        if ($scaled >= $floor) {
+            return [round($scaled, 2), $text];
+        }
+
+        $this->SetFont('Helvetica', $style, $floor);
+        $suffix = '...';
+        $cut = $display;
+
+        while ($cut !== '' && $this->GetStringWidth($cut.$suffix) > $width) {
+            $cut = substr($cut, 0, -1);
+        }
+
+        return [$floor, $cut === '' ? '' : $cut.$suffix];
     }
 
     private function drawSummaryStrip(): void
@@ -540,9 +577,11 @@ class StockLedgerPdf extends FPDF
             $this->Cell(self::SECTION_W, self::HEADER_H / 2, $this->txt($label), 1, 0, 'C', true);
         }
 
-        // Per-variety header (row 2).
-        $this->SetFont('Helvetica', 'B', $this->fontSize);
+        // Per-variety header (row 2). Each label is shrunk to fit its column
+        // (the columns narrow as more scion varieties are present).
         $this->SetXY($x + self::DATE_W + self::DESC_W + self::SEEDLINGS_W, $y + self::HEADER_H / 2);
+
+        $labelWidth = $this->colW - 0.5;
 
         foreach ($this->sections() as $label) {
             if ($this->varieties === []) {
@@ -552,7 +591,9 @@ class StockLedgerPdf extends FPDF
             }
 
             foreach ($this->varieties as $variety) {
-                $this->Cell($this->colW, self::HEADER_H / 2, $this->txt($this->shorten((string) $variety['name'])), 1, 0, 'C', true);
+                [$size, $text] = $this->fitText((string) $variety['name'], $labelWidth, 'B', $this->fontSize);
+                $this->SetFont('Helvetica', 'B', $size);
+                $this->Cell($this->colW, self::HEADER_H / 2, $this->txt($text), 1, 0, 'C', true);
             }
         }
 
@@ -703,12 +744,13 @@ class StockLedgerPdf extends FPDF
      */
     private function vCenter(string $text, float $x, float $y, float $width, float $height, string $align, array $color, bool $fill, string $style = '', ?float $size = null): void
     {
-        $this->SetFont('Helvetica', $style, $size ?? $this->fontSize);
+        [$fitted, $display] = $this->fitText($text, $width - 0.6, $style, $size ?? $this->fontSize);
+        $this->SetFont('Helvetica', $style, $fitted);
         $this->SetTextColor(...$color);
         $this->SetFillColor(...($fill ? self::ZEBRA : [255, 255, 255]));
         $this->SetDrawColor(...self::BORDER);
         $this->SetXY($x, $y + (($height - 4) / 2));
-        $this->Cell($width, 4, $text, 1, 0, $align, true);
+        $this->Cell($width, 4, $this->txt($display), 1, 0, $align, true);
     }
 
     private function shortDate(string $isoDate): string
@@ -716,11 +758,6 @@ class StockLedgerPdf extends FPDF
         $timestamp = strtotime($isoDate);
 
         return $timestamp ? date('M d', $timestamp) : $isoDate;
-    }
-
-    private function shorten(string $text): string
-    {
-        return strlen($text) > 14 ? substr($text, 0, 13).'…' : $text;
     }
 
     private function nbLines(float $width, string $text): int

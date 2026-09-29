@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\Batch;
 use App\Models\Inventory;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -47,7 +47,7 @@ class InventoryTest extends TestCase
             'batch_id' => $batch->batch_id,
             'inventory_date' => $date,
             'total_grafted' => (int) $batch->total_grafted,
-            'regraft' => $batch->totalReplanted(),
+            'regraft' => $batch->totalRegrafted(),
             'mortality' => $batch->effectiveMortalityQuantity(),
             'last_update' => now(),
         ]);
@@ -168,11 +168,11 @@ class InventoryTest extends TestCase
             'recorded_at' => '2026-09-01',
         ]);
 
-        ReplantingRecord::create([
+        RegraftRecord::create([
             'batch_id' => $batch->batch_id,
             'user_id' => $user->id,
             'quantity' => 10,
-            'replanting_date' => '2026-09-03',
+            'regraft_date' => '2026-09-03',
         ]);
 
         // Phase 7B: the snapshot's `regraft` reads the batch's cached counter.

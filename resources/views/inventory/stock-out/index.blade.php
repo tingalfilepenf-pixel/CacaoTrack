@@ -502,7 +502,7 @@
 
             row.querySelector('.line-batch').value = values.batch_id || '';
             row.querySelector('.line-quantity').value = values.quantity || '';
-            row.querySelector('.line-unit').value = values.unit || 'seedlings';
+            row.querySelector('.line-unit').value = values.unit || '{{\App\Models\StockOutDetail::UNITS[0]}}';
             row.querySelector('.line-unit-price').value = values.unit_price || '';
 
             linesBody.appendChild(row);

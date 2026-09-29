@@ -4,7 +4,7 @@
 @section('page_title', 'Regraft')
 
 @section('page_actions')
-<button class="btn btn-warning text-dark" data-bs-toggle="modal" data-bs-target="#recordReplantingModal">
+<button class="btn btn-warning text-dark" data-bs-toggle="modal" data-bs-target="#recordRegraftModal">
     <i class="bi bi-plus-lg me-1"></i> Record Regraft
 </button>
 @endsection
@@ -54,7 +54,7 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small fw-bold text-uppercase">Total Regrafted</div>
-                <div class="fs-3 fw-bold text-success">{{ number_format($totalReplanted) }}</div>
+                <div class="fs-3 fw-bold text-success">{{ number_format($totalRegrafted) }}</div>
                 <div class="text-muted small">Quantity regrafted across the current filters</div>
             </div>
         </div>
@@ -82,7 +82,7 @@
 <!-- Filter -->
 <div class="card mb-4">
     <div class="card-body py-3">
-        <form method="GET" action="{{ route('operational.replanting') }}" class="row g-3 align-items-end">
+        <form method="GET" action="{{ route('operational.regraft') }}" class="row g-3 align-items-end">
             <div class="col-md-4">
                 <label for="filterBatch" class="form-label text-muted small fw-bold mb-1">Batch</label>
                 <select class="form-select form-select-sm" id="filterBatch" name="batch_id">
@@ -96,7 +96,7 @@
             </div>
             <div class="col-md-3 d-flex gap-2">
                 <button type="submit" class="btn btn-sm btn-outline-secondary">Filter</button>
-                <a href="{{ route('operational.replanting') }}" class="btn btn-sm btn-outline-secondary" title="Reset filters">
+                <a href="{{ route('operational.regraft') }}" class="btn btn-sm btn-outline-secondary" title="Reset filters">
                     <i class="bi bi-arrow-counterclockwise"></i>
                 </a>
             </div>
@@ -145,7 +145,7 @@
                             </td>
                             <td class="text-end pe-4">
                                 @if ($summary['regraftable'] > 0 && ! $batch->isArchived())
-                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#recordReplantingModal"
+                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#recordRegraftModal"
                                         data-batch-id="{{ $batch->batch_id }}" title="Record a regraft from this batch">
                                         <i class="bi bi-arrow-repeat"></i> Regraft
                                     </button>
@@ -195,7 +195,7 @@
                             $source = $record->parent ?? $record->batch;
                         @endphp
                         <tr>
-                            <td class="ps-4">{{ $formatDate($record->replanting_date) }}</td>
+                            <td class="ps-4">{{ $formatDate($record->regraft_date) }}</td>
                             <td class="fw-medium">{{ $source?->batch_code ?? '—' }}</td>
                             <td><span class="badge bg-info text-dark">{{ $record->batch?->batch_code ?? '—' }}</span></td>
                             <td>{{ $record->batch?->scionVariety?->scion_variety_name ?? '—' }}</td>
@@ -226,14 +226,14 @@
 </div>
 
 <!-- Record Regraft Modal -->
-<div class="modal fade" id="recordReplantingModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="recordRegraftModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content border-warning">
             <div class="modal-header bg-warning">
                 <h5 class="modal-title">Record Regraft</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="{{ route('operational.replanting.records.store') }}" id="recordReplantingForm">
+            <form method="POST" action="{{ route('operational.regraft.records.store') }}" id="recordRegraftForm">
                 @csrf
                 <div class="modal-body">
                     <div class="alert alert-info py-2 small">
@@ -242,7 +242,7 @@
 
                     <div class="mb-3">
                         <label for="recordBatch" class="form-label text-muted small fw-bold">Source Batch <span class="text-danger">*</span></label>
-                        <select class="form-select @error('batch_id', 'replanting') is-invalid @enderror" id="recordBatch" name="batch_id" required>
+                        <select class="form-select @error('batch_id', 'regraft') is-invalid @enderror" id="recordBatch" name="batch_id" required>
                             <option value="" disabled @selected(old('batch_id') === null)>Select Batch</option>
                             @foreach ($regraftableBatches as $summary)
                                 @php $batch = $summary['batch']; @endphp
@@ -256,7 +256,7 @@
                                 </option>
                             @endforeach
                         </select>
-                        @error('batch_id', 'replanting')
+                        @error('batch_id', 'regraft')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                         @if ($regraftableBatches->isEmpty())
@@ -267,18 +267,18 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="recordQuantity" class="form-label text-muted small fw-bold">Quantity <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control @error('quantity', 'replanting') is-invalid @enderror" id="recordQuantity"
+                            <input type="number" class="form-control @error('quantity', 'regraft') is-invalid @enderror" id="recordQuantity"
                                 name="quantity" min="1" value="{{ old('quantity') }}" required>
                             <div class="form-text" id="recordQuantityHint"></div>
-                            @error('quantity', 'replanting')
+                            @error('quantity', 'regraft')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
                         <div class="col-md-6">
                             <label for="recordDate" class="form-label text-muted small fw-bold">Regraft Date <span class="text-danger">*</span></label>
-                            <input type="date" class="form-control @error('replanting_date', 'replanting') is-invalid @enderror" id="recordDate"
-                                name="replanting_date" max="{{ now()->toDateString() }}" value="{{ old('replanting_date', now()->toDateString()) }}" required>
-                            @error('replanting_date', 'replanting')
+                            <input type="date" class="form-control @error('regraft_date', 'regraft') is-invalid @enderror" id="recordDate"
+                                name="regraft_date" max="{{ now()->toDateString() }}" value="{{ old('regraft_date', now()->toDateString()) }}" required>
+                            @error('regraft_date', 'regraft')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
@@ -286,14 +286,14 @@
 
                     <div class="mb-3">
                         <label for="recordScionVariety" class="form-label text-muted small fw-bold">New Sub-Batch Scion Variety <span class="text-danger">*</span></label>
-                        <select class="form-select @error('scion_variety_id', 'replanting') is-invalid @enderror" id="recordScionVariety" name="scion_variety_id" required>
+                        <select class="form-select @error('scion_variety_id', 'regraft') is-invalid @enderror" id="recordScionVariety" name="scion_variety_id" required>
                             <option value="" disabled @selected(old('scion_variety_id') === null)>Select Scion Variety</option>
                             @foreach ($scionVarieties as $scionVariety)
                                 <option value="{{ $scionVariety->scion_variety_id }}" @selected(old('scion_variety_id') == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
                             @endforeach
                         </select>
                         <div class="form-text">Defaults to the source batch's variety; the sub-batch may use a different one.</div>
-                        @error('scion_variety_id', 'replanting')
+                        @error('scion_variety_id', 'regraft')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                     </div>
@@ -305,7 +305,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning text-dark fw-bold" id="recordReplantingSubmitBtn">Save Regraft</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-bold" id="recordRegraftSubmitBtn">Save Regraft</button>
                 </div>
             </form>
         </div>
@@ -316,7 +316,7 @@
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const modalEl = document.getElementById('recordReplantingModal');
+        const modalEl = document.getElementById('recordRegraftModal');
         const batchSelect = document.getElementById('recordBatch');
         const quantityInput = document.getElementById('recordQuantity');
         const varietySelect = document.getElementById('recordScionVariety');
@@ -364,10 +364,10 @@
             });
         }
 
-        const form = document.getElementById('recordReplantingForm');
+        const form = document.getElementById('recordRegraftForm');
         if (form) {
             form.addEventListener('submit', function () {
-                const btn = document.getElementById('recordReplantingSubmitBtn');
+                const btn = document.getElementById('recordRegraftSubmitBtn');
                 btn.disabled = true;
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
             });

@@ -197,7 +197,7 @@ The existing frontend should be refined rather than unnecessarily rebuilt.
 
 The sidebar shall use the following structure.
 
-**Terminology note:** user-facing screens use **Regraft**; the internal entity/table name remains `Replanting_Record` / `replanting_records`.
+**Terminology note:** user-facing screens use **Regraft**; the internal entity/table name is `Regraft_Record` / `regraft_records` (renamed from `Replanting_Record` / `replanting_records` on 2026-09-30 so the internal name matches the company term).
 
 ### Dashboard
 
@@ -339,7 +339,7 @@ The system shall allow authorized users to record regrafting information includi
 - Regraft date
 - Remarks
 
-Regrafting must be connected to the applicable Batch or sub-batch, must create the linked regraft sub-batch (see §2.4), and must be reflected in operational analytics where required. The internal entity/table name remains `Replanting_Record` / `replanting_records`.
+Regrafting must be connected to the applicable Batch or sub-batch, must create the linked regraft sub-batch (see §2.4), and must be reflected in operational analytics where required. The internal entity/table name is `Regraft_Record` / `regraft_records` (renamed from `Replanting_Record` on 2026-09-30).
 
 ---
 
@@ -665,7 +665,7 @@ Where applicable it may include:
 - Available
 - Regraft
 - Mortality
-- Regraft (internal `Replanting_Record`)
+- Regraft (internal `Regraft_Record`)
 - Stock In
 - Stock Out
 - Relevant dates
@@ -992,8 +992,8 @@ The following are **new** rules. Each is marked in the text with the `[PROPOSED 
 - **OD-8 — Stock In ↔ Batch traceability.** The system keeps no seedling stock balance and does not enforce Stock In → Batch traceability (intentional, consistent with "no stock balance"). (§11, FR-09; ERD §3.7)
 - **OD-9 — Inventory snapshot semantics.** Inventory values are captured from actual records at snapshot time (point-in-time, frozen); one snapshot per batch or sub-batch per month; "Applicable current quantity" maps to `Batch.Available_Count`. (FR-08; ERD §3.12)
 - **OD-10 — Dashboard KPIs.** **Total Active Inventory and the Crude Mortality Rate denominator — CONFIRMED (2026-09-29):** the crude-mortality-rate denominator is `SUM(Total_Grafted − Regraft)` — each physical plant counted exactly once; raw `SUM(Total_Grafted)` would double-count regrafted plants (see §11 Total Grafted). **Regraft Deficit remains an OPEN DECISION:** the current formula `Σ max(0, mortality − regraft)` compares populations that no longer offset each other; no replacement formula is proposed here. (§10)
-- **OD-11 — Replanting_Record.Sub_Batch_ID.** Replace the duplicate `Parent_Batch_ID` on `Replanting_Record` with a nullable `Sub_Batch_ID` (FK → Batch) identifying the sub-batch the record created; `Replanting_Record.Batch_ID` is the source batch. (ERD §3.11)
-- **OD-12 — Batch.Regraft cached total.** `Batch.Regraft` is a cached total that must equal `SUM(Replanting_Record.Quantity)` for that source batch, maintained inside the regraft transaction. (ERD §3.8/§3.11)
+- **OD-11 — Regraft_Record.Sub_Batch_ID.** Replace the duplicate `Parent_Batch_ID` on `Regraft_Record` with a nullable `Sub_Batch_ID` (FK → Batch) identifying the sub-batch the record created; `Regraft_Record.Batch_ID` is the source batch. (ERD §3.11)
+- **OD-12 — Batch.Regraft cached total.** `Batch.Regraft` is a cached total that must equal `SUM(Regraft_Record.Quantity)` for that source batch, maintained inside the regraft transaction. (ERD §3.8/§3.11)
 - **OD-13 — Scion freshness/viability rule.** No usable-until value, no warning, and no blocking in this version; pending client confirmation of (a) the allowed freshness window and (b) whether the rule should warn or block. (ERD §3.7)
 - **OD-14 — Scion receipt traceability.** Linking a regraft to a specific scion receipt (a scion-inclusive Stock In row) is **not part of this version**; no stock-balance deduction. (FR-07; ERD §2/§3.7)
 

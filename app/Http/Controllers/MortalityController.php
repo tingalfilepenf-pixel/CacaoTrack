@@ -70,10 +70,12 @@ class MortalityController extends Controller
     {
         $validated = $request->validated();
 
+        $cause = MortalityRecord::composeCause($validated['cause'], $validated['cause_other'] ?? null);
+
         $fingerprint = DuplicateSubmissionGuard::assertFresh('mortality', $validated, 'mortality');
 
         try {
-            DB::transaction(function () use ($validated): void {
+            DB::transaction(function () use ($validated, $cause): void {
                 $batch = Batch::query()->lockForUpdate()->findOrFail($validated['batch_id']);
 
                 $capacity = $batch->remainingMortalityCapacity();
@@ -88,14 +90,14 @@ class MortalityController extends Controller
                     'batch_id' => $batch->batch_id,
                     'user_id' => Auth::id(),
                     'quantity' => $validated['quantity'],
-                    'cause' => $validated['cause'],
+                    'cause' => $cause,
                     'recorded_at' => $validated['recorded_at'],
                 ]);
 
                 ActivityLog::record(
                     $batch->batch_id,
                     ActivityLog::TYPE_MORTALITY_RECORDED,
-                    "Recorded {$validated['quantity']} mortality for {$batch->batch_code} due to {$validated['cause']}.",
+                    "Recorded {$validated['quantity']} mortality for {$batch->batch_code} due to {$cause}.",
                     null,
                     $validated['recorded_at'],
                 );

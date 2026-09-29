@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\Analytic;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Models\User;
 use App\Support\AnalyticsMetrics;
@@ -68,11 +68,11 @@ class AnalyticsTest extends TestCase
             'recorded_at' => '2026-09-01',
         ]);
 
-        ReplantingRecord::create([
+        RegraftRecord::create([
             'batch_id' => $this->b001->batch_id,
             'user_id' => $this->user->id,
             'quantity' => 15,
-            'replanting_date' => '2026-09-03',
+            'regraft_date' => '2026-09-03',
             'remark' => 'Replaced disease losses.',
         ]);
 
@@ -190,7 +190,7 @@ class AnalyticsTest extends TestCase
     public function test_centralized_metrics_return_real_values(): void
     {
         $this->assertSame(270, AnalyticsMetrics::totalActiveInventory());
-        $this->assertSame(20, AnalyticsMetrics::totalReplantingDeficit());
+        $this->assertSame(20, AnalyticsMetrics::totalRegraftDeficit());
         // Denominator = SUM(total_grafted - regraft) = (200-15) + 100 = 285;
         // 35 / 285 = 12.28%.
         $this->assertSame(12.28, AnalyticsMetrics::crudeMortalityRate());
@@ -311,6 +311,60 @@ class AnalyticsTest extends TestCase
             $recorded,
             (int) collect($matrix['rows'])->sum('total'),
         );
+    }
+
+    public function test_mortality_matrix_collapses_others_specifications_into_one_cause(): void
+    {
+        // Two distinct `Others: <description>` rows must roll up into a single
+        // `Others` cause column — the description is only a specification.
+        MortalityRecord::create([
+            'batch_id' => $this->b001->batch_id,
+            'user_id' => $this->user->id,
+            'quantity' => 7,
+            'cause' => 'Others: Anthracnose infection',
+            'recorded_at' => '2026-09-05',
+        ]);
+
+        MortalityRecord::create([
+            'batch_id' => $this->b002->batch_id,
+            'user_id' => $this->user->id,
+            'quantity' => 4,
+            'cause' => 'Others: Rat damage',
+            'recorded_at' => '2026-09-06',
+        ]);
+
+        $matrix = AnalyticsMetrics::mortalityMatrix();
+
+        $this->assertContains('Others', $matrix['causes']);
+        $this->assertNotContains('Others: Anthracnose infection', $matrix['causes']);
+        $this->assertNotContains('Others: Rat damage', $matrix['causes']);
+        $this->assertSame(11, $matrix['totalsByCause']['Others']);
+        $this->assertSame(46, $matrix['grandTotal']);
+
+        $this->actingAs($this->user)
+            ->get(route('analytics.mortality-matrix'))
+            ->assertOk()
+            ->assertSee('Others')
+            ->assertDontSee('Anthracnose')
+            ->assertDontSee('Rat damage');
+    }
+
+    public function test_mortality_matrix_collapses_others_in_pdf_and_csv_exports(): void
+    {
+        MortalityRecord::create([
+            'batch_id' => $this->b001->batch_id,
+            'user_id' => $this->user->id,
+            'quantity' => 7,
+            'cause' => 'Others: Anthracnose infection',
+            'recorded_at' => '2026-09-05',
+        ]);
+
+        $response = $this->actingAs($this->user)->get(route('analytics.mortality-matrix.export.csv'));
+        $response->assertOk();
+        $csv = $response->getContent();
+
+        $this->assertStringContainsString('Others', $csv);
+        $this->assertStringNotContainsString('Anthracnose', $csv);
     }
 
     public function test_mortality_matrix_rejects_inverted_date_range(): void

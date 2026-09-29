@@ -18,6 +18,27 @@ class MortalityRecord extends Model
 {
     use HasFactory;
 
+    /**
+     * The "Others" sentinel cause. Selecting it requires the user to supply a
+     * free-text description, which is folded into the single `cause` column
+     * (the ERD `Mortality_Record` has no separate description attribute).
+     */
+    public const CAUSE_OTHERS = 'Others';
+
+    /**
+     * Fixed cause-of-death choices (PRD FR-04 "Cause"), plus `Others`. This is
+     * the single source of truth (RULE 6) for the Mortality form's dropdown.
+     *
+     * @var list<string>
+     */
+    public const CAUSES = [
+        'Disease',
+        'Pest',
+        'Drought',
+        'Physical Damage',
+        self::CAUSE_OTHERS,
+    ];
+
     protected $table = 'mortality_records';
 
     protected $primaryKey = 'mortality_id';
@@ -47,6 +68,45 @@ class MortalityRecord extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * Resolve the stored `cause` value from the dropdown choice. When the user
+     * picks `Others`, the required description is appended so the specific
+     * cause is preserved (RULE 6: one shared definition).
+     */
+    public static function composeCause(string $cause, ?string $description = null): string
+    {
+        if ($cause !== self::CAUSE_OTHERS) {
+            return $cause;
+        }
+
+        $description = trim((string) $description);
+
+        return $description === '' ? self::CAUSE_OTHERS : self::CAUSE_OTHERS.': '.$description;
+    }
+
+    /**
+     * Collapse a stored `cause` value to its reporting category. `Others` (with
+     * or without a free-text specification, i.e. `Others: <description>`) is a
+     * single mortality category for analytics — the description is only a
+     * specification, not a distinct cause (RULE 6: one shared definition, so the
+     * matrix, PDF and CSV all group alike). A blank cause reports as
+     * `Unspecified`; every other cause is returned unchanged.
+     */
+    public static function normalizeCause(?string $cause): string
+    {
+        $cause = trim((string) $cause);
+
+        if ($cause === '') {
+            return 'Unspecified';
+        }
+
+        if ($cause === self::CAUSE_OTHERS || str_starts_with($cause, self::CAUSE_OTHERS.':')) {
+            return self::CAUSE_OTHERS;
+        }
+
+        return $cause;
     }
 
     /**

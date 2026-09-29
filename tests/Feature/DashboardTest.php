@@ -72,7 +72,7 @@ class DashboardTest extends TestCase
         $response->assertOk();
         $response->assertViewHas('totalActiveInventory', AnalyticsMetrics::totalActiveInventory());
         $response->assertViewHas('crudeMortalityRate', AnalyticsMetrics::crudeMortalityRate());
-        $response->assertViewHas('totalReplantingDeficit', AnalyticsMetrics::totalReplantingDeficit());
+        $response->assertViewHas('totalRegraftDeficit', AnalyticsMetrics::totalRegraftDeficit());
 
         // Real rendered values: 180 active, 20/200 = 10.00%, deficit 20 - 0 = 20.
         $response->assertSee('180');
@@ -110,7 +110,7 @@ class DashboardTest extends TestCase
         $response->assertDontSee('survivalChart');
         $response->assertDontSee('inventoryVarietyChart');
         $response->assertViewHas('totalActiveInventory', 0);
-        $response->assertViewHas('totalReplantingDeficit', 0);
+        $response->assertViewHas('totalRegraftDeficit', 0);
     }
 
     public function test_dashboard_does_not_render_the_old_mock_values(): void

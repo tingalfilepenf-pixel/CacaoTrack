@@ -8,6 +8,37 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## RENAME — `Replanting_Record` → `Regraft_Record` (2026-09-30)
+- **Owner-directed, single coordinated rename** (the `replanting_records` table, PK/date columns,
+  model, relations, controller, request, route, views, factory, seeders, analytics and tests were all
+  renamed to `regraft`). It makes the internal entity name match the company term used throughout the
+  UI ("Regraft").
+- **This intentionally diverges from the client-approved v1.0 baseline.** The `_UPDATED` docs
+  (untouched provenance) and the earlier canonical docs named the entity `Replanting_Record` and the
+  rule said "do not rename beyond the revised ERD". The canonical `docs/CacaoTrack_PRD.md` +
+  `docs/CacaoTrack_ERD.md` (+ their byte-identical `_REVISED` copies) were updated in the same change
+  to record the rename; `_UPDATED` was **not** edited.
+- **Schema:** table `replanting_records` → `regraft_records`; PK `replanting_id` → `regraft_id`;
+  date `replanting_date` → `regraft_date`; stored `activity_logs.activity_type`
+  `replanting_recorded` → `regraft_recorded`. Migration
+  `2026_09_30_000001_rename_replanting_records_to_regraft_records_table` (reversible). The historical
+  P5 `create/drop_regraft_records_table` migrations (`2026_09_25_000009` / `2026_09_26_000002`) are
+  left intact as history; by the time the rename runs, that table no longer exists.
+- **Code:** `App\Models\RegraftRecord`, `Batch::regraftRecords()` / `regraftRecordsAsParent()` /
+  `totalRegrafted()` / `regraftDeficit()`, `AnalyticsMetrics::totalRegraftDeficit()` /
+  `regraftDeficitByBatch()`, `App\Actions\RegraftBatch` (param `$regraftDate`), `RegraftController`,
+  `StoreRegraftRecordRequest` (error bag `regraft`), route `operational.regraft` (`/operational/regraft`),
+  view `operational.regraft.index`, `RegraftRecordFactory`, `ActivityLog::TYPE_REGRAFT_RECORDED`.
+  Error-bag/field names are `regraft` / `regraft_date`.
+- **✅ `db_capstone` WAS migrated** (2026-09-30) — the owner explicitly signed off this one live-DB
+  schema action. Fresh verified backup first:
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql`
+  (36,826 B, left untouched). `migrate:status` **0 Pending**; live `regraft_records` verified
+  (2 rows, Σqty 130; `regraft_id`/`regraft_date`/`parent_batch_id` present; `activity_logs` migrated
+  to `regraft_recorded`); read-only smoke test — `/`, `/operational/regraft`, `/operational/batches`,
+  `/inventory/stock-in`, `/analytics`, `/analytics/stock-ledger` all **200**. Tests still run only
+  against `db_capstone_test`; any further live-DB schema action needs fresh sign-off.
+
 ## CONFIRMED — `total_grafted` is a cumulative, non-decreasing log (2026-09-29)
 - **Client-CONFIRMED, not a pending `OD-n`.** Evidence: the client's `RU-Summary.jpg` spreadsheet
   records a regraft as a **new Grafted entry plus a Re Graft entry on the same row** (row 4, 10/2025,
@@ -55,14 +86,14 @@
   replanting rows cannot become sub-batches without inventing data). All **52** migrations ran,
   including the four `2026_09_27_*`; `DatabaseSeeder` + `ActivityLogSeeder` seeded.
 - **Before → after row counts (`db_capstone`):** batches 3 → 5, stock_ins 6 → 4, stock_outs 1 → 1,
-  stock_out_details 1 → 1, mortality_records 4 → 4, replanting_records 5 → 2, inventories 3 → 5,
+  stock_out_details 1 → 1, mortality_records 4 → 4, regraft_records 5 → 2, inventories 3 → 5,
   users 1 → 1, scion_varieties 3 → 5, suppliers 3 → 3, clients 3 → 3.
 - **Schema verified live (`Schema::hasColumn`):** `batches.viable_count` **false**,
   `stock_ins.viable` **false**, `inventories.viable` **false**, `batches.regraft` **true**,
-  `batches.parent_batch_id` **true**, `replanting_records.parent_batch_id` **true**;
+  `batches.parent_batch_id` **true**, `regraft_records.parent_batch_id` **true**;
   `migrate:status` **0 Pending**.
 - **Invariants verified live:** `available_count > total_grafted` = **0**; `available_count < 0` =
-  **0**; `batches.regraft == SUM(replanting_records.quantity by parent_batch_id)` mismatches = **0**;
+  **0**; `batches.regraft == SUM(regraft_records.quantity by parent_batch_id)` mismatches = **0**;
   B001 family `total_grafted` = **500**.
 - **Seeded family:** B001 Batangas (total 400 / available 400, regraft 100, mortality 25) →
   B001-R1 Toledo (70 / 50, regraft 30, mortality 5) → B001-R1-R1 Criollo (30 / 30, regraft 0,
@@ -82,7 +113,7 @@
 - **Schema (new reversible migrations `2026_09_27_000001..000004`, validated up → down → up on
   `db_capstone_test` only):** `batches` **drops `viable_count`** and **adds `regraft`** (unsigned int,
   default 0) + nullable **`parent_batch_id`** (self-FK → `batches.batch_id`, restrictOnDelete,
-  indexed); `stock_ins` **drops `viable`**; `inventories` **drops `viable`**; `replanting_records`
+  indexed); `stock_ins` **drops `viable`**; `inventories` **drops `viable`**; `regraft_records`
   **adds nullable `parent_batch_id`** (ERD §3.11). There is no five-day seedling viability recount.
 - **Code:** `Batch` gained `parent()` / `subBatches()` / `isSubBatch()`; Stock In / Batches /
   Inventory models, requests, controllers and views no longer reference viable (Stock In's card is
@@ -119,17 +150,17 @@
   (`total_grafted` is a cumulative, non-decreasing log and is **NOT** reduced — CONFIRMED
   2026-09-29); (5) create the sub-batch (`parent_batch_id = source`, `batch_code =
   nextSubBatchCode()`, `total_grafted = available_count = q`, `regraft = 0`, `grafted_date` = regraft
-  date, status active, chosen variety, actor user); (6) create the `ReplantingRecord`
+  date, status active, chosen variety, actor user); (6) create the `RegraftRecord`
   (`batch_id = NEW sub-batch`, `parent_batch_id = source`); (7) `ActivityLog::record` (existing
-  `replanting_recorded` type) attributed to the actor. Any failure rolls all of it back.
+  `regraft_recorded` type) attributed to the actor. Any failure rolls all of it back.
 - **Model changes:** `Batch` gained `regraftableQuantity()`, `nextSubBatchCode()` and
-  `regraftRecordsAsParent()`; `totalReplanted()` now returns the cached `batches.regraft` counter;
+  `regraftRecordsAsParent()`; `totalRegrafted()` now returns the cached `batches.regraft` counter;
   `remainingReplantingCapacity()` was **removed**; `subBatches` was added to
   `Batch::OPERATIONAL_RELATIONS` so a parent's counts lock once it has been regrafted.
-  `ReplantingRecord` gained `parent()` / `subBatch()` relations and `totalRegraftedFromBatch($id)`.
+  `RegraftRecord` gained `parent()` / `subBatch()` relations and `totalRegraftedFromBatch($id)`.
 - **Controller/request/views:** `ReplantingController` now delegates to `RegraftBatch` inside the
-  `DuplicateSubmissionGuard`; `StoreReplantingRecordRequest` requires `batch_id`, `quantity`,
-  `scion_variety_id` (active) and `replanting_date` (not future); the Regraft page shows summary
+  `DuplicateSubmissionGuard`; `StoreRegraftRecordRequest` requires `batch_id`, `quantity`,
+  `scion_variety_id` (active) and `regraft_date` (not future); the Regraft page shows summary
   cards (Regraft Deficit / Total Regrafted / Total Mortality / Batches With Deficit), a per-batch
   table (Total Grafted / Regraft / Mortality / Deficit), a **Regraft History** table
   (date / source batch / new sub-batch / sub-batch variety / quantity / remark / user) and a
@@ -143,10 +174,10 @@
      clause; the code-format details remain provisional.
   2. **`OD-6`** — sub-batch code = source `batch_code` + `-R` + first free sequence (`B001-R1`,
      `B001-R2`, …); nested (`B001-R1-R1`) when a sub-batch is itself regrafted.
-  3. **ERD §3.11 reading** — the `ReplantingRecord` stores `batch_id` = the new sub-batch and
+  3. **ERD §3.11 reading** — the `RegraftRecord` stores `batch_id` = the new sub-batch and
      `parent_batch_id` = the source batch.
-  4. **`OD-12`** — `Batch::totalReplanted()` = the cached `batches.regraft` counter (reconciled in
-     tests against `ReplantingRecord::totalRegraftedFromBatch()`).
+  4. **`OD-12`** — `Batch::totalRegrafted()` = the cached `batches.regraft` counter (reconciled in
+     tests against `RegraftRecord::totalRegraftedFromBatch()`).
 - **Seeders** (`DatabaseSeeder`) now seed the regraft scenario **only through `RegraftBatch`**:
   B001 Batangas 500 / mortality 25 → regraft 100 into **B001-R1** using Toledo → mortality 5 on
   B001-R1 → one Stock Out (20) from B001-R1. Idempotent (guarded on `b001.regraft < 100`);
@@ -195,8 +226,8 @@
 - **Stock Ledger (monthly grid kept):** the **Grafted** column now only includes root batches
   (`parent_batch_id IS NULL`); sub-batch plants appear only under **Regraft**. Ready to Plant is
   unchanged (still each batch's live `available_count`, sub-batches included). **Regraft** rows read
-  `replanting_records` with the description `Regraft {source} → {sub-batch}`, the **sub-batch's**
-  scion variety and `replanting_date`. **Seedlings** now counts only `stock_ins` rows with
+  `regraft_records` with the description `Regraft {source} → {sub-batch}`, the **sub-batch's**
+  scion variety and `regraft_date`. **Seedlings** now counts only `stock_ins` rows with
   `scion_variety_id IS NULL` (scion receipts no longer inflate it). A footnote under the grid explains
   the no-cross-column-total rule, and a **Batch summary (nested)** table (Batch/sub-batch, Parent,
   Scion Variety, Total Grafted, Available, Regraft, Mortality, Stock Out, Date Grafted — all computed)
@@ -218,7 +249,7 @@
   Phase 7C, under the old `total_grafted` arithmetic — **superseded 2026-09-29**, see the CONFIRMED
   section at the top): SUM available **730** == Total Active Inventory; SUM total_grafted **750** ==
   Crude Mortality Rate denominator; B001 family total_grafted **500** conserved; `Σregraft` **130** ==
-  `Σ(replanting_records.quantity)` **130**; Seedlings **800** (seedling-only) vs **1000** all Stock In;
+  `Σ(regraft_records.quantity)` **130**; Seedlings **800** (seedling-only) vs **1000** all Stock In;
   ledger grafted **650** / ready_to_plant **730**. Under the corrected cumulative rule these become
   raw SUM total_grafted **880** / denominator `SUM(total_grafted − regraft)` **750** / rate **7.33%**,
   family sum **630** (with `total_grafted − regraft` still **500**), and ledger grafted **750**;
@@ -274,12 +305,12 @@
   correctly failed because `users` uses Laravel's default `id` PK, not `user_id`; the migration now
   detects the key — no data was lost.)
 - **`regraft_records` retracted (Session BX — resolved; was P5 Part B):** `RegraftRecord` was a P5
-  approved schema exception that **duplicated `Replanting_Record`**; in the company's process Regraft
+  approved schema exception that **duplicated `Regraft_Record`**; in the company's process Regraft
   and Replanting are the **same recorded procedure**. It was dropped by migration
   `2026_09_26_000002_drop_regraft_records_table` (the table held **0 rows** — no data migration needed;
   the create migration `2026_09_25_000009` is left intact as history). `app/Models/RegraftRecord.php`,
   `Batch::regraftRecords()` and the `AnalyticsMetrics` import were deleted, and the Stock Ledger's
-  Regraft column now reads `replanting_records` directly. **This resolves the Session BU proposal,
+  Regraft column now reads `regraft_records` directly. **This resolves the Session BU proposal,
   which (contrary to an earlier report) had never been applied.** `Regraft_Record` is no longer an
   approved schema exception.
 - **Session BV approved schema addition — `scion_receivings` (additive only; commit `33ff6b0`) —
@@ -288,7 +319,7 @@
   plus `App\Models\ScionReceiving` — a **receiving log only** for scion material (`scion_variety_id`
   required FK, `supplier_id` nullable FK, `quantity`, `unit_price` nullable, `date_received`, `origin`
   single nullable, `notes` nullable). It holds **no stock balance** (nothing was added to
-  `scion_varieties`), does **not** alter `ReplantingRecord`, and has **no** CRUD
+  `scion_varieties`), does **not** alter `RegraftRecord`, and has **no** CRUD
   controller/route/view yet. Validation uses built-in Laravel rules (`ScionReceiving::rules()`) — no
   additional table. **Freshness/viability rule NOT implemented** (no usable-until value, no warning, no
   blocking) pending client confirmation of the allowed viability window and whether to warn or block.
@@ -346,7 +377,7 @@
   quantity storage; mortality `Plant_Condition`; `Available_Count` definition (+ Gap Report);
   mortality quantity bound; corrections policy; regraft sub-batch details; 21-day cycle +
   `Batch.Status`; Stock In ↔ Batch traceability; Inventory snapshot semantics; Dashboard KPIs
-  (+ Regraft Deficit); `Replanting_Record.Sub_Batch_ID`; cached `Batch.Regraft`; scion freshness
+  (+ Regraft Deficit); `Regraft_Record.Sub_Batch_ID`; cached `Batch.Regraft`; scion freshness
   rule; scion receipt traceability. Every such rule carries the inline marker
   **[PROPOSED — pending client confirmation]**. **Do not implement any `OD-n` rule without
   sign-off.**
@@ -365,7 +396,7 @@
 | 8 | `Batch` | `batch_id` | **`scion_variety_id` (nullable)**, **`parent_batch_id` (nullable)**, `user_id`, `batch_code`, `total_grafted`, **`regraft`**, `available_count`, `grafted_date`, `created_at`, `status`, `archived_at` (nullable) |
 | 9 | `Scion_Variety` | `scion_variety_id` | `scion_variety_name`, `description`, `archived_at` (nullable) |
 | 10 | `Mortality_Record` | `mortality_id` | `batch_id`, `user_id`, `quantity`, `cause`, `recorded_at` |
-| 11 | `Replanting_Record` | `replanting_id` | `batch_id`, **`parent_batch_id` (nullable)**, `user_id`, `quantity`, `replanting_date`, `remark` |
+| 11 | `Regraft_Record` | `regraft_id` | `batch_id`, **`parent_batch_id` (nullable)**, `user_id`, `quantity`, `regraft_date`, `remark` |
 | 12 | `Inventory` | `inventory_id` | `batch_id`, `inventory_date`, `total_grafted`, `regraft`, `mortality`, `status`, `last_update` |
 | 13 | `Client` | `client_id` | `client_name`, `contact_number`, `address`, `archived_at` (nullable) |
 | 14 | `Stock_Out` | `stock_out_id` | `client_id`, `user_id`, `release_date`, `total_amount` (nullable) — header only |
@@ -383,8 +414,9 @@
 `viable = quantity`, no recount); a pure-seedling row leaves them null. There is **no** separate
 `Scion_Receiving` entity/table and **no** discriminator column — the presence of `scion_variety_id`
 is the signal. `Regraft` is not a separate entity — **Regraft and Replanting are the same recorded
-procedure**, recorded in `replanting_records` (the short-lived `regraft_records` exception was
-retracted; see the banner). `inventories.regraft` (monthly aggregate) is unchanged.
+procedure**, recorded in the single `regraft_records` table (renamed from `replanting_records` on
+2026-09-30 — see the banner; the short-lived P5 `regraft_records` exception had already been
+retracted). `inventories.regraft` (monthly aggregate) is unchanged.
 
 ## Removed from the model/process (do NOT reintroduce)
 - Tables: `Batch_Monitoring`, `Variety`, generic `Scions` stock pool, `Pot_Type`,
@@ -400,7 +432,7 @@ retracted; see the banner). `inventories.regraft` (monthly aggregate) is unchang
 
 ## Revised navigation (sidebar)
 - **Dashboard**
-- **Operational:** Daily Checklist, Mortality Tracking, Replanting, Batches, Scion Variety
+- **Operational:** Daily Checklist, Mortality Tracking, Regraft, Batches, Scion Variety
 - **Inventory:** Stock In, Stock Out, Inventory
 - **Management:** Supplier, Client
 - **Analytics:** Operational Analytics, Tabular Deliverables, Stock Ledger, Root Cause Matrix
@@ -449,14 +481,14 @@ retracted; see the banner). `inventories.regraft` (monthly aggregate) is unchang
   (view + FPDF). PDF/CSV exports rebuilt; Gap corrected to `Batch::effectiveMortalityQuantity()` (see the
 P5 open-flags note above).
   The P5 `regraft_records` exception was **retracted in Session BX** (dropped; the Stock Ledger reads
-  `replanting_records` — see the banner). `/` (Dashboard) returns **200**. See `session.handoff.md`
+  `regraft_records` — see the banner). `/` (Dashboard) returns **200**. See `session.handoff.md`
   §2 Session BQ / Session BX.
 - **P6 Tests/docs/verify (DONE — Session BZ):** the five legacy tests for removed entities were
   deleted (`BatchMonitoringTest`, `VarietyTest`, `PotTypeTest`, `ScionTest`, `StockReversalTest`);
   the stale `AnalyticsTest` Gap assertions were rewritten to the corrected formula
   (`Gap = Batch::effectiveMortalityQuantity()`) and the whole old-model feature suite was migrated to
   the revised schema; **factories** were added for `ScionVariety`/`Batch`/`MortalityRecord`/
-  `ReplantingRecord`/`StockIn`/`StockOut`/`StockOutDetail`/`Inventory`/`Supplier`/
+  `RegraftRecord`/`StockIn`/`StockOut`/`StockOutDetail`/`Inventory`/`Supplier`/
   `Client` (with `HasFactory` added to those models; the `ScionReceiving` factory was later deleted in
   Session CC when the entity was merged into `Stock_In`); `DatabaseSeeder` + `ActivityLogSeeder` were
   rewritten to the current schema (idempotent; B001 carries genuine mortality **and** regraft; seeded
@@ -497,9 +529,11 @@ P5 open-flags note above).
 ## OPEN DECISIONS — RESOLVED (before P1)
 - (a) Monthly `inventories` rows are written by an explicit **"Record Monthly Inventory"** action
   (stored snapshots), **not** auto-derived at query time. Built in P3 (`InventoryController@store`).
-- (b) `stock_out_details.unit` is a **fixed list**: `seedlings`, `pieces`, `bags` (centralized
-  constant `StockOutDetail::UNITS` in P2; validated in P3). Legacy migrated lines default to
-  `seedlings`.
+- (b) `stock_out_details.unit` is a **fixed list**: now **`pots` only** (client/owner-directed
+  2026-09-29; was `seedlings`, `pieces`, `bags`). The single source of truth is the centralized
+  constant `StockOutDetail::UNITS`, consumed by the Stock Out form select and server-side validation
+  (`StoreStockOutRequest`). Legacy migrated lines keep their historical `seedlings` value (read-only
+  display; `ucfirst`).
 - (c) `stock_ins.origin` is **NOT NULL**; the 8 legacy rows were backfilled to `''` and P3 enforces a
   non-empty origin for new records (`StoreStockInRequest`). No other P1 decision remains.
 
@@ -515,7 +549,7 @@ the P1–P3 schema transition (now complete); P6 rewrites tests + docs. (For ful
 
 | Revised entity | Current state | Action |
 |---|---|---|
-| Users, Activity_Log, Analytics, Activity_Task, Task_Complete, Supplier, Client, Mortality_Record, Replanting_Record | exist | **keep** |
+| Users, Activity_Log, Analytics, Activity_Task, Task_Complete, Supplier, Client, Mortality_Record, Regraft_Record | exist | **keep** |
 | `Scion_Variety` | split into `varieties` + generic `scions` | **new table**, replaces both |
 | `Batch` | `variety_id` + `scion_id` + `pot_id` + `monitoring_start_date` | drop variety/pot/monitoring; `scion_id` → nullable `scion_variety_id` |
 | `Stock_In` | `batch_id`, `scion_quantity` | drop both; add `viable`, `origin` |
@@ -615,7 +649,7 @@ pre-refactor residue is gone and the seeder now enforces the app's own invariant
   — 47,596 bytes, 24 `CREATE TABLE` + 16 `INSERT INTO`, dumped with `--single-transaction`, clean
   "Dump completed" trailer. Do not delete or modify it.
 - **Before → after row counts (`db_capstone`):** batches 9 → 3, stock_outs 7 → 1,
-  stock_out_details 7 → 1, mortality_records 17 → 3, replanting_records 13 → 3, stock_ins 8 → 2,
+  stock_out_details 7 → 1, mortality_records 17 → 3, regraft_records 13 → 3, stock_ins 8 → 2,
   scion_receivings 0 → 2. Also after: users 1, scion_varieties 3, suppliers 3, clients 3,
   inventories 3, activity_logs 9, activity_tasks 4.
 - **Anomaly eliminated:** previously `Σviable` 1170 / `Σavailable` 1130 with B005 `available_count`

@@ -1,6 +1,167 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CK — **Crude Mortality Rate denominator corrected to `SUM(total_grafted − regraft)`**)
+> ### ▶ Continue here (latest: Session CS — **read-only KPI audit; Crude Mortality Rate / Total Active Inventory traced + panelist flaw review**)
+> - **▶ Session CS (DONE — read-only KPI audit + panelist-style flaw review; NO code/migration/DB/docs change, 2026-09-30):**
+>   traced the two headline KPIs live through the app and audited them. **No file was edited except this
+>   handoff; no migration, no schema and no `db_capstone` action.**
+>   - **Crude Mortality Rate = 12.10%** = `numerator 75 / denominator 620 × 100`
+>     (`AnalyticsMetrics::mortalityRateComponents()` `app/Support/AnalyticsMetrics.php:114-124`;
+>     numerator = `effectiveMortality()` = raw `mortality_records.quantity`,
+>     `app/Models/MortalityRecord.php:116-119`; denominator = `SUM(total_grafted − regraft)`,
+>     `AnalyticsMetrics.php:122`; `crudeMortalityRate()` rounds to 2dp `:126-139`; displayed by
+>     `AnalyticsController.php:62,99`). Verified via `php artisan tinker`: `{"numerator":75,"denominator":620}`.
+>     Numerator = 8 live records (B001 25+5, B002 15+5+5, B003 10+5, B001-R1 5); denominator per batch
+>     B001 400−100=300, B002 150, B003 100, B001-R1 70−30=40, B001-R1-R1 30 → 620.
+>   - **Total Active Inventory = 730** = `SUM(batches.available_count)`
+>     (`AnalyticsMetrics::totalActiveInventory()` `:85-88` → `Batch::totalAvailableQuantity()`
+>     `app/Models/Batch.php:274-277`; **archived batches deliberately included**). Per batch: B001 400,
+>     B002 150, B003 100, B001-R1 50 (100 regrafted in − 30 regrafted out − 20 Stock Out),
+>     B001-R1-R1 30. `available_count` changes only on create (= `total_grafted`, provisional OD-3),
+>     regraft (−q) and Stock Out (−q); **mortality never changes it** (`Batch.php:195-197`).
+>   - **Flaws identified (panelist audit; NOT fixed):** (1) `available_count` still counts dead plants
+>     yet Stock Out is gated on it (`StockOutController.php:138,194,215`) → can release dead stock;
+>     (2) two different "live" populations on one screen — Active Inventory 730 (gross) vs mortality
+>     denominator 620 (live); (3) live rows violate the stated invariant `available_count ≤
+>     total_grafted − regraft` (B001 400>300, B001-R1 50>40); (4) `Batch::regraftDeficit()` compares
+>     unrelated quantities `max(0, mortality − regraft)` (OD-10 open); (5) "Total **Active** Inventory"
+>     includes **archived** batches; (6) a `from`/`to` range filters only the mortality numerator, never
+>     the denominator (`AnalyticsMetrics.php:60-61` vs `:122`); (7) no DB unique index for one inventory
+>     snapshot per batch per month (`SHOW INDEX` → only non-unique `inventories_batch_id_index`),
+>     snapshots write no `Activity_Log`, no correction path (OD-5), per-batch "Total Grafted" label is a
+>     residual (Session CI). **Fix proposals were given in three tiers** — Tier 1 (safe code-only:
+>     unify a single `survivingStock()`/`releasableQuantity()` cap shared by stock-out + regraft,
+>     health-check command + invariant tests, log inventory snapshots, fix labels, MySQL phpunit config),
+>     Tier 2 (needs decision: available semantics, Active-vs-archived, Regraft Deficit, date-filter
+>     definition), Tier 3 (needs ERD approval: unique inventory index, Stock In↔Batch traceability
+>     OD-8, scion freshness OD-13). **Nothing implemented.**
+>   - **Repo unchanged:** latest commit still `4006b41`; Sessions CL/CM/CN/CO/CP/CQ/CR remain
+>     uncommitted; full MySQL suite still **338 passed / 1465 assertions** (not re-run this session).
+> - **▶ Session CR (DONE — owner-directed rename of the `replanting_records` entity to `regraft_records`; 2026-09-30):**
+>   the table `replanting_records` → **`regraft_records`** (PK `replanting_id` → `regraft_id`, date
+>   `replanting_date` → `regraft_date`), the model `ReplantingRecord` → **`RegraftRecord`**, relation
+>   `Batch::regraftRecords()` / `regraftRecordsAsParent()`, `Batch::totalRegrafted()` /
+>   `regraftDeficit()`, `AnalyticsMetrics::totalRegraftDeficit()` / `regraftDeficitByBatch()`,
+>   `RegraftController` (route **`operational.regraft`** = `GET/POST /operational/regraft[/records]`),
+>   `StoreRegraftRecordRequest` (error bag `regraft`, field `regraft_date`), view
+>   `operational/regraft/index.blade.php`, `RegraftRecordFactory`, and `ActivityLog` type
+>   `replanting_recorded` → **`regraft_recorded`**. **Migration (reversible):**
+>   `2026_09_30_000001_rename_replanting_records_to_regraft_records_table` (also migrates the stored
+>   `activity_logs.activity_type` value). The historical P5 `create/drop_regraft_records_table`
+>   migrations are left intact as history. **Docs:** canonical `docs/CacaoTrack_PRD.md` +
+>   `docs/CacaoTrack_ERD.md` were updated (the `_REVISED` copies re-synced **byte-identical**,
+>   SHA-256 match); `_UPDATED` provenance untouched; `AGENTS.md` gained a "RENAME" banner. **This
+>   intentionally diverges from the client-approved v1.0 baseline** (the ERD named the entity
+>   `Replanting_Record` and the standing rule said not to rename beyond the ERD); recorded here for
+>   audit. **Verified:** full MySQL suite **338 passed / 1465 assertions** on `db_capstone_test`,
+>   Pint + `php -l` + `view:cache` clean, `route:list` shows the two `operational.regraft` routes.
+>   **✅ Live `db_capstone` WAS migrated** in the same session (owner explicitly signed off the schema
+>   action, 2026-09-30) after a fresh verified backup
+>   `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql`
+>   (36,826 B, left untouched). `migrate:status` **0 Pending**; live table verified: `regraft_records`
+>   YES / `replanting_records` NO, columns `regraft_id` / `regraft_date` / `parent_batch_id` present,
+>   **2 rows preserved** (Σqty 130), `activity_logs` migrated (2 `regraft_recorded`, 0 old). Read-only
+>   smoke test as the seeded admin: `/`, `/operational/regraft`, `/operational/batches`,
+>   `/inventory/stock-in`, `/analytics`, `/analytics/stock-ledger` all **200**. The migration was also
+>   validated up→down→up on `db_capstone_test` (tests still run only against `db_capstone_test`).
+> - **▶ Previous: Session CQ — Stock Out unit dropdown is now Pots only**
+> - **▶ Session CQ (DONE — Stock Out unit is now `pots` only; no schema/data change, 2026-09-29):**
+>   on `/inventory/stock-out` the per-line **Unit** dropdown now offers **Pots only** (previously
+>   Seedlings / Pieces / Bags). **One centralized constant — `App\Models\StockOutDetail::UNITS`
+>   changed to `['pots']`** (RULE 6); the Stock Out form `<select>`, `StoreStockOutRequest` and
+>   `StockOutDetail::rules()` all derive from it, so the dropdown and server-side validation changed
+>   together. **No migration / no column change** — `stock_out_details.unit` is untouched; legacy
+>   live rows keep their historical `seedlings` value (read-only display via `ucfirst`). The Stock Out
+>   new-line JS default is now `StockOutDetail::UNITS[0]` (`resources/views/inventory/stock-out/index.blade.php`)
+>   and the seeder's Stock Out line uses `StockOutDetail::UNITS[0]` (`DatabaseSeeder`). **Tests:**
+>   `StockOutTest` / `StockValidationTest` / `RegraftFlowTest` updated to `pots`; new
+>   `StockOutTest::test_stock_out_unit_dropdown_offers_only_pots` (invalid-unit rejection already
+>   covered by the existing `bogus` case). **Docs:** `AGENTS.md` decision note (b) restated as
+>   pots-only; **PRD/ERD unchanged** (the unit list is not specified there — `_UPDATED` provenance
+>   untouched, `_REVISED` still byte-identical). **Verified:** full MySQL suite **338 passed / 1468
+>   assertions** on `db_capstone_test` (was 337/1465); `vendor\bin\pint --test` + `php -l` clean;
+>   `php artisan view:cache` clean. **No schema/migration/PRD/ERD change; no `db_capstone` change.**
+>   Flag (not changed): the Stock Out Activity Log description still reads "Released {n} seedlings to
+>   {client}" — it is descriptive text, not the unit field.
+> - **▶ Session CP (DONE — Cacao Tree Stock Ledger print (FPDF) font auto-fit; presentation-only, no schema/data change, 2026-09-29):**
+>   on `/analytics/stock-ledger` the **Print Ledger** PDF (`GET /analytics/stock-ledger/export`) no longer
+>   spills text across cell borders: the per-Scion-Variety column headers (e.g. **Batangas** needed
+>   **10.32mm** in a **7.84mm** column at 6.5pt) overflowed their cells because the label font was fixed
+>   regardless of column width. **One file changed — `app/Support/StockLedgerPdf.php` only:** added a
+>   private **`fitText()`** helper that shrinks the font to fit the cell and only truncates with `...`
+>   below a **4.2pt** floor; applied it to the monthly-grid **per-variety headers**, every grid value cell
+>   (through `vCenter()`), and the nested **Batch summary** header + rows. The old char-count
+>   `shorten()`/`clip()` truncation was removed (width-aware fitting replaces it). **No data, query,
+>   analytics, route or view change** — the on-screen ledger is untouched and every value still comes from
+>   the centralized `AnalyticsMetrics::stockLedgerGrid()` (RULE 5/6/12; PRD §9.3/§16). **Verified:** a
+>   read-only FPDF probe over the live seeded grid went **76 overflowing labels → 0**; a stress probe
+>   (12 long-named varieties, 7-digit values, long wrapping description, depth-2 nesting, empty-variety
+>   and no-data paths) also reported **0 overflows**; full MySQL suite **337 passed / 1465 assertions** on
+>   `db_capstone_test`; `vendor\bin\pint --test` + `php -l` clean. **No schema/migration/PRD/ERD change;
+>   no `db_capstone` change.** Latest commit `4006b41` (CK); **Sessions CL, CM, CN, CO and CP are all
+>   uncommitted** (CP touched only `app/Support/StockLedgerPdf.php` + this handoff). Validation note: the
+>   frozen `docs/CacaoTrack_PRD_UPDATED.md` §2.4/§8 still prose "deduct regraft from the parent's
+>   Total_Grafted", which the client-CONFIRMED cumulative rule supersedes (parent `total_grafted` is not
+>   reduced — only `available_count` drops and `regraft` rises; see the CONFIRMED section in `AGENTS.md`).
+> - **▶ Session CO (DONE — Mortality Seasonality Heatmap axis-label presentation; view-only, no schema/data change, 2026-09-29):**
+>   three small edits to `resources/views/analytics/historical/seasonality.blade.php` (the ECharts `setOption`):
+>   (1) the **"Scion Variety"** y-axis title moved off the rotated left-middle to a **horizontal blue note at
+>   the top-left** (`nameLocation: 'end'`, `nameRotate: 0`, `nameTextStyle` `{ color: '#0d6efd', fontWeight:
+>   'bold' }`) with the grid top margin raised so it does not overlap the heatmap; (2) the temporary header
+>   caption ("Rows: Scion Variety · Columns: Month") was **removed**; (3) the **"Month"** x-axis title now
+>   uses the **same blue/bold style** as "Scion Variety". **Presentation-only — no data/query change:**
+>   orientation is unchanged (rows = Scion Variety, columns = Month) and the cells still come from real
+>   `mortality_records` through `AnalyticsMetrics::seasonality()` (PRD §9.5/§14; no fabricated data, §16).
+>   **Verified:** `php artisan view:cache` clean; `php artisan test --filter=seasonality` **2 passed / 7
+>   assertions** on `db_capstone_test` (no test files changed — the full suite remains **337 passed / 1465
+>   assertions**). **No schema/migration/PRD/ERD change; no `db_capstone` change.** Prior commits:
+>   `4006b41` (CK) / `1a7ce78` (CJ); **Sessions CL, CM, CN and CO are all uncommitted** (CO touched only
+>   `resources/views/analytics/historical/seasonality.blade.php` + this handoff).
+> - **▶ Session CN (DONE — Stock In log distinguishes Seedlings vs Scion receiving; presentation-only, no schema change, 2026-09-29):**
+>   the `/inventory/stock-in` **Receiving History** table gained a dedicated **TYPE** column that shows a
+>   **Seedlings** (green) or **Scion** (info) badge per row, so a receiving is identifiable at a glance;
+>   the **Stock-In Details** modal shows the same **Type** row. There is a new **Type** filter
+>   (All Types / Seedlings / Scion) on the filters bar, and the summary cards now reflect it (all of them
+>   already derive from the same filtered `$base`). **Centralized (RULE 6):** new
+>   `StockIn::entryType()` + `StockIn::entryTypeLabel()` (and `TYPE_SEEDLING`/`TYPE_SCION` constants)
+>   derive the label from `isScionEntry()` — **no stored discriminator column** (ERD §3.7: the presence
+>   of `scion_variety_id` is the signal; the ERD/PRD are unchanged). **Controller:**
+>   `StockInController@index` validates `type` (`in:seedling,scion`) and filters
+>   `whereNotNull('scion_variety_id')` / `whereNull('scion_variety_id')`. **Tests:** 2 new
+>   (`StockInTest::test_entry_type_is_derived_and_labelled`, `..._page_filters_by_entry_type`).
+>   **Verified:** full MySQL suite **337 passed / 1465 assertions** on `db_capstone_test` (was
+>   335/1454); Pint + `php -l` clean. **No schema/migration/PRD/ERD change; no `db_capstone` change.**
+>   Prior commits: `1a7ce78` (CJ) / `4006b41` (CK); **Sessions CL, CM and CN are all uncommitted.**
+> - **▶ Session CM (DONE — Root-Cause Matrix treats `Others` as a single cause category; no schema change, 2026-09-29):**
+>   every `Others: <description>` mortality row now rolls up into **one `Others` column** in the
+>   Mortality Root-Cause Matrix — the free-text description is only a specification, not a distinct
+>   cause. **Centralized (RULE 6):** new `MortalityRecord::normalizeCause()` (`Others` / `Others: ...`
+>   → `Others`; blank → `Unspecified`; other causes unchanged); `AnalyticsMetrics::mortalityMatrix()`
+>   keys every cell through it, so the page table, the printable `MortalityMatrixPdf` and the CSV export
+>   all group alike; `AnalyticsMetrics::mortalityMatrixRegressions()` also normalizes the baseline
+>   snapshot keys, so an older saved report holding a split `Others: X` no longer reads as a brand-new /
+>   increased cause. **Tests:** 3 new
+>   (`AnalyticsTest::test_mortality_matrix_collapses_others_specifications_into_one_cause`,
+>   `..._collapses_others_in_pdf_and_csv_exports`,
+>   `MortalityTest::test_normalize_cause_collapses_others_specifications`). **Verified:** full MySQL
+>   suite **335 passed / 1454 assertions** on `db_capstone_test` (was 332/1437); Pint + `php -l` clean.
+>   **No schema/migration/PRD/ERD change** — the ERD `Mortality_Record` still has only `Cause`, and the
+>   description is stored inside it; `OD-2` (`Plant_Condition`) stays open. **No `db_capstone` change.**
+>   Prior commits: `1a7ce78` (CJ) / `4006b41` (CK); **Sessions CL and CM are both uncommitted.**
+> - **▶ Session CL (DONE — Mortality Tracking "Cause of Death" dropdown + conditional "Others" description; no schema change, 2026-09-29):**
+>   the Mortality form's free-text `cause` (`<input list="causeOptions">` datalist) is replaced by a fixed
+>   **"Cause of Death" `<select>`**; choosing **Others** reveals a required **Description** input whose text
+>   is folded into the single `cause` column as `Others: <description>` (the ERD `Mortality_Record` has no
+>   separate description attribute — **no migration / no new column**). **Centralized (RULE 6):**
+>   `MortalityRecord::CAUSES` (`Disease`, `Pest`, `Drought`, `Physical Damage`, `Others`) + `CAUSE_OTHERS`
+>   + `composeCause()`; `StoreMortalityRecordRequest` validates `cause` with `Rule::in(CAUSES)` and
+>   `cause_other` via `Rule::requiredIf(cause === Others)` (max 200); `MortalityController@store` stores the
+>   composed cause (and uses it in the Activity Log description); the view reads the model constant and
+>   toggles the field with JS; the list + details modal show the composed value. **Tests:** 3 new
+>   `MortalityTest` cases (Others + description stored, Others without description rejected, unknown cause
+>   rejected). **Verified:** full MySQL suite **332 passed / 1437 assertions** on `db_capstone_test`
+>   (was 329/1427), Pint + `php -l` clean. **No PRD/ERD change** — the ERD `Mortality_Record` still has only
+>   `Cause`; `OD-2` (`Plant_Condition`) stays open. **No `db_capstone` change.** Prior commits: `1a7ce78`
+>   (CJ) / `4006b41` (CK); **this session's change is not committed yet.**
 > - **▶ Session CK (DONE — follow-up to CJ: mortality-rate denominator de-double-counted, 2026-09-29):**
 >   `AnalyticsMetrics::mortalityRateComponents()` now returns denominator
 >   `SUM(total_grafted − regraft)` instead of raw `SUM(total_grafted)`, and
@@ -298,23 +459,45 @@
 >   graft/regraft to a scion-inclusive Stock In row; the freshness/viability rule; and the Stock Ledger
 >   "Ready to Plant" best-guess mapping. **There are no approved additive exceptions**
 >   (`scion_receivings` merged into `stock_ins`; `regraft_records` retracted).
-> - **▶ NEXT UP / where to pick up (vibecoding resume point):** the Phase 7A, **Phase 7B, Phase 7C
->   and Phase 7D** work is **DONE**; the live `db_capstone` now runs the approved schema and is
->   reseeded (the four `2026_09_27_*` migrations are applied; `migrate:status` 0 Pending). The
->   client-approved PRD/ERD are
->   the corrected v2.0 docs (`docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md`; the `_UPDATED` files
->   are the untouched v1.0 baseline/provenance; `_REVISED` copies must stay byte-identical — SHA-256
->   match). Pick one of:
->   - **A. Apply Phase 7A + 7B to live `db_capstone` — DONE (Phase 7D, Session CH).** Executed as a
->     wipe + reseed (`php artisan migrate:fresh --seed --force`) after a verified backup; the live DB
->     now matches the approved schema and shows the seeded family. No remaining work.
->   - **B. Phase 7C — DONE (Session CG).** The Stock Ledger / Inventory nested display and the
->     analytics alignment are implemented (see the Session CG bullet above); no remaining 7C work.
->   - **C. Confirm the Open Decisions with the client** (PRD §19, `OD-1`…`OD-14`; each marked
->     **[PROPOSED — pending client confirmation]** — do not implement unprompted). Suggested order:
->     `OD-3` (re-confirm `Available_Count` + Gap), `OD-5` (corrections policy), `OD-2` (mortality
->     `Plant_Condition`), `OD-10` (Dashboard KPIs / Regraft Deficit), then the rest — plus the Phase 7B
->     provisional defaults (`OD-6` cap + sub-batch code; ERD §3.11 reading; `OD-12` counter).
+> - **▶ NEXT UP / where to pick up (vibecoding resume point):** **Phases 7A/7B/7C/7D are DONE**, the
+>   **latest code change is Session CR** (owner-directed `replanting_records` → `regraft_records`
+>   rename; table + PK/date columns, model, relations, `RegraftController`, route
+>   `/operational/regraft`, view, factory, analytics, tests), and the **latest session is CS** — a
+>   **read-only KPI audit** that traced Crude Mortality Rate (12.10% = 75/620) and Total Active
+>   Inventory (730) and catalogued the flaws + tiered fixes (see the CS bullet at the very top).
+>   Re-read the CS bullet before picking work; its **Tier 1** items are the safest next code changes.
+>   Before CR: the **client-confirmed `total_grafted` cumulative rule** (Session CJ, commit `1a7ce78`)
+>   with the **mortality-rate denominator follow-up** (Session CK, commit `4006b41`), the **Mortality
+>   cause-of-death dropdown + "Others" description** (Session CL), the **Root-Cause Matrix `Others`
+>   roll-up** (Session CM), the **Stock In Seedlings/Scion Type column + filter** (Session CN), the
+>   **Seasonality Heatmap axis-label restyle** (Session CO, view-only), the **Stock Ledger printable
+>   PDF font auto-fit** (Session CP, presentation-only) and the **Stock Out unit dropdown → Pots only**
+>   (Session CQ; centralized `StockOutDetail::UNITS`). **Sessions CL, CM, CN, CO, CP, CQ and CR are all
+>   uncommitted** — the latest commit is still `4006b41`; commit when ready.
+>   **Full MySQL suite green: 338 passed / 1465 assertions** on `db_capstone_test` (CR's rename
+>   adjusted a few structural assertions; was 338/1468 after CQ).
+>   Current source of truth: canonical `docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` (v2.0; the
+>   `_UPDATED` files are the untouched v1.0 provenance; the `_REVISED` copies must stay byte-identical —
+>   SHA-256 match). Pick one of:
+>   - **A. Re-align live `db_capstone` to the corrected rule (needs FRESH sign-off).** Phase 7D already
+>     upgraded the live schema + reseeded, **but that reseed ran under the OLD arithmetic**, so live rows
+>     now violate the confirmed rule (`B001 total_grafted 400` vs `regraft 100`, i.e.
+>     `available_count > total_grafted − regraft`). Nothing is broken for reads, but a
+>     `migrate:fresh --seed --force` against `db_capstone` (after a verified backup) is the clean fix —
+>     **do not run it without the project owner's explicit OK.** The corrected seed is
+>     B001 500/400/100 · B001-R1 100/50/30 · B001-R1-R1 30/30/0 · B002 150/150/0 · B003 100/100/0.
+>   - **B. Report-total follow-ups flagged by Session CK (no client decision needed).** Decide whether
+>     `AnalyticsMetrics::batchSummary()` `totals.total_grafted`, `AnalyticsMetrics::gapReport()`
+>     `totalExpected`, and `InventoryController::index()` `totalGrafted` should also switch to
+>     `SUM(total_grafted − regraft)`. They were left as-is because they are displayed column/context
+>     totals of the per-batch cumulative value (changing only the footer breaks column-sum consistency);
+>     see the Session CK bullet at the top.
+>   - **C. Confirm the remaining Open Decisions with the client** (PRD §19, `OD-1`…`OD-14`).
+>     **Already CONFIRMED:** the `total_grafted` clauses of `OD-4`, `OD-6`, `OD-10` (Sessions CJ/CK).
+>     **Still open** (each `[PROPOSED — pending client confirmation]` — do not implement unprompted):
+>     `OD-3` (`Available_Count` definition + Gap), `OD-5` (corrections policy), `OD-2` (mortality
+>     `Plant_Condition`), the Regraft Deficit formula part of `OD-10`, and the `OD-6` code-format
+>     details / `OD-12` counter / ERD §3.11 reading.
 >   - **D. Optional quality-of-life:** enable `pdo_sqlite` in `php.ini` so plain `php artisan test`
 >     works without the MySQL env override (see §5).
 >   - **E. Other client-gated feature work (do not build unprompted):** scion-receipt
@@ -323,18 +506,74 @@
 >     rule (`OD-13`); Stock Ledger "Ready to Plant" mapping (**leave as `available_count`**). See §6
 >     and `AGENTS.md` §"P6 deferred items".
 >   - **F. Verify current state first** before touching anything (command below).
-> - **Standing rules:** tests only against `db_capstone_test` (never `db_capstone`). Two destructive
->   actions on the live DB have been explicitly approved: the Session CA wipe + reseed (2026-09-26)
->   and the Phase 7D upgrade + reseed (2026-09-29). Any **further** destructive action needs fresh
->   explicit sign-off. Keep these backups untouched:
->   `...\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql` and
->   `...\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql`.
+>   - **G. Session CS audit follow-ups (see the CS bullet at the top).** **Tier 1 (safe, code-only):**
+>     gate Stock Out on a single centralized surviving-stock cap (reuse/rename
+>     `Batch::regraftableQuantity()`), add a read-only KPI health-check command + invariant tests, log
+>     Inventory snapshots to `Activity_Log`, fix the "Total **Active** Inventory includes archived"
+>     label, point `phpunit.xml` at MySQL `db_capstone_test`. **Tier 2 (needs an owner/client
+>     decision):** whether mortality should decrement `available_count`, Active-vs-archived basis, the
+>     Regraft Deficit formula, and the date-filtered rate definition. **Tier 3 (needs an approved ERD
+>     revision):** DB unique index for one monthly inventory snapshot per batch, Stock In↔Batch
+>     traceability (`OD-8`), scion freshness (`OD-13`). Do **not** implement a Tier-2/3 item without
+>     sign-off.
+> - **Standing rules:** tests only against `db_capstone_test` (never `db_capstone`). Three live-DB
+>   schema actions have been explicitly approved: the Session CA wipe + reseed (2026-09-26), the
+>   Phase 7D upgrade + reseed (2026-09-29), and the **Session CR rename migration** (2026-09-30,
+>   non-destructive). Any **further** destructive or schema action needs fresh explicit sign-off.
+>   Keep these backups untouched:
+>   `...\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql`,
+>   `...\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql` and
+>   `...\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql`.
 > - **Verify quickly:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->   (never point tests at `db_capstone`). Full detail: the Session CH entry in §2, plus §3, §5 and §6
->   (and the earlier CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ entries).
+>   (never point tests at `db_capstone`) — expect **338 passed / 1465 assertions**. Check the checkpoint
+>   with `git log --oneline -3` (latest `4006b41`; Sessions CL + CM + CN + CO + CP + CQ + CR are
+>   uncommitted). Full detail: the Session CR/CQ/CP/CO/CN/CM/CL/CK/CJ bullets in the banner above and
+>   the Session CH entry in §2, plus §3, §5 and §6 (and the earlier CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ
+>   entries).
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session CK (2026-09-29)** — a follow-up to CJ that corrected the **Crude Mortality
+project after **Session CS (2026-09-30)** — a **read-only KPI audit** (no code/DB change): it traced
+the live Crude Mortality Rate (**12.10%** = 75/620) and Total Active Inventory (**730** =
+`Σ available_count`) and catalogued 7 flaws + tiered fixes (see the CS bullet at the top). **The
+latest code change, immediately before, was Session CR** — the owner-directed rename of the
+`replanting_records` entity to **`regraft_records`**: table + PK `regraft_id` + date `regraft_date`,
+model `RegraftRecord`,
+`Batch::regraftRecords()`/`totalRegrafted()`/`regraftDeficit()`, `RegraftController` at
+`/operational/regraft`, view `operational/regraft`, `StoreRegraftRecordRequest` (error bag `regraft`),
+`RegraftRecordFactory`, and stored activity type → `regraft_recorded`; migration
+`2026_09_30_000001_rename_replanting_records_to_regraft_records_table` (reversible). Canonical
+`docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` updated and `_REVISED` re-synced byte-identical
+(SHA-256); `_UPDATED` provenance untouched; `AGENTS.md` gained a RENAME banner; **live `db_capstone`
+migrated** after an approved action (backup `db_capstone_pre_regraft_rename_20260930.sql`; all key
+pages 200). Suite **338/1465**; Pint + `php -l` + `view:cache` clean. This rename **intentionally
+diverges from the client-approved v1.0 ERD**, which named the entity `Replanting_Record`. Immediately
+before, Session CQ was the **Stock Out per-line Unit dropdown → Pots only** (centralized
+`App\Models\StockOutDetail::UNITS = ['pots']`, so the form select, `StoreStockOutRequest` and
+`StockOutDetail::rules()` changed together; **no schema/data/migration change** — legacy live rows
+keep their historical `seedlings` value, read-only; suite **338/1468**). Immediately before,
+Session CP was a **presentation-only** fix to the Cacao Tree Stock Ledger **printable PDF**
+(`app/Support/StockLedgerPdf.php` only): the per-Scion-Variety headers and value cells (and the nested
+Batch summary) now **auto-fit** their cells via a new `fitText()` helper (shrinks the font, then
+truncates at a 4.2pt floor), fixing labels such as `Batangas`/`Forastero` that overflowed the 7.84mm
+columns — **no schema/data/query/view/test change** (76 overflowing labels → 0; full suite
+**337/1465**; Pint + `php -l` clean). Before that, Session CO was a
+**view-only** pass on the Mortality Seasonality Heatmap (`/analytics/historical/seasonality`): the
+"Scion Variety" y-axis title is a horizontal **blue note at the top-left** (still rows = Scion
+Variety, columns = Month), the temporary "Rows/Columns" header caption was removed, and the "Month"
+x-axis title matches the same blue/bold style — **no schema/data/query change, no test change**.
+Before that,
+Session CN added a **Type** column/filter
+(**Seedlings** vs **Scion**) to the `/inventory/stock-in` receiving log, derived from
+`StockIn::entryType()` (`isScionEntry()`) with **no schema change** (ERD §3.7 still has no
+discriminator column). Immediately before, Session CM made the Mortality Root-Cause Matrix treat
+**`Others` as a single cause category**: every `Others: <description>` row collapses into one `Others`
+column (the description is only a specification), centralized in `MortalityRecord::normalizeCause()`
+and applied to the matrix page, PDF and CSV (**no schema change**), with 3 new tests. Immediately
+before, Session CL turned the Mortality Tracking `cause` into a fixed **"Cause of Death" dropdown**
+(choices centralized in `MortalityRecord::CAUSES`) and added a required **Description** when **Others**
+is picked (folded into the single `cause` column as `Others: <description>`; **no schema change**),
+with 3 new tests; before that, Session CK — a
+follow-up to CJ that corrected the **Crude Mortality
 Rate denominator** to `SUM(total_grafted − regraft)` (raw `SUM(total_grafted)` double-counted regrafted
 plants). In CJ the client **confirmed that `total_grafted` is a
 cumulative, non-decreasing log** (spreadsheet `RU-Summary.jpg`; *"Grafted minus Regraft = mortality or
@@ -342,7 +581,9 @@ yield for the parent batch"*): `App\Actions\RegraftBatch` stopped decrementing t
 source `total_grafted` (only `available_count` and `regraft` change), and
 `Batch::remainingMortalityCapacity()` / `Batch::regraftableQuantity()` now bound against
 `(total_grafted − regraft)`; the PRD/ERD `OD-4`/`OD-6`/`OD-10` Total_Grafted clauses are now
-**CONFIRMED**. The full MySQL suite is **329 passed / 1427 assertions** against `db_capstone_test`.
+**CONFIRMED**. The full MySQL suite is **338 passed / 1468 assertions** against `db_capstone_test`
+(332/1437 after Session CL, which added 3 Mortality tests; Session CM added 3 more; Session CN added
+2 Stock-In type tests; Session CQ added 1 Stock Out unit test).
 **`db_capstone` was deliberately NOT reseeded** in Session CJ — it still holds the Phase 7D seed under
 the old arithmetic, so live rows do not yet satisfy `available_count ≤ total_grafted − regraft`; a
 fresh wipe + reseed needs fresh explicit sign-off. The substantive prior state is unchanged from
@@ -787,7 +1028,32 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ Current quick start (latest: Session CH, 2026-09-29):** **Phase 7D is DONE** — the live
+- **▶ Current quick start (latest: Session CS, 2026-09-30 — read-only KPI audit; no code/DB change):**
+  Session CS traced the live KPIs (Crude Mortality Rate **12.10%** = 75/620; Total Active Inventory
+  **730** = `Σ available_count`) and catalogued 7 flaws + tiered fixes (see the top banner CS bullet);
+  no file changed except this handoff. **The most recent code change was Session CR:** the
+  `replanting_records` entity was renamed to **`regraft_records`** (owner-directed) — table + PK
+  `regraft_id` + date `regraft_date`,
+  model **`RegraftRecord`**, `Batch::regraftRecords()`/`totalRegrafted()`/`regraftDeficit()`,
+  `RegraftController` at **`/operational/regraft`**, view **`operational/regraft`**,
+  `StoreRegraftRecordRequest` (error bag `regraft`, field `regraft_date`), `RegraftRecordFactory`,
+  `ActivityLog::TYPE_REGRAFT_RECORDED`, analytics `totalRegraftDeficit()`/`regraftDeficitByBatch()`.
+  Migration `2026_09_30_000001_rename_replanting_records_to_regraft_records_table` (reversible) was
+  applied to **live `db_capstone`** after sign-off (backup
+  `...\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql`); all key pages 200. Docs:
+  canonical PRD/ERD updated, `_REVISED` re-synced byte-identical, `_UPDATED` untouched, `AGENTS.md`
+  RENAME banner. Immediately before, Session CQ made the `/inventory/stock-out` per-line **Unit**
+  dropdown **Pots only** (`App\Models\StockOutDetail::UNITS = ['pots']`, RULE 6; no schema change),
+  Session CP auto-fit the Stock Ledger printable PDF fonts, Session CN added the Stock In
+  **Seedlings/Scion TYPE** column, and Session CM rolled `Others` mortality causes into one column.
+  Full MySQL suite green **338 passed / 1465 assertions**; Pint + `php -l` + `view:cache` clean.
+  **Sessions CL, CM, CN, CO, CP, CQ and CR are uncommitted** (prior checkpoint `4006b41`).
+  **Next options:** commit Sessions CL→CR, then the banner "NEXT UP" items — most safely the Session
+  **CS Tier 1** fixes (gate Stock Out on a centralized surviving-stock cap; health-check command +
+  invariant tests; log inventory snapshots; label fixes), or re-align live `db_capstone` to the
+  corrected `total_grafted` arithmetic (needs fresh sign-off) or confirm the remaining Open Decisions
+  (PRD §19).
+- **▶ Session CH (DONE — Phase 7D, 2026-09-29):** **Phase 7D is DONE** — the live
   `db_capstone` was upgraded to the approved (Phase 7A) schema and reseeded
   (`php artisan migrate:fresh --seed --force`; the one approved destructive action, after a verified
   **35,131 B** backup at `...\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql`). The four
@@ -810,7 +1076,19 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
   upgraded to the approved schema and reseeded in **Phase 7D (2026-09-29)** — see the top banner.
 - **Working tree note:** the Phase 7C code + docs are committed (`7c84843`, `59488db`, `cc89669`,
   `b780873`). The Phase 7D work is docs-only and is committed as its own checkpoint (`AGENTS.md` +
-  this file). Two **untracked** pre-existing sample exports
+  this file). **Uncommitted so far:** Session CL (Mortality cause dropdown — `MortalityController`,
+  `StoreMortalityRecordRequest`, `MortalityRecord`, `resources/views/operational/mortality/index.blade.php`,
+  `MortalityTest`), Session CM (Root-Cause Matrix `Others` roll-up — `MortalityRecord`,
+  `AnalyticsMetrics`, `AnalyticsTest`), Session CN (Stock In Seedlings/Scion type — `StockIn`,
+  `StockInController`, `resources/views/inventory/stock-in/index.blade.php`, `StockInTest`),
+  Session CP (Stock Ledger PDF font auto-fit — `app/Support/StockLedgerPdf.php`), Session CQ (Stock Out
+  unit Pots only — `StockOutDetail`, `StoreStockOutRequest` docblock/validation path,
+  `resources/views/inventory/stock-out/index.blade.php`, `DatabaseSeeder`, `AGENTS.md`, `StockOutTest`,
+  `StockValidationTest`, `RegraftFlowTest`), and Session CR (rename `replanting_records` →
+  `regraft_records` — new `RegraftRecord` model / `RegraftController` / `StoreRegraftRecordRequest` /
+  `RegraftRecordFactory`, migration `2026_09_30_000001_*`, view `operational/regraft/`, and edits to
+  `Batch`, `ActivityLog`, `AnalyticsMetrics`, `OperationalAnalyticsPdf`, controllers, sidebar/views,
+  seeders, tests and docs) plus this handoff. **Untracked** sample exports
   `docs/cacao-operational-analytics-2026-09-25.csv` + `docs/cacao-stock-ledger.csv` remain (leave or
   clean up as desired).
 - **▶ Session BS (DONE — Gap formula corrected, commit `1744975`):** `Gap = Batch::effectiveMortalityQuantity()`.
@@ -1013,7 +1291,14 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
    see the top banner, §3 and §5); and **CE** (Phase 7A — viability count removed, four
    `2026_09_27_*` migrations), **CF** (Phase 7B — regraft / sub-batch flow) and **CG** (Phase 7C —
    parent/sub-batch nesting + Stock Ledger / analytics alignment; suite green **328/1406**; commits
-   `7c84843`/`59488db`/`cc89669`/`b780873`) — see the top banner and the Session CG entry below.)
+    `7c84843`/`59488db`/`cc89669`/`b780873`); **CH** (Phase 7D — live `db_capstone` upgraded to the
+    approved schema + reseeded), **CJ**/**CK** (client-confirmed cumulative `total_grafted`; mortality-rate
+    denominator `SUM(total_grafted − regraft)`), **CL** (Mortality cause-of-death dropdown + "Others"
+    description), **CM** (Root-Cause Matrix collapses all `Others: <description>` rows into one
+     `Others` cause), **CN** (Stock In log labels each receiving Seedlings/Scion — a **Type** column
+     + filter, derived via `StockIn::entryType()`, no schema change), **CO** (Seasonality Heatmap
+     axis-label restyle — view-only) and **CP** (Stock Ledger printable PDF fonts auto-fit each cell) —
+     see the top banner and the Session CG entry below.)
 
 ### Session A — Daily Checklist (previous session)
 The Operational → **Daily Checklist** page (`/operational/checklist`) was converted from a static
@@ -5200,18 +5485,59 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
 25. Scion receiving is **not a separate page** — it is the **"Scion" tab** of the Stock In form
     (Session CC; the former `/operational/scion-receivings` page/route was retired). At
     `http://localhost:8000/inventory/stock-in`:
-    - The **New Stock In** modal has a **Seedlings / Scion** Bootstrap tab pair sharing one form
-      (supplier, quantity, origin, date received). The **Seedlings** tab shows the five-day viable
-      recount; the **Scion** tab adds **scion variety** (active only) + **unit price** (+ optional
-      notes), and the server sets `viable = quantity` (scion has no recount).
-    - The single Receiving History list is mixed: scion rows show the **Scion Variety** name in that
-      column (plus a "Scion" badge), pure-seedling rows show "—". There is **one** list, not two.
-    - A scion receipt is just a `stock_ins` row with `scion_variety_id` set; there is **no**
-      discriminator column and **no** stock balance on `scion_varieties`. Conditional validation lives
-      in `StoreStockInRequest` (`required_with` pair + a `Rule::requiredIf` for `viable`). Freshness/
-      viability and scion-receipt Edit/Archive/Details remain unbuilt (client-gated, deferred).
+     - The **New Stock In** modal has a **Seedlings / Scion** Bootstrap tab pair sharing one form
+       (supplier, quantity, origin, date received). The **Seedlings** tab records a plain seedling
+       delivery; the **Scion** tab adds **scion variety** (active only) + **unit price** (+ optional
+       notes). The received `quantity` is recorded immediately for both — there is **no** five-day
+       viability count and no `viable` column (Phase 7A).
+     - The single Receiving History list is mixed and now carries a dedicated **TYPE** column
+       (**Seedlings** green badge / **Scion** info badge, Session CN — derived via
+       `StockIn::entryType()`), plus a **Type** filter (All Types / Seedlings / Scion). Scion rows show
+       the **Scion Variety** name in that column; pure-seedling rows show "—". There is **one** list,
+       not two.
+     - A scion receipt is just a `stock_ins` row with `scion_variety_id` set; there is **no**
+       discriminator column and **no** stock balance on `scion_varieties`. Conditional validation lives
+       in `StoreStockInRequest` (`required_with` pair, scion variety ↔ unit price). Freshness/
+       viability and scion-receipt Edit/Archive/Details remain unbuilt (client-gated, deferred).
 
 ## 5. Verification status
+- **Session CQ (Stock Out per-line Unit dropdown → `pots` only): full suite run and GREEN.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **338 passed / 1468 assertions, 0 failures** (was 337/1465; +1 `StockOutTest` case asserting the
+  dropdown offers only Pots). `StockOutTest|StockValidationTest|RegraftFlowTest` alone: **45 passed /
+  215 assertions**. `vendor\bin\pint --test` clean on every changed file; `php -l` clean;
+  `php artisan view:cache` clean. **No migration; no schema/DB change** — the accepted-unit list is
+  centralized in `StockOutDetail::UNITS = ['pots']` (RULE 6) and consumed by the form select and both
+  validators; legacy live rows keep their historical `seedlings` value. **No `db_capstone` read or
+  write.** Session CQ's change is **not committed yet** (prior checkpoint `4006b41`; Sessions CL + CM
+  + CN + CO + CP also still uncommitted).
+- **Session CN (Stock In log labels each receiving Seedlings vs Scion — Type column + filter): full suite run and GREEN.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **337 passed / 1465 assertions, 0 failures** (was 335/1454; +2 `StockInTest` cases: the derived
+  type label and the type filter). `StockInTest` alone: **22 passed / 90 assertions**. `vendor\bin\pint`
+  clean on the changed files; `php -l` clean. **No migration; no schema/DB change** — the label is
+  derived from `StockIn::isScionEntry()` through the centralized `StockIn::entryType()` /
+  `entryTypeLabel()` (RULE 6); the `/inventory/stock-in` table gains a **TYPE** column (Seedlings/Scion
+  badges), a **Type** filter (All Types / Seedlings / Scion) and a Type row in the details modal.
+  **No `db_capstone` read or write.** Session CN's change is **not committed yet** (prior checkpoint
+  `4006b41`; Sessions CL + CM also still uncommitted).
+- **Session CM (Root-Cause Matrix collapses `Others:*` into one `Others` cause): full suite run and GREEN.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **335 passed / 1454 assertions, 0 failures** (was 332/1437; +3 cases: 2 `AnalyticsTest` for the page
+  table + PDF/CSV roll-up, 1 `MortalityTest` for `normalizeCause()`). `AnalyticsTest|MortalityTest`
+  alone: **67 passed / 359 assertions**. `vendor\bin\pint` clean on every changed file; `php -l` clean.
+  **No migration; no schema/DB change** — grouping is centralized in `MortalityRecord::normalizeCause()`
+  (RULE 6) and applied by `AnalyticsMetrics::mortalityMatrix()` (page + PDF + CSV) and
+  `mortalityMatrixRegressions()` (baseline keys). **No `db_capstone` read or write.** Session CM's change
+  is **not committed yet** (prior checkpoint `4006b41`; Session CL also still uncommitted).
+- **Session CL (Mortality cause-of-death dropdown + "Others" description): full suite run and GREEN.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **332 passed / 1437 assertions, 0 failures** (was 329/1427; +3 `MortalityTest` cases). `MortalityTest`
+  alone: **13 passed / 43 assertions**. `vendor\bin\pint` clean on every changed file; `php -l` clean.
+  **No migration; no schema/DB change** — the fixed choices live in `MortalityRecord::CAUSES` (RULE 6)
+  and the "Others" description is folded into the single `cause` column as `Others: <description>`.
+  **No `db_capstone` read or write.** Session CL's change is **not committed yet** (prior checkpoint
+  `4006b41`).
 - **Session CH (Phase 7D — live `db_capstone` upgrade + reseed): EXECUTED and verified.** The one
   approved destructive action was run against connection `mysql` / database `db_capstone` after a
   fresh verified backup (`...\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql`; 35,131 B /
@@ -5599,6 +5925,20 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
+- **Latest sessions (CH–CQ) are captured in the top banner, the "Quick start for the next session"
+  section and §5.** Summary: **CH** = Phase 7D live-`db_capstone` upgrade + reseed; **CJ**/**CK** =
+  client-confirmed cumulative `total_grafted` + corrected mortality-rate denominator
+  (`SUM(total_grafted − regraft)`); **CL** = the Mortality cause-of-death dropdown + "Others"
+  description; **CM** = the Root-Cause Matrix `Others` roll-up (`MortalityRecord::normalizeCause()`);
+  **CN** = the Stock In log Seedlings/Scion **Type** column + filter (`StockIn::entryType()`, no schema
+  change); **CO** = the Seasonality Heatmap axis-label restyle (`Scion Variety` as a blue top-left note,
+  caption removed, `Month` matched blue/bold — view-only, no schema/data change); **CP** = the Cacao Tree
+  Stock Ledger printable PDF font auto-fit (`StockLedgerPdf::fitText()` — shrink-to-fit then truncate at
+  a 4.2pt floor; headers/value cells/nested summary; no schema/data/view change); **CQ** = the Stock Out
+  per-line Unit dropdown is now **Pots only** (`StockOutDetail::UNITS = ['pots']`, one centralized
+  constant feeding the form select + both validators; no schema/data change; legacy rows keep
+  `seedlings`). **Uncommitted:** Sessions CL + CM + CN + CO + CP + CQ. Everything below in this section
+  is older context.
 - **▶ Session CG (DONE — Phase 7C: parent/sub-batch nesting + Stock Ledger / analytics alignment;
   commits `7c84843`, `59488db`, `cc89669`, `b780873`):** implemented PRD_UPDATED §9.3 / FR-08 nested
   display for parent batches and regraft sub-batches. Single helper **`App\Support\BatchTree`** (RULE 6)

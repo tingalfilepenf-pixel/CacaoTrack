@@ -3,16 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Actions\RegraftBatch;
-use App\Http\Requests\StoreReplantingRecordRequest;
+use App\Http\Requests\StoreRegraftRecordRequest;
 use App\Models\Batch;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Support\DuplicateSubmissionGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
-class ReplantingController extends Controller
+class RegraftController extends Controller
 {
     /**
      * FR-05 Regraft listing (Phase 7B).
@@ -37,9 +37,9 @@ class ReplantingController extends Controller
             return [
                 'batch' => $batch,
                 'total_grafted' => (int) $batch->total_grafted,
-                'regraft' => $batch->totalReplanted(),
+                'regraft' => $batch->totalRegrafted(),
                 'effective_mortality' => $batch->effectiveMortalityQuantity(),
-                'deficit' => $batch->replantingDeficit(),
+                'deficit' => $batch->regraftDeficit(),
                 'regraftable' => $batch->regraftableQuantity(),
             ];
         });
@@ -49,26 +49,26 @@ class ReplantingController extends Controller
             ->reject(fn (array $summary) => $summary['batch']->isArchived())
             ->values();
 
-        $history = ReplantingRecord::query()
+        $history = RegraftRecord::query()
             ->with(['batch.scionVariety', 'parent', 'user'])
             ->when($filters['batch_id'] ?? null, fn ($query, $batchId) => $query->where(
                 fn ($subQuery) => $subQuery
                     ->where('parent_batch_id', $batchId)
                     ->orWhere('batch_id', $batchId),
             ))
-            ->orderByDesc('replanting_date')
-            ->orderByDesc('replanting_id')
+            ->orderByDesc('regraft_date')
+            ->orderByDesc('regraft_id')
             ->paginate(10)
             ->withQueryString();
 
-        return view('operational.replanting.index', [
+        return view('operational.regraft.index', [
             'summaries' => $summaries,
             'regraftableBatches' => $regraftableBatches,
             'history' => $history,
             'scionVarieties' => ScionVariety::active()->orderBy('scion_variety_name')->get(),
             'filters' => $filters,
             'totalDeficit' => $summaries->sum('deficit'),
-            'totalReplanted' => $summaries->sum('regraft'),
+            'totalRegrafted' => $summaries->sum('regraft'),
             'totalMortality' => $summaries->sum('effective_mortality'),
             'batchesWithDeficit' => $summaries->where('deficit', '>', 0)->count(),
         ]);
@@ -80,11 +80,11 @@ class ReplantingController extends Controller
      * record inside one DB transaction. The duplicate-submission guard wraps the
      * action so a double-clicked form cannot create two sub-batches.
      */
-    public function store(StoreReplantingRecordRequest $request): RedirectResponse
+    public function store(StoreRegraftRecordRequest $request): RedirectResponse
     {
         $validated = $request->validated();
 
-        $fingerprint = DuplicateSubmissionGuard::assertFresh('replanting', $validated, 'replanting');
+        $fingerprint = DuplicateSubmissionGuard::assertFresh('regraft', $validated, 'regraft');
 
         try {
             $source = Batch::query()->findOrFail($validated['batch_id']);
@@ -93,17 +93,17 @@ class ReplantingController extends Controller
                 $source,
                 (int) $validated['quantity'],
                 (int) $validated['scion_variety_id'],
-                $validated['replanting_date'],
+                $validated['regraft_date'],
                 $validated['remark'] ?? null,
             );
         } catch (\Throwable $exception) {
-            DuplicateSubmissionGuard::release('replanting', $fingerprint);
+            DuplicateSubmissionGuard::release('regraft', $fingerprint);
 
             throw $exception;
         }
 
         return redirect()
-            ->route('operational.replanting')
+            ->route('operational.regraft')
             ->with('success', "Regraft recorded; sub-batch {$subBatch->batch_code} created.");
     }
 }

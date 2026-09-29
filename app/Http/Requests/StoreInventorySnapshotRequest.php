@@ -11,7 +11,7 @@ class StoreInventorySnapshotRequest extends AppFormRequest
     /**
      * "Record Monthly Inventory" only accepts the batch and the snapshot month.
      * Every count is derived server-side from live operational data (Batch,
-     * Mortality, Replanting) — never from client input (RULE 5, FR-08).
+     * Mortality, Regraft) — never from client input (RULE 5, FR-08).
      *
      * @return array<string, array<int, mixed>>
      */

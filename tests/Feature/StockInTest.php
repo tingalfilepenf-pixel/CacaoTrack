@@ -226,6 +226,59 @@ class StockInTest extends TestCase
             ->assertViewHas('totalReceivedSeedlings', 50);
     }
 
+    public function test_entry_type_is_derived_and_labelled(): void
+    {
+        // There is no discriminator column: the type is derived from whether
+        // the row carries a scion variety (ERD §3.7).
+        $seedling = new StockIn;
+        $seedling->scion_variety_id = null;
+        $this->assertSame(StockIn::TYPE_SEEDLING, $seedling->entryType());
+        $this->assertSame('Seedlings', $seedling->entryTypeLabel());
+
+        $scion = new StockIn;
+        $scion->scion_variety_id = 1;
+        $this->assertSame(StockIn::TYPE_SCION, $scion->entryType());
+        $this->assertSame('Scion', $scion->entryTypeLabel());
+    }
+
+    public function test_stock_in_page_filters_by_entry_type(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        $seedlingRow = StockIn::create([
+            'supplier_id' => $supplier->supplier_id,
+            'user_id' => $user->id,
+            'quantity' => 50,
+            'origin' => 'Seedling Origin',
+            'date_received' => '2026-09-01',
+        ]);
+
+        $scionRow = StockIn::create([
+            'supplier_id' => $supplier->supplier_id,
+            'scion_variety_id' => $variety->scion_variety_id,
+            'user_id' => $user->id,
+            'quantity' => 80,
+            'unit_price' => 12.50,
+            'origin' => 'Scion Origin',
+            'date_received' => '2026-09-02',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-in', ['type' => StockIn::TYPE_SCION]))
+            ->assertOk()
+            ->assertSee($scionRow->reference())
+            ->assertDontSee($seedlingRow->reference());
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-in', ['type' => StockIn::TYPE_SEEDLING]))
+            ->assertOk()
+            ->assertSee($seedlingRow->reference())
+            ->assertSee('Seedlings')
+            ->assertDontSee($scionRow->reference());
+    }
+
     public function test_stock_in_schema_carries_optional_scion_fields(): void
     {
         // The merged scion columns are nullable so a pure-seedling row is

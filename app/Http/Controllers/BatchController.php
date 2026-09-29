@@ -56,7 +56,7 @@ class BatchController extends Controller
 
         $batches = (clone $visible)
             ->with(['scionVariety', 'latestInventory', 'parent'])
-            ->withCount(['mortalityRecords', 'replantingRecords', 'stockOutDetails'])
+            ->withCount(['mortalityRecords', 'regraftRecords', 'stockOutDetails'])
             ->withExists(Batch::OPERATIONAL_RELATIONS)
             ->get();
 
@@ -157,7 +157,7 @@ class BatchController extends Controller
     /**
      * Archive a batch instead of deleting it (approved ERD revision §9.8:
      * archive/restore replaces hard deletion so inventory, mortality,
-     * replanting, stock and activity history are never destroyed).
+     * regraft, stock and activity history are never destroyed).
      */
     public function archive(Batch $batch): RedirectResponse
     {

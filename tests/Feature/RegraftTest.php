@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Actions\RegraftBatch;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
-use App\Models\ReplantingRecord;
+use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -14,13 +14,13 @@ use Tests\TestCase;
 /**
  * Regraft page + request contract on the Phase 7B flow.
  *
- * Regraft and Replanting are the same recorded procedure. A regraft now moves a
+ * Regraft and Regraft are the same recorded procedure. A regraft now moves a
  * quantity out of a source batch into a linked sub-batch via
  * {@see RegraftBatch} — the removed deficit-cap validation is gone.
  * The deeper transactional/atomicity/independence coverage lives in
  * {@see RegraftFlowTest}.
  */
-class ReplantingTest extends TestCase
+class RegraftTest extends TestCase
 {
     use RefreshDatabase;
 
@@ -44,17 +44,17 @@ class ReplantingTest extends TestCase
         ]);
     }
 
-    public function test_guests_are_redirected_from_replanting_to_login(): void
+    public function test_guests_are_redirected_from_regraft_to_login(): void
     {
-        $this->get(route('operational.replanting'))->assertRedirect(route('login'));
+        $this->get(route('operational.regraft'))->assertRedirect(route('login'));
     }
 
-    public function test_authenticated_user_can_view_the_replanting_page(): void
+    public function test_authenticated_user_can_view_the_regraft_page(): void
     {
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->get(route('operational.replanting'))
+            ->get(route('operational.regraft'))
             ->assertOk()
             ->assertSee('Regraft Status by Batch')
             ->assertSee('Regraft History');
@@ -67,21 +67,21 @@ class ReplantingTest extends TestCase
         $source = $this->batch($user, $this->variety());
 
         $this->actingAs($user)
-            ->post(route('operational.replanting.records.store'), [
+            ->post(route('operational.regraft.records.store'), [
                 'batch_id' => $source->batch_id,
                 'quantity' => 20,
                 'scion_variety_id' => $toledo->scion_variety_id,
-                'replanting_date' => now()->subDays(3)->toDateString(),
+                'regraft_date' => now()->subDays(3)->toDateString(),
                 'remark' => 'Replaced affected seedlings.',
             ])
-            ->assertRedirect(route('operational.replanting'))
+            ->assertRedirect(route('operational.regraft'))
             ->assertSessionHas('success');
 
         $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
         $this->assertSame($source->batch_id, (int) $sub->parent_batch_id);
         $this->assertSame($toledo->scion_variety_id, (int) $sub->scion_variety_id);
 
-        $this->assertDatabaseHas('replanting_records', [
+        $this->assertDatabaseHas('regraft_records', [
             'batch_id' => $sub->batch_id,
             'parent_batch_id' => $source->batch_id,
             'quantity' => 20,
@@ -95,16 +95,16 @@ class ReplantingTest extends TestCase
         $source = $this->batch($user, $this->variety());
 
         $this->actingAs($user)
-            ->from(route('operational.replanting'))
-            ->post(route('operational.replanting.records.store'), [
+            ->from(route('operational.regraft'))
+            ->post(route('operational.regraft.records.store'), [
                 'batch_id' => $source->batch_id,
                 'quantity' => 0,
                 'scion_variety_id' => $source->scion_variety_id,
-                'replanting_date' => now()->subDays(3)->toDateString(),
+                'regraft_date' => now()->subDays(3)->toDateString(),
             ])
-            ->assertSessionHasErrors('quantity', null, 'replanting');
+            ->assertSessionHasErrors('quantity', null, 'regraft');
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
     }
 
     public function test_regraft_requires_a_valid_batch_variety_and_date(): void
@@ -112,16 +112,16 @@ class ReplantingTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->from(route('operational.replanting'))
-            ->post(route('operational.replanting.records.store'), [
+            ->from(route('operational.regraft'))
+            ->post(route('operational.regraft.records.store'), [
                 'batch_id' => 999,
                 'quantity' => 5,
                 'scion_variety_id' => '',
-                'replanting_date' => '',
+                'regraft_date' => '',
             ])
-            ->assertSessionHasErrors(['batch_id', 'scion_variety_id', 'replanting_date'], null, 'replanting');
+            ->assertSessionHasErrors(['batch_id', 'scion_variety_id', 'regraft_date'], null, 'regraft');
 
-        $this->assertDatabaseCount('replanting_records', 0);
+        $this->assertDatabaseCount('regraft_records', 0);
     }
 
     public function test_regraft_remark_is_optional(): void
@@ -129,26 +129,26 @@ class ReplantingTest extends TestCase
         $user = User::factory()->create();
         $source = $this->batch($user, $this->variety());
 
-        $this->actingAs($user)->post(route('operational.replanting.records.store'), [
+        $this->actingAs($user)->post(route('operational.regraft.records.store'), [
             'batch_id' => $source->batch_id,
             'quantity' => 5,
             'scion_variety_id' => $source->scion_variety_id,
-            'replanting_date' => now()->subDays(3)->toDateString(),
+            'regraft_date' => now()->subDays(3)->toDateString(),
         ]);
 
-        $this->assertDatabaseHas('replanting_records', [
+        $this->assertDatabaseHas('regraft_records', [
             'quantity' => 5,
             'remark' => null,
         ]);
     }
 
-    public function test_replanting_page_filters_by_batch(): void
+    public function test_regraft_page_filters_by_batch(): void
     {
         $user = User::factory()->create();
         $source = $this->batch($user, $this->variety());
 
         $this->actingAs($user)
-            ->get(route('operational.replanting', ['batch_id' => $source->batch_id]))
+            ->get(route('operational.regraft', ['batch_id' => $source->batch_id]))
             ->assertOk()
             ->assertSee('B001');
     }
@@ -166,17 +166,17 @@ class ReplantingTest extends TestCase
             'recorded_at' => now()->subDays(10)->toDateString(),
         ]);
 
-        $this->actingAs($user)->post(route('operational.replanting.records.store'), [
+        $this->actingAs($user)->post(route('operational.regraft.records.store'), [
             'batch_id' => $source->batch_id,
             'quantity' => 15,
             'scion_variety_id' => $source->scion_variety_id,
-            'replanting_date' => now()->subDays(3)->toDateString(),
+            'regraft_date' => now()->subDays(3)->toDateString(),
         ]);
 
         $source->refresh();
         $this->assertSame(25, $source->effectiveMortalityQuantity());
-        $this->assertSame(15, $source->totalReplanted());
-        $this->assertSame(10, $source->replantingDeficit());
-        $this->assertSame(15, ReplantingRecord::totalRegraftedFromBatch($source->batch_id));
+        $this->assertSame(15, $source->totalRegrafted());
+        $this->assertSame(10, $source->regraftDeficit());
+        $this->assertSame(15, RegraftRecord::totalRegraftedFromBatch($source->batch_id));
     }
 }

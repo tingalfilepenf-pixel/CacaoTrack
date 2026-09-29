@@ -76,6 +76,18 @@ class StockOutTest extends TestCase
             ->assertSee('Total Quantity Released');
     }
 
+    public function test_stock_out_unit_dropdown_offers_only_pots(): void
+    {
+        $user = User::factory()->create();
+
+        $this->assertSame(['pots'], StockOutDetail::UNITS);
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-out'))
+            ->assertOk()
+            ->assertSee('<option value="pots">Pots</option>', false);
+    }
+
     public function test_stock_out_creates_header_and_details_and_decrements_available(): void
     {
         $user = User::factory()->create();
@@ -84,7 +96,7 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => $batch->batch_id, 'quantity' => 30, 'unit' => 'seedlings', 'unit_price' => 10],
+                ['batch_id' => $batch->batch_id, 'quantity' => 30, 'unit' => 'pots', 'unit_price' => 10],
             ]))
             ->assertRedirect(route('inventory.stock-out'))
             ->assertSessionHas('success');
@@ -99,7 +111,7 @@ class StockOutTest extends TestCase
             'batch_id' => $batch->batch_id,
             'scion_variety_id' => $batch->scion_variety_id,
             'quantity' => 30,
-            'unit' => 'seedlings',
+            'unit' => 'pots',
             'amount' => '300.00',
         ]);
 
@@ -115,8 +127,8 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => $first->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
-                ['batch_id' => $second->batch_id, 'quantity' => 20, 'unit' => 'pieces'],
+                ['batch_id' => $first->batch_id, 'quantity' => 10, 'unit' => 'pots'],
+                ['batch_id' => $second->batch_id, 'quantity' => 20, 'unit' => 'pots'],
             ]))
             ->assertRedirect(route('inventory.stock-out'));
 
@@ -134,7 +146,7 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => $batch->batch_id, 'quantity' => 150, 'unit' => 'seedlings'],
+                ['batch_id' => $batch->batch_id, 'quantity' => 150, 'unit' => 'pots'],
             ]))
             ->assertSessionHasErrors(['details.0.quantity'], null, 'stockout');
 
@@ -150,8 +162,8 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => $batch->batch_id, 'quantity' => 60, 'unit' => 'seedlings'],
-                ['batch_id' => $batch->batch_id, 'quantity' => 60, 'unit' => 'seedlings'],
+                ['batch_id' => $batch->batch_id, 'quantity' => 60, 'unit' => 'pots'],
+                ['batch_id' => $batch->batch_id, 'quantity' => 60, 'unit' => 'pots'],
             ]))
             ->assertSessionHasErrors(['details.0.quantity'], null, 'stockout');
 
@@ -169,7 +181,7 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'pots'],
             ]))
             ->assertSessionHasErrors(['details.0.batch_id'], null, 'stockout');
 
@@ -193,13 +205,13 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'pots'],
             ], ['client_id' => 9999]))
             ->assertSessionHasErrors(['client_id'], null, 'stockout');
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => 9999, 'quantity' => 10, 'unit' => 'seedlings'],
+                ['batch_id' => 9999, 'quantity' => 10, 'unit' => 'pots'],
             ]))
             ->assertSessionHasErrors(['details.0.batch_id'], null, 'stockout');
     }
@@ -213,7 +225,7 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'pots'],
             ]))
             ->assertSessionHasErrors(['client_id'], null, 'stockout');
 
@@ -229,7 +241,7 @@ class StockOutTest extends TestCase
         foreach ([0, -5] as $quantity) {
             $this->actingAs($user)
                 ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                    ['batch_id' => $batch->batch_id, 'quantity' => $quantity, 'unit' => 'seedlings'],
+                    ['batch_id' => $batch->batch_id, 'quantity' => $quantity, 'unit' => 'pots'],
                 ]))
                 ->assertSessionHasErrors(['details.0.quantity'], null, 'stockout');
         }
@@ -251,7 +263,7 @@ class StockOutTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-out.store'), $this->payload($client, [
-                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+                ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'pots'],
             ], ['release_date' => now()->addDay()->toDateString()]))
             ->assertSessionHasErrors(['release_date'], null, 'stockout');
 
@@ -265,7 +277,7 @@ class StockOutTest extends TestCase
         $client = $this->createClient();
 
         $this->actingAs($user)->post(route('inventory.stock-out.store'), $this->payload($client, [
-            ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'seedlings'],
+            ['batch_id' => $batch->batch_id, 'quantity' => 10, 'unit' => 'pots'],
         ]));
 
         $header = StockOut::first();
@@ -290,7 +302,7 @@ class StockOutTest extends TestCase
             'total_amount' => 2310.50,
             'release_date' => '2026-09-04',
         ]);
-        $header->details()->create(['batch_id' => $batch->batch_id, 'quantity' => 77, 'unit' => 'seedlings', 'unit_price' => 30, 'amount' => 2310.00]);
+        $header->details()->create(['batch_id' => $batch->batch_id, 'quantity' => 77, 'unit' => 'pots', 'unit_price' => 30, 'amount' => 2310.00]);
 
         $this->actingAs($user)
             ->get(route('inventory.stock-out'))
@@ -309,10 +321,10 @@ class StockOutTest extends TestCase
         $clientB = $this->createClient('Beta Client');
 
         $stockOutA = StockOut::create(['client_id' => $clientA->client_id, 'user_id' => $user->id, 'release_date' => '2026-09-01']);
-        $stockOutA->details()->create(['batch_id' => $first->batch_id, 'quantity' => 10, 'unit' => 'seedlings']);
+        $stockOutA->details()->create(['batch_id' => $first->batch_id, 'quantity' => 10, 'unit' => 'pots']);
 
         $stockOutB = StockOut::create(['client_id' => $clientB->client_id, 'user_id' => $user->id, 'release_date' => '2026-09-02']);
-        $stockOutB->details()->create(['batch_id' => $second->batch_id, 'quantity' => 20, 'unit' => 'seedlings']);
+        $stockOutB->details()->create(['batch_id' => $second->batch_id, 'quantity' => 20, 'unit' => 'pots']);
 
         $this->actingAs($user)
             ->get(route('inventory.stock-out', ['client_id' => $clientB->client_id]))

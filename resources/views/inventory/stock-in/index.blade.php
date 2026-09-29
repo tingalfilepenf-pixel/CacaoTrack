@@ -91,14 +91,14 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="GET" action="{{ route('inventory.stock-in') }}" class="row g-3 align-items-end">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label for="filterSearch" class="form-label text-muted small fw-bold mb-1">Search</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                     <input type="text" class="form-control" id="filterSearch" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Supplier or origin...">
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label for="filterSupplier" class="form-label text-muted small fw-bold mb-1">Supplier</label>
                 <select class="form-select form-select-sm" id="filterSupplier" name="supplier_id">
                     <option value="">All Suppliers</option>
@@ -107,6 +107,14 @@
                             {{ $supplier->supplier_name }}
                         </option>
                     @endforeach
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="filterType" class="form-label text-muted small fw-bold mb-1">Type</label>
+                <select class="form-select form-select-sm" id="filterType" name="type">
+                    <option value="">All Types</option>
+                    <option value="seedling" @selected(($filters['type'] ?? null) === 'seedling')>Seedlings</option>
+                    <option value="scion" @selected(($filters['type'] ?? null) === 'scion')>Scion</option>
                 </select>
             </div>
             <div class="col-md-2">
@@ -140,6 +148,7 @@
                 <thead class="table-light">
                     <tr>
                         <th class="ps-4">STOCK ID</th>
+                        <th>TYPE</th>
                         <th>SUPPLIER</th>
                         <th>SCION VARIETY</th>
                         <th class="text-end">QUANTITY</th>
@@ -153,8 +162,9 @@
                     @forelse ($stockIns as $stockIn)
                         @php
                             $details = [
-                                'reference' => $stockIn->reference(),
-                                'supplier' => $stockIn->supplier?->supplier_name ?? '—',
+                            'reference' => $stockIn->reference(),
+                            'type' => $stockIn->entryTypeLabel(),
+                            'supplier' => $stockIn->supplier?->supplier_name ?? '—',
                                 'contact_number' => $stockIn->supplier?->contact_number ?? '—',
                                 'address' => $stockIn->supplier?->address ?? '—',
                                 'scion_variety' => $stockIn->scionVariety?->scion_variety_name ?? '—',
@@ -171,8 +181,12 @@
                         <tr>
                             <td class="ps-4 fw-medium text-primary">
                                 {{ $stockIn->reference() }}
+                            </td>
+                            <td>
                                 @if ($stockIn->isScionEntry())
-                                    <span class="badge bg-info-subtle text-info-emphasis ms-1">Scion</span>
+                                    <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-flower1 me-1"></i>Scion</span>
+                                @else
+                                    <span class="badge bg-success-subtle text-success-emphasis"><i class="bi bi-tree me-1"></i>Seedlings</span>
                                 @endif
                             </td>
                             <td>{{ $stockIn->supplier?->supplier_name ?? '—' }}</td>
@@ -196,7 +210,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-5">
+                            <td colspan="9" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 No stock-in transactions found for the current filters.
                             </td>
@@ -418,6 +432,10 @@
             </div>
             <div class="modal-body">
                 <div class="row mb-2">
+                    <div class="col-5 text-muted small fw-bold">Type:</div>
+                    <div class="col-7" id="detailsType">&mdash;</div>
+                </div>
+                <div class="row mb-2">
                     <div class="col-5 text-muted small fw-bold">Supplier:</div>
                     <div class="col-7" id="detailsSupplier">&mdash;</div>
                 </div>
@@ -558,6 +576,7 @@
                 };
 
                 setText('detailsReference', details.reference);
+                setText('detailsType', details.type);
                 setText('detailsSupplier', details.supplier);
                 setText('detailsContact', details.contact_number);
                 setText('detailsAddress', details.address);

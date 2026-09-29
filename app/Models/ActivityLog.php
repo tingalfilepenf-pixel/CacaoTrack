@@ -29,7 +29,7 @@ class ActivityLog extends Model
         'task_deleted' => 'Task Deleted',
         'mortality_recorded' => 'Mortality Recorded',
         'mortality_adjusted' => 'Mortality Adjusted',
-        'replanting_recorded' => 'Regraft Recorded',
+        'regraft_recorded' => 'Regraft Recorded',
         'stock_in_recorded' => 'Stock In Recorded',
         'stock_out_recorded' => 'Stock Out Recorded',
         'stock_reversal_recorded' => 'Stock Reversal Recorded',
@@ -75,7 +75,7 @@ class ActivityLog extends Model
 
     public const TYPE_MORTALITY_ADJUSTED = 'mortality_adjusted';
 
-    public const TYPE_REPLANTING_RECORDED = 'replanting_recorded';
+    public const TYPE_REGRAFT_RECORDED = 'regraft_recorded';
 
     public const TYPE_STOCK_IN_RECORDED = 'stock_in_recorded';
 
@@ -151,7 +151,7 @@ class ActivityLog extends Model
         'task_deleted' => 'bg-danger',
         'mortality_recorded' => 'bg-danger',
         'mortality_adjusted' => 'bg-warning text-dark',
-        'replanting_recorded' => 'bg-success',
+        'regraft_recorded' => 'bg-success',
         'stock_in_recorded' => 'bg-info text-dark',
         'stock_out_recorded' => 'bg-secondary',
         'stock_reversal_recorded' => 'bg-dark',

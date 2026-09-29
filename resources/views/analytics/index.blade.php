@@ -72,7 +72,7 @@
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <p class="text-muted text-uppercase small fw-bold mb-1">Regraft Deficit</p>
-                            <h2 class="mb-0 text-warning">{{ number_format($totalReplantingDeficit) }}</h2>
+                            <h2 class="mb-0 text-warning">{{ number_format($totalRegraftDeficit) }}</h2>
                             <span class="text-muted small">Trees pending regraft</span>
                         </div>
                         <i class="bi bi-exclamation-triangle-fill stat-card-icon text-warning"></i>
@@ -122,8 +122,8 @@
                     <h6 class="mb-0 fw-bold text-primary">Regraft Deficit by Batch</h6>
                 </div>
                 <div class="card-body">
-                    @if (count($replantingDeficitByBatch['labels']) > 0 && array_sum($replantingDeficitByBatch['values']) > 0)
-                        <div id="replantingDeficitChart" style="height: 300px; width: 100%;"></div>
+                    @if (count($regraftDeficitByBatch['labels']) > 0 && array_sum($regraftDeficitByBatch['values']) > 0)
+                        <div id="regraftDeficitChart" style="height: 300px; width: 100%;"></div>
                     @else
                         <p class="text-muted text-center my-5">No data available for the selected period.</p>
                     @endif
@@ -263,16 +263,16 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     @endif
 
-    @if (count($replantingDeficitByBatch['labels']) > 0 && array_sum($replantingDeficitByBatch['values']) > 0)
-    render('replantingDeficitChart', {
+    @if (count($regraftDeficitByBatch['labels']) > 0 && array_sum($regraftDeficitByBatch['values']) > 0)
+    render('regraftDeficitChart', {
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
         grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: @json($replantingDeficitByBatch['labels']) },
+        xAxis: { type: 'category', data: @json($regraftDeficitByBatch['labels']) },
         yAxis: { type: 'value', name: 'Trees' },
         series: [{
             name: 'Regraft Deficit',
             type: 'bar',
-            data: @json($replantingDeficitByBatch['values']),
+            data: @json($regraftDeficitByBatch['values']),
             itemStyle: { color: '#ffc107' }
         }]
     });

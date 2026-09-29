@@ -12,6 +12,7 @@ use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\StockOut;
+use App\Models\StockOutDetail;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -286,7 +287,7 @@ class DatabaseSeeder extends Seeder
                 $header->details()->create([
                     'batch_id' => $b001r1->batch_id,
                     'quantity' => $releasedFromSubBatch,
-                    'unit' => 'seedlings',
+                    'unit' => StockOutDetail::UNITS[0],
                     'unit_price' => 25.00,
                     'amount' => $releasedFromSubBatch * 25.00,
                 ]);
@@ -318,7 +319,7 @@ class DatabaseSeeder extends Seeder
                 'batch_id' => $batch->batch_id,
                 'inventory_date' => $month,
                 'total_grafted' => (int) $batch->total_grafted,
-                'regraft' => $batch->totalReplanted(),
+                'regraft' => $batch->totalRegrafted(),
                 'mortality' => $batch->effectiveMortalityQuantity(),
                 'last_update' => now(),
             ]);

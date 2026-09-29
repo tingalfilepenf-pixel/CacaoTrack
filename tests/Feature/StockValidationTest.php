@@ -49,7 +49,7 @@ class StockValidationTest extends TestCase
             'stock_out_id' => $header->stock_out_id,
             'batch_id' => $batch->batch_id,
             'quantity' => 5,
-            'unit' => 'seedlings',
+            'unit' => 'pots',
             'unit_price' => null,
         ], $rules);
         $this->assertFalse($valid->fails());
@@ -67,7 +67,7 @@ class StockValidationTest extends TestCase
             'stock_out_id' => $header->stock_out_id,
             'batch_id' => $batch->batch_id,
             'quantity' => 0,
-            'unit' => 'seedlings',
+            'unit' => 'pots',
         ], $rules);
         $this->assertTrue($badQuantity->fails());
         $this->assertArrayHasKey('quantity', $badQuantity->errors()->toArray());
@@ -113,7 +113,7 @@ class StockValidationTest extends TestCase
                 'client_id' => $client->client_id,
                 'release_date' => '2026-09-05',
                 'details' => [
-                    ['batch_id' => $batch->batch_id, 'quantity' => 41, 'unit' => 'seedlings'],
+                    ['batch_id' => $batch->batch_id, 'quantity' => 41, 'unit' => 'pots'],
                 ],
             ])
             ->assertSessionHasErrors(['details.0.quantity'], null, 'stockout');
@@ -127,7 +127,7 @@ class StockValidationTest extends TestCase
                 'client_id' => $client->client_id,
                 'release_date' => '2026-09-05',
                 'details' => [
-                    ['batch_id' => $batch->batch_id, 'quantity' => 40, 'unit' => 'seedlings'],
+                    ['batch_id' => $batch->batch_id, 'quantity' => 40, 'unit' => 'pots'],
                 ],
             ])
             ->assertSessionHasNoErrors();

@@ -9,7 +9,7 @@ class UpdateBatchRequest extends AppFormRequest
     protected $errorBag = 'batch';
 
     /**
-     * Once a batch has operational records (mortality/replanting/stock out),
+     * Once a batch has operational records (mortality/regraft/stock out),
      * its total grafted count is locked (RULE 6). The rule is removed so the
      * value cannot be changed even if a client submits it.
      *
