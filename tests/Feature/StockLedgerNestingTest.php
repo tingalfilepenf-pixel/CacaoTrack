@@ -163,7 +163,7 @@ class StockLedgerNestingTest extends TestCase
             ->assertOk()
             ->assertSee('Batch summary (nested)')
             ->assertSee('Sub-batch quantities appear under Regraft, not Grafted')
-            ->assertSee('Ready to Plant reflects each batch', false)
+            ->assertSee('Ready to Plant and Pullout both reflect each batch', false)
             ->assertSee("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", false)
             ->assertSee('B001-R1-R1')
             ->assertSee('↳');
@@ -183,7 +183,7 @@ class StockLedgerNestingTest extends TestCase
         $this->assertStringContainsString('Total Grafted', $csv);
         $this->assertStringContainsString('B001-R1-R1', $csv);
         $this->assertStringContainsString('Sub-batch quantities appear under Regraft, not Grafted', $csv);
-        $this->assertStringContainsString('Ready to Plant reflects each batch', $csv);
+        $this->assertStringContainsString('Ready to Plant and Pullout both reflect each batch', $csv);
         $this->assertStringContainsString("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $csv);
     }
 
@@ -200,7 +200,7 @@ class StockLedgerNestingTest extends TestCase
         // FPDF escapes parentheses in the content stream.
         $this->assertStringContainsString('Batch summary \(nested\)', $content);
         $this->assertStringContainsString('B001-R1-R1', $content);
-        $this->assertStringContainsString('Ready to Plant reflects each batch', $content);
+        $this->assertStringContainsString('Ready to Plant and Pullout both reflect each batch', $content);
         $this->assertStringContainsString("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $content);
     }
 
@@ -226,8 +226,102 @@ class StockLedgerNestingTest extends TestCase
         // Only B001 itself; the sub-batches are separate (exact-match) filters.
         $this->assertSame(1, $summary['batches']);
         $this->assertSame(500, $summary['grafted']);
-        $this->assertSame(400, $summary['ready_to_plant']);
+        // Ready to Plant = survivingQuantity() = min(available 400, (500-100)-25) = 375.
+        $this->assertSame(375, $summary['ready_to_plant']);
         // The sub-batch's regraft record is not pulled in by the parent filter.
         $this->assertSame(0, $summary['regraft']);
+    }
+
+    /**
+     * Map each batch code → its current-state ledger row (the one stamped on
+     * the batch's grafted month): `Batch B001 — …` / `Sub-batch B001-R1 — …`.
+     *
+     * @return array<string,array<string,mixed>>
+     */
+    private function perBatchRows(array $grid): array
+    {
+        $rows = [];
+
+        foreach ($grid['months'] as $month) {
+            foreach ($month['rows'] as $row) {
+                if (preg_match('/^(?:Batch|Sub-batch) (\S+) —/', (string) $row['description'], $matches) === 1) {
+                    $rows[$matches[1]] = $row;
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    public function test_ledger_ready_and_pullout_are_current_state_per_batch_figures(): void
+    {
+        $grid = AnalyticsMetrics::stockLedgerGrid();
+        $rows = $this->perBatchRows($grid);
+
+        // Ready to Plant = survivingQuantity() (recorded mortality excluded);
+        // Pullout = cumulative all-time Stock Out for that batch. B001 has
+        // mortality 25 and no Stock Out; B001-R1 has a real Stock Out of 20.
+        $this->assertSame(375, array_sum($rows['B001']['ready']));
+        $this->assertSame(0, array_sum($rows['B001']['pullout']));
+
+        $this->assertSame(50, array_sum($rows['B001-R1']['ready']));
+        $this->assertSame(20, array_sum($rows['B001-R1']['pullout']));
+
+        $this->assertSame(30, array_sum($rows['B001-R1-R1']['ready']));
+        $this->assertSame(0, array_sum($rows['B001-R1-R1']['pullout']));
+
+        // A batch with mortality but no pullout: surviving = min(150, 150-15).
+        $this->assertSame(135, array_sum($rows['B002']['ready']));
+        $this->assertSame(0, array_sum($rows['B002']['pullout']));
+
+        // 375 + 50 + 30 + 135 + 90; Pullout is the one real release (20).
+        $this->assertSame(680, $grid['summary']['ready_to_plant']);
+        $this->assertSame(20, $grid['summary']['pullout']);
+    }
+
+    /**
+     * Reconciliation (item 4): for every batch,
+     * `survivingQuantity() + cumulative_pullout == (total_grafted - regraft)`
+     * whenever recorded mortality has NOT cut the surviving pool below
+     * `available_count` (equivalently, mortality ≤ cumulative pullout). Where
+     * mortality does bite, the shortfall is exactly that mortality.
+     */
+    public function test_ready_plus_cumulative_pullout_reconciles_each_batch(): void
+    {
+        $reconciled = 0;
+        $mortalityBound = 0;
+
+        foreach (Batch::query()->get() as $batch) {
+            $cumulativePullout = (int) $batch->stockOutDetails()->sum('quantity');
+            $mortality = $batch->effectiveMortalityQuantity();
+            $livePopulation = (int) $batch->total_grafted - (int) $batch->regraft;
+            $surviving = $batch->survivingQuantity();
+
+            $mortalityReducedPool = (int) $batch->available_count > $livePopulation - $mortality;
+
+            if ($mortalityReducedPool) {
+                // Mortality is the binding cap, so surviving == live - mortality.
+                $this->assertSame(
+                    $livePopulation - $mortality,
+                    $surviving,
+                    "Reconciliation failed for {$batch->batch_code} (mortality-bound pool)",
+                );
+                $mortalityBound++;
+
+                continue;
+            }
+
+            $this->assertSame(
+                $livePopulation,
+                $surviving + $cumulativePullout,
+                "Reconciliation failed for {$batch->batch_code}",
+            );
+            $reconciled++;
+        }
+
+        // Seeded family: B001-R1 (P=20 ≥ M=5) and B001-R1-R1 (M=P=0) reconcile;
+        // B001, B002 and B003 are mortality-bound.
+        $this->assertSame(2, $reconciled);
+        $this->assertSame(3, $mortalityBound);
     }
 }

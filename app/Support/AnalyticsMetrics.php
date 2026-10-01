@@ -532,10 +532,11 @@ class AnalyticsMetrics
      * Re Graft, Ready to Plant and Pullout — the last five broken out per Scion
      * Variety.
      *
-     * NOTE (flagged, unconfirmed): "Ready to Plant" is mapped to the batch's
-     * live `available_count`, aligned to the batch's `grafted_date` event row.
-     * This is a best-guess interpretation pending confirmation of the client's
-     * actual definition.
+     * "Ready to Plant" (client terminology, kept verbatim — no rename) is the
+     * batch's surviving/sellable balance (`Batch::survivingQuantity()`, so
+     * recorded mortality is excluded) and "Pullout" is the batch's cumulative
+     * all-time Stock Out total. Both are per-batch CURRENT-STATE figures stamped
+     * on the batch's `grafted_date` row — not month-scoped activity flow.
      *
      * @return array{varieties:array<int,array{id:int,name:string}>,months:array<int,array{key:string,label:string,rows:array<int,array<string,mixed>>,totals:array<string,mixed>}>,grandTotals:array<string,mixed>,summary:array<string,int>,hasData:bool}
      */
@@ -548,17 +549,31 @@ class AnalyticsMetrics
         $referenced = [];
         $events = [];
 
-        // Grafted + Ready to Plant: one event row per batch (by grafted_date).
-        // Phase 7C: only ROOT batches contribute to the Grafted column — a
-        // regraft sub-batch's plants are a movement of the same population and
-        // appear under Regraft, so family grafted totals are not inflated.
-        // "Ready to Plant" is unchanged: it still reflects each batch's live
-        // `available_count` (sub-batches included).
+        // Grafted + Ready to Plant + Pullout: one current-state row per batch
+        // (by grafted_date). Phase 7C: only ROOT batches contribute to the
+        // Grafted column — a regraft sub-batch's plants are a movement of the
+        // same population and appear under Regraft, so family grafted totals are
+        // not inflated.
+        // "Ready to Plant" is the batch's surviving/sellable balance and
+        // "Pullout" is its cumulative all-time Stock Out total; both are
+        // current-state, per-batch figures stamped on the grafted month.
         $batches = self::batchQuery($batchId, $scionVarietyId)
             ->when($from, fn (Builder $q) => $q->whereDate('grafted_date', '>=', $from))
             ->when($to, fn (Builder $q) => $q->whereDate('grafted_date', '<=', $to))
             ->orderBy('grafted_date')
             ->get();
+
+        // Cumulative Pullout per batch — every Stock Out ever recorded against
+        // the batch (all-time, deliberately NOT month-filtered), gathered in one
+        // batched query (no N+1).
+        $batchIds = $batches->pluck('batch_id')->map(fn ($id) => (int) $id)->all();
+        $pulloutByBatch = $batchIds === []
+            ? collect()
+            : StockOutDetail::query()
+                ->whereIn('batch_id', $batchIds)
+                ->selectRaw('batch_id, COALESCE(SUM(quantity), 0) as total')
+                ->groupBy('batch_id')
+                ->pluck('total', 'batch_id');
 
         foreach ($batches as $batch) {
             if (! $batch->grafted_date) {
@@ -582,8 +597,8 @@ class AnalyticsMetrics
                 'grafted' => $isRoot && $varietyId !== null ? [$varietyId => (int) $batch->total_grafted] : [],
                 'mortality' => [],
                 'regraft' => [],
-                'ready' => $varietyId !== null ? [$varietyId => (int) $batch->available_count] : [],
-                'pullout' => [],
+                'ready' => $varietyId !== null ? [$varietyId => (int) $batch->survivingQuantity()] : [],
+                'pullout' => $varietyId !== null ? [$varietyId => (int) ($pulloutByBatch[$batch->batch_id] ?? 0)] : [],
             ];
         }
 
@@ -679,42 +694,9 @@ class AnalyticsMetrics
             ];
         }
 
-        // Pull Out per Scion Variety (Stock_Out_Detail by release_date).
-        $details = StockOutDetail::query()
-            ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
-            ->when($scionVarietyId, fn (Builder $q) => $q->where('scion_variety_id', $scionVarietyId))
-            ->whereHas('stockOut', function (Builder $query) use ($from, $to): void {
-                $query->when($from, fn (Builder $q) => $q->whereDate('release_date', '>=', $from))
-                    ->when($to, fn (Builder $q) => $q->whereDate('release_date', '<=', $to));
-            })
-            ->with(['stockOut.client', 'batch'])
-            ->get();
-
-        foreach ($details as $detail) {
-            $releaseDate = $detail->stockOut?->release_date;
-
-            if (! $releaseDate) {
-                continue;
-            }
-
-            $varietyId = $detail->scion_variety_id ? (int) $detail->scion_variety_id : null;
-
-            if ($varietyId !== null) {
-                $referenced[$varietyId] = true;
-            }
-
-            $events[] = [
-                'date' => $releaseDate->toDateString(),
-                'description' => 'Pull Out — '.($detail->stockOut?->client?->client_name ?? 'Client')
-                    .' ('.($detail->batch?->batch_code ?? '—').')',
-                'seedlings' => 0,
-                'grafted' => [],
-                'mortality' => [],
-                'regraft' => [],
-                'ready' => [],
-                'pullout' => $varietyId !== null ? [$varietyId => (int) $detail->quantity] : [],
-            ];
-        }
+        // Pullout is NOT a dated event row here: it is a cumulative, per-batch
+        // figure stamped on the batch's `grafted_date` row above (same scope as
+        // "Ready to Plant"), so it is intentionally not month-filtered.
 
         $varieties = self::ledgerVarietyColumns($referenced, $scionVarietyId);
 

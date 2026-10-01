@@ -251,7 +251,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Grafted: 300', $content);
         $this->assertStringContainsString('Mortality: 35', $content);
         $this->assertStringContainsString('Regraft: 15', $content);
-        $this->assertStringContainsString('Ready to Plant: 270', $content);
+        $this->assertStringContainsString('Ready to Plant: 250', $content);
     }
 
     public function test_stock_ledger_pdf_export_applies_filters(): void
@@ -678,7 +678,7 @@ class AnalyticsTest extends TestCase
         $this->assertSame(300, $summary['grafted']);
         $this->assertSame(35, $summary['mortality']);
         $this->assertSame(15, $summary['regraft']);
-        $this->assertSame(270, $summary['ready_to_plant']);
+        $this->assertSame(250, $summary['ready_to_plant']);
         $this->assertSame(0, $summary['pullout']);
         $this->assertSame(0, $summary['seedlings']);
     }

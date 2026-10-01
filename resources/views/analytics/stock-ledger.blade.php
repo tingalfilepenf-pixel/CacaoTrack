@@ -98,7 +98,7 @@
         <small class="text-muted d-block mt-2">
             Monthly grid grouped by month, with dynamic per-Scion-Variety columns. Seedlings = Stock In quantity (seedling-only receipts);
             Grafted = root-batch total grafted; Mortality / Regraft / Ready to Plant / Pullout, per scion variety.
-            <span class="fst-italic">Ready to Plant currently maps to each batch's live available count (pending client confirmation).</span>
+            <span class="fst-italic">Ready to Plant = each batch's surviving sellable balance (mortality excluded); Pullout = the batch's cumulative total to date. Both are current-state, per-batch figures shown under the batch's original grafted month.</span>
             Filtering by a batch matches that exact batch only; selecting a parent does not include its sub-batches.
         </small>
     </div>
@@ -235,7 +235,7 @@
 <p class="text-muted small fst-italic">
     Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same
     plants; no cross-column total is implied.
-    Ready to Plant reflects each batch's current balance, shown under its original grafted month — not activity within that month. A batch's balance does not move to a later month's row as time passes.
+    Ready to Plant and Pullout both reflect each batch's current totals to date, shown under its original grafted month — not activity within that specific month.
 </p>
 
 <div class="card mb-4">

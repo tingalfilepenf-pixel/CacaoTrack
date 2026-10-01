@@ -18,8 +18,9 @@ use FPDF;
  * AnalyticsMetrics::stockLedgerGrid() (RULE 5/6/12). It never invents a row or
  * a total and needs no report table.
  *
- * NOTE: "Ready to Plant" is mapped to the batch's live `available_count`
- * (flagged as an unconfirmed interpretation — see AnalyticsMetrics).
+ * "Ready to Plant" is each batch's surviving/sellable balance (mortality
+ * excluded) and "Pullout" is the batch's cumulative all-time Stock Out total —
+ * both current-state, per-batch figures stamped on the batch's grafted month.
  *
  * Non Latin-1 characters are transliterated so the core FPDF fonts render.
  */
@@ -219,7 +220,7 @@ class StockLedgerPdf extends FPDF
         $this->MultiCell(
             self::TABLE_WIDTH,
             3.6,
-            $this->txt('Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same plants; no cross-column total is implied. Ready to Plant reflects each batch\'s current balance, shown under its original grafted month — not activity within that month. A batch\'s balance does not move to a later month\'s row as time passes.'),
+            $this->txt('Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same plants; no cross-column total is implied. Ready to Plant and Pullout both reflect each batch\'s current totals to date, shown under its original grafted month — not activity within that specific month.'),
             0,
             'L',
         );

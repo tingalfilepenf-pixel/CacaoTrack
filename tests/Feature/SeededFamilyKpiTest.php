@@ -135,10 +135,13 @@ class SeededFamilyKpiTest extends TestCase
     {
         $grid = AnalyticsMetrics::stockLedgerGrid();
 
-        // Grafted = root batches only (B001 500 + B002 150 + B003 100);
-        // Available (Ready to Plant) = every batch.
+        // Grafted = root batches only (B001 500 + B002 150 + B003 100).
         $this->assertSame(750, $grid['summary']['grafted']);
-        $this->assertSame(730, $grid['summary']['ready_to_plant']);
+        // Ready to Plant (surviving sellable balance, mortality excluded) =
+        // 375 + 50 + 30 + 135 + 90 = 680 (was 730 under the raw available_count).
+        $this->assertSame(680, $grid['summary']['ready_to_plant']);
+        // Pullout = cumulative all-time: the single B001-R1 release of 20.
+        $this->assertSame(20, $grid['summary']['pullout']);
         $this->assertSame(130, $grid['summary']['regraft']);
         $this->assertSame(800, $grid['summary']['seedlings']);
     }
