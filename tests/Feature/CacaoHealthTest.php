@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Batch;
+use App\Models\Client;
 use App\Models\ScionVariety;
+use App\Models\StockOut;
+use App\Models\StockOutDetail;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -60,6 +63,57 @@ class CacaoHealthTest extends TestCase
         // on the violation row; the FAILED summary is its own line).
         $this->artisan('cacao:health')
             ->expectsOutputToContain('BROKEN')
+            ->expectsOutputToContain('Cacao health check FAILED')
+            ->assertExitCode(1);
+    }
+
+    /**
+     * Rule 5: `available_count == (total_grafted - regraft) - SUM(stock_out quantity)`.
+     * A legitimate release passes; a balance silently altered to a value that is
+     * still inside the valid range (0..total_grafted - regraft) but no longer
+     * matches the recorded Stock Out is caught by the history reconciliation —
+     * the range-only checks (rules 2/3) would not have caught it.
+     */
+    public function test_health_command_reconciles_available_count_against_the_stock_out_history(): void
+    {
+        $user = User::factory()->create();
+        $client = Client::factory()->create();
+        $batch = $this->createBatch($user, 'B001', 100);
+
+        // A legitimate release of 30: header + one detail line, then the balance
+        // is decremented exactly as the application does.
+        $stockOut = StockOut::create([
+            'client_id' => $client->client_id,
+            'user_id' => $user->id,
+            'release_date' => '2026-09-10',
+            'total_amount' => 30 * 10.0,
+        ]);
+
+        $stockOut->details()->create([
+            'batch_id' => $batch->batch_id,
+            'quantity' => 30,
+            'unit' => StockOutDetail::UNITS[0],
+            'unit_price' => 10.0,
+            'amount' => 30 * 10.0,
+        ]);
+
+        $batch->update(['available_count' => 70]);
+
+        // Consistent history -> clean pass.
+        $this->artisan('cacao:health')
+            ->expectsOutputToContain('Cacao health check passed')
+            ->assertExitCode(0);
+
+        // Corrupt the balance to a value that is STILL within the valid range
+        // (0 <= 80 <= total_grafted - regraft = 100) but no longer matches the
+        // recorded Stock Out (which requires 70). Bypass the model so no
+        // application rule corrects it.
+        DB::table('batches')
+            ->where('batch_id', $batch->batch_id)
+            ->update(['available_count' => 80]);
+
+        $this->artisan('cacao:health')
+            ->expectsOutputToContain('B001')
             ->expectsOutputToContain('Cacao health check FAILED')
             ->assertExitCode(1);
     }
