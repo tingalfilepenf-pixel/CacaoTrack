@@ -1,6 +1,25 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CX — **`cacao:health` now reconciles `available_count` against Stock Out history; three cross-batch `total_grafted` totals fixed**)
+> ### ▶ Continue here (latest: Session CY — **live `db_capstone` re-reseeded with today's fixes; "counts each plant once" help note on the cross-batch totals**)
+> - **▶ Session CY (DONE — help note + live `db_capstone` reseed; commit `b451b9c`; 2026-10-01):**
+>   **(1)** A one-line help note — *"Total counts each plant once; a regrafted plant's quantity is not
+>   added again under its new sub-batch."* (Gap Report: "Expected counts each plant once…"; Inventory:
+>   "Counts each plant once…") was added to the Stock Ledger nested Batch summary totals (view/PDF/CSV),
+>   the Gap Report Expected total (view/PDF/CSV) and the Inventory Total Grafted card. Display/text only,
+>   no logic change; new assertions lock it in. Full MySQL suite **344 passed / 1506 assertions** on
+>   `db_capstone_test`; Pint + `php -l` + `view:cache` clean. **(2)** One approved destructive action on
+>   `db_capstone`: verified backup
+>   `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_reseed_20261001_201512.sql`
+>   (**37,218 B / 23 tables**, clean `Dump completed on 2026-10-01 20:15:13` trailer) →
+>   `php artisan migrate:fresh --seed --force` (exit 0). **Before:** batches **6** (5-batch seed + a
+>   manually-added **B004** Toledo of 50), stock_outs 2, stock_out_details 2, activity_logs 13,
+>   `cacao:health` PASSED (6). **After:** batches **5**, stock_ins 4, stock_outs 1, stock_out_details 1,
+>   mortality_records 4, regraft_records 2, inventories 5, scion_varieties 5, users 1, activity_logs 11;
+>   `migrate:status` **0 Pending**; `cacao:health` PASSED (5). Family B001 500/400/100 · B001-R1
+>   100/50/30 · B001-R1-R1 30/30/0 · B002 150/150/0 · B003 100/100/0; KPIs **730 / 7.33% (55/750) / 25**;
+>   the three cross-batch totals all read **750**; all **20 sidebar pages 200**; Stock Out hint ==
+>   `survivingQuantity()` (B001 **375** vs raw 400). **B004 was manually added, not seeded.** Tests still
+>   run only on `db_capstone_test`.
 > - **▶ Session CX (DONE — new `cacao:health` invariant; commit `89905c9`; 2026-09-30):**
 >   `php artisan cacao:health` (`app/Console/Commands/CacaoHealthCommand.php`) gained **rule 5**:
 >   `available_count == (total_grafted - regraft) - SUM(stock_out_details.quantity)` for **every** batch
@@ -574,8 +593,10 @@
 >   `survivingQuantity()` as well (so the hint agrees with the server gate), **CV** reseeded live
 >   `db_capstone` under the corrected `total_grafted` rule (verified backup; `cacao:health` now passes;
 >   all 20 sidebar pages 200), **CW** switched the three cross-batch `total_grafted` totals to
->   `SUM(total_grafted - regraft)`, and **CX (latest)** added the `cacao:health` rule that reconciles
->   `available_count` against Stock Out history. See the CX/CW/CV/CU/CT bullets at the very top.
+>   `SUM(total_grafted - regraft)`, **CX** added the `cacao:health` rule that reconciles
+>   `available_count` against Stock Out history, and **CY (latest)** added the "counts each plant once"
+>   help note on those totals (view/PDF/CSV) and re-reseeded live `db_capstone` (manual B004 removed;
+>   `cacao:health` clean). See the CY/CX/CW/CV/CU/CT bullets at the very top.
 >   **Remaining Tier 1
 >   (safe, code-only) items from Session CS:** log
 >   Inventory snapshots to `Activity_Log`; fix the "Total **Active** Inventory includes archived"
@@ -587,9 +608,10 @@
 >   axis-label restyle** (CO, view-only), the **Stock Ledger printable PDF font auto-fit** (CP), the
 >   **Stock Out unit dropdown → Pots only** (CQ; centralized `StockOutDetail::UNITS`) and the
 >   **`replanting_records` → `regraft_records` rename** (CR).
->   **Full MySQL suite green: 344 passed / 1499 assertions** on `db_capstone_test` (CW added 1 test;
->   CX added 1). Latest commits: `89905c9` (CX), `f9bbd1e` (CW), `0a9251b` (CV docs), `13e658e` (CU),
->   `7ec2f8c` (CT Fix 2), `dccd154` (CT Fix 1), `b939aab` (CL–CR baseline), `4006b41` (CK).
+>   **Full MySQL suite green: 344 passed / 1506 assertions** on `db_capstone_test` (CW +1 test, CX +1,
+>   CY +7 assertions). Latest commits: `b451b9c` (CY code) + its docs-only commit, `89905c9` (CX),
+>   `f9bbd1e` (CW), `0a9251b` (CV docs), `13e658e` (CU), `7ec2f8c` (CT Fix 2), `dccd154` (CT Fix 1),
+>   `b939aab` (CL–CR baseline), `4006b41` (CK).
 >   Current source of truth: canonical `docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` (v2.0; the
 >   `_UPDATED` files are the untouched v1.0 provenance; the `_REVISED` copies must stay byte-identical —
 >   SHA-256 match). Pick one of:
@@ -630,30 +652,35 @@
 >     date-filtered rate definition. **Tier 3 (needs an approved ERD revision):** DB unique index for
 >     one monthly inventory snapshot per batch, Stock In↔Batch traceability (`OD-8`), scion freshness
 >     (`OD-13`). Do **not** implement a Tier-2/3 item without sign-off.
-> - **Standing rules:** tests only against `db_capstone_test` (never `db_capstone`). Four live-DB
+> - **Standing rules:** tests only against `db_capstone_test` (never `db_capstone`). Five live-DB
 >   actions have been explicitly approved: the Session CA wipe + reseed (2026-09-26), the Phase 7D
->   upgrade + reseed (2026-09-29), the **Session CR rename migration** (2026-09-30, non-destructive)
->   and the **Session CV reseed** under the corrected arithmetic (2026-09-30, destructive). Any
->   **further** destructive or schema action needs fresh explicit sign-off.
+>   upgrade + reseed (2026-09-29), the **Session CR rename migration** (2026-09-30, non-destructive),
+>   the **Session CV reseed** under the corrected arithmetic (2026-09-30, destructive) and the
+>   **Session CY reseed** (2026-10-01, destructive; manual B004 removed). Any **further** destructive
+>   or schema action needs fresh explicit sign-off.
 >   Keep these backups untouched:
 >   `...\Temp\opencode\db_capstone_backup_2026_09_26_20260926_154153.sql`,
 >   `...\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql`,
->   `...\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql` and
->   `...\Temp\opencode\db_capstone_pre_reseed_20260930_034319.sql`.
+>   `...\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql`,
+>   `...\Temp\opencode\db_capstone_pre_reseed_20260930_034319.sql` and
+>   `...\Temp\opencode\db_capstone_pre_reseed_20261001_201512.sql`.
 > - **Verify quickly:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->   (never point tests at `db_capstone`) — expect **344 passed / 1499 assertions**. Also run
+>   (never point tests at `db_capstone`) — expect **344 passed / 1506 assertions**. Also run
 >   `php artisan cacao:health` after a `migrate:fresh --seed` on `db_capstone_test` — it must pass
 >   clean (exit 0; it now also reconciles `available_count` against Stock Out history). Check the
->   checkpoint with `git log --oneline -5` (latest `89905c9`, then `f9bbd1e`, `0a9251b`, `13e658e`,
->   `7ec2f8c`). Full detail: the Session CX/CW/CV/CU/CT/CS/CR/CQ/CP/CO/CN/CM/CL/CK/CJ bullets
->   in the banner above and the Session CH entry in §2, plus §3, §5 and §6 (and the earlier
+>   checkpoint with `git log --oneline -5` (latest `b451b9c` + its docs-only commit, then `89905c9`,
+>   `f9bbd1e`, `0a9251b`). Full detail: the Session CY/CX/CW/CV/CU/CT/CS/CR/CQ/CP/CO/CN/CM/CL/CK/CJ
+>   bullets in the banner above and the Session CH entry in §2, plus §3, §5 and §6 (and the earlier
 >   CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ entries).
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session CX (2026-09-30)** — `php artisan cacao:health` now reconciles
-`available_count` against Stock Out history (rule 5, commit `89905c9`), and three cross-batch
-`total_grafted` totals use `SUM(total_grafted - regraft)` (commit `f9bbd1e`), on top of the Session CV
-live-DB reseed. Immediately before, **Session CU (2026-09-30)** was the **Stock Out form hint fix**: the
+project after **Session CY (2026-10-01)** — a "counts each plant once" help note now sits on the three
+cross-batch `total_grafted` totals (Stock Ledger nested summary, Gap Report Expected, Inventory Total
+Grafted card; view/PDF/CSV; commit `b451b9c`) and live `db_capstone` was re-reseeded with that code
+(verified backup; manual B004 removed; `cacao:health` clean). Session CX (2026-09-30) added the
+`cacao:health` `available_count` vs Stock Out reconciliation (rule 5, commit `89905c9`), and three
+cross-batch `total_grafted` totals use `SUM(total_grafted - regraft)` (commit `f9bbd1e`), on top of the
+Session CV live-DB reseed. Immediately before, **Session CU (2026-09-30)** was the **Stock Out form hint fix**: the
 batch dropdown's `data-available` attribute and inline `(Available: …)` label now read
 **`Batch::survivingQuantity()`** (`resources/views/inventory/stock-out/index.blade.php`) instead of raw
 `available_count`, so what the user sees matches what `StockOutController` enforces (per-line and
@@ -1160,7 +1187,21 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ Current quick start (latest: Session CX, 2026-09-30 — `cacao:health` reconciles `available_count` vs Stock Out history; three cross-batch `total_grafted` totals fixed; no schema/DB change, `db_capstone` untouched):**
+- **▶ Current quick start (latest: Session CY, 2026-10-01 — cross-batch-totals help note + live `db_capstone` reseed):**
+  **(1) Help note (commit `b451b9c`):** the Stock Ledger nested Batch summary totals (view/PDF/CSV),
+  the Gap Report Expected total (view/PDF/CSV) and the Inventory Total Grafted card now carry a one-line
+  note that the cross-batch total counts each plant once (a regrafted plant is not added again under its
+  new sub-batch). Display/text only; full suite **344 passed / 1506 assertions**; Pint + `php -l` +
+  `view:cache` clean; all 20 sidebar pages 200 via the HTTP kernel. **(2) Reseed:** one owner-approved
+  destructive action on `db_capstone` after a verified backup
+  (`...\Temp\opencode\db_capstone_pre_reseed_20261001_201512.sql`, 37,218 B / 23 tables, clean
+  `Dump completed` trailer) — `migrate:fresh --seed --force` (exit 0); before batches 6 (5 + manual
+  B004), after batches **5**; `migrate:status` **0 Pending**; `cacao:health` PASSES both before (6) and
+  after (5); KPIs **730 / 7.33% (55/750) / 25**; the three cross-batch totals all read **750**.
+  **Next options:** the remaining Session CS Tier-1 items (log Inventory snapshots to `Activity_Log`;
+  fix the "Total **Active** Inventory includes archived" label; point `phpunit.xml` at MySQL
+  `db_capstone_test`), then confirm the remaining Open Decisions (PRD §19).
+- **▶ Previous quick start (Session CX, 2026-09-30 — `cacao:health` reconciles `available_count` vs Stock Out history; three cross-batch `total_grafted` totals fixed; no schema/DB change):**
   Two committed code fixes:
   **(1) `f9bbd1e` — Session CW (cross-batch totals):** `AnalyticsMetrics::batchSummary()['totals']['total_grafted']`,
   `AnalyticsMetrics::gapReport()['totalExpected']` and `InventoryController@index` `totalGrafted`
@@ -1174,9 +1215,9 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
   **Next options:** the **remaining Session CS Tier 1** items (log Inventory snapshots to
   `Activity_Log`; fix the "Total **Active** Inventory includes archived" label; point `phpunit.xml` at
   MySQL `db_capstone_test`), then confirm the remaining Open Decisions (PRD §19).
-  **Live `db_capstone` has drifted via UI use** (a **B004** Toledo batch of 50, and a real **B001**
-  Stock Out of 30 on 2026-09-29) → Crude Mortality Rate now **6.88%** (55/800), Total Active Inventory
-  **750**; the Phase 7D seed values (7.33%, 730) are no longer the live numbers.
+  **Live `db_capstone` drift (a B004 Toledo batch of 50 + a real B001 Stock Out of 30 on 2026-09-29)
+  was cleared by the Session CY reseed (2026-10-01)** — the live DB is back on the 5-batch seed
+  (7.33% / 730, `cacao:health` clean). The old "6.88% / 750" figure is no longer current.
 - **▶ Previous quick start (Session CV, 2026-09-30 — one-time owner-approved `db_capstone` reseed under the corrected `total_grafted` rule; DB + docs only, no code change):**
   `php artisan migrate:fresh --seed --force` ran against connection `mysql` / database `db_capstone`
   after a verified backup
@@ -5129,6 +5170,20 @@ upgraded + reseeded in Phase 7D, 2026-09-29). **Committed** `7c84843`, `59488db`
 
 ## 3. Current database state (`db_capstone`)
 
+**✅ LATEST (Session CY, 2026-10-01) — re-reseeded with today's fixes.** One owner-approved destructive
+action (`php artisan migrate:fresh --seed --force`, connection `mysql` / database `db_capstone`) after a
+verified backup
+`C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_reseed_20261001_201512.sql`
+(**37,218 B**, 23 `CREATE TABLE`, clean `-- Dump completed on 2026-10-01 20:15:13` trailer).
+**Before:** 6 batches (5-batch seed + a manually-added **B004** of 50), stock_outs 2 / stock_out_details
+2, activity_logs 13; `cacao:health` PASSED (6). **After:** **5 batches** (B004 gone → manually added,
+not seeded), stock_ins 4, stock_outs 1, stock_out_details 1, mortality_records 4, regraft_records 2,
+inventories 5, scion_varieties 5, users 1, activity_logs 11; `migrate:status` **0 Pending**;
+`cacao:health` **PASSED** (5). Live KPIs: raw `Σtotal_grafted` **880** / live
+`Σ(total_grafted − regraft)` **750** / Total Active Inventory **730** / Crude Mortality **7.33%**
+(55/750) / Regraft Deficit **25**; the three cross-batch totals = **750**. Family 500/400/100 ·
+100/50/30 · 30/30/0 · 150/150/0 · 100/100/0. The paragraphs below keep the earlier history.
+
 **✅ NOTE (Session CH / Phase 7D, 2026-09-29) — `db_capstone` was upgraded to the approved schema and
 reseeded.** Phase 7A's schema (`batches.regraft` + `batches.parent_batch_id`,
 `replanting_records.parent_batch_id`; `batches.viable_count` / `stock_ins.viable` /
@@ -5667,6 +5722,28 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
        viability and scion-receipt Edit/Archive/Details remain unbuilt (client-gated, deferred).
 
 ## 5. Verification status
+- **Session CY (cross-batch-totals help note + live `db_capstone` reseed, 2026-10-01): full suite GREEN; reseed verified.**
+  **(1) Help note (commit `b451b9c`):** a one-line note that the total counts each plant once (a
+  regrafted plant is not added again under its new sub-batch) was added to the Stock Ledger nested
+  summary totals (view/PDF/CSV), the Gap Report Expected total (view/PDF/CSV) and the Inventory Total
+  Grafted card. Display/text only; no formula, view-logic or DB change. MySQL suite
+  (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **344 passed / 1506 assertions, 0 failures** (was 344/1499; +7 assertions locking the note into the
+  Stock Ledger view/CSV/PDF, the Gap Report page/CSV/PDF and the Inventory page). `vendor\bin\pint
+  --test` + `php -l` clean; `php artisan view:cache` clean. HTTP-kernel smoke (seeded admin, read-only):
+  all **20 sidebar pages 200**; the note renders on the Stock Ledger, Gap Report and Inventory pages and
+  their PDF/CSV exports. **(2) `db_capstone` reseed (owner-approved destructive action, 2026-10-01):**
+  verified backup `...\Temp\opencode\db_capstone_pre_reseed_20261001_201512.sql` (**37,218 B**,
+  23 `CREATE TABLE`, 15 `INSERT INTO`, clean `-- Dump completed on 2026-10-01 20:15:13` trailer).
+  **Before:** batches 6 (5 + manual B004), stock_outs 2, stock_out_details 2, activity_logs 13,
+  `cacao:health` PASSED (6). Ran `php artisan migrate:fresh --seed --force` (exit 0, 53 migrations).
+  **After:** batches **5** (B004 gone → it was manually added, not part of the standard seeder),
+  stock_ins 4, stock_outs 1, stock_out_details 1, mortality_records 4, regraft_records 2, inventories 5,
+  scion_varieties 5, users 1, activity_logs 11; `migrate:status` **0 Pending**; `cacao:health` PASSED
+  (5); KPIs **Total Active Inventory 730 / Crude Mortality 7.33% (55/750) / Regraft Deficit 25**; the
+  three cross-batch totals (Stock Ledger summary, Gap Report Expected, Inventory snapshot) all read
+  **750**; all 20 sidebar pages 200; Stock Out hint == `survivingQuantity()` (B001 **375** vs raw 400).
+  Tests still run only against `db_capstone_test`. **No further destructive action is authorized.**
 - **Session CX (`cacao:health` rule 5 — `available_count` vs Stock Out history): full suite run and GREEN.**
   MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
   **344 passed / 1499 assertions, 0 failures** (was 343/1494; +1 `CacaoHealthTest` case: a legitimate
@@ -6130,7 +6207,7 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   feature test (`BatchManagementTest` added in Session Z).
 
 ## 6. Open decisions / next steps
-- **Latest sessions (CH–CX) are captured in the top banner, the "Quick start for the next session"
+- **Latest sessions (CH–CY) are captured in the top banner, the "Quick start for the next session"
   section and §5.** Summary: **CH** = Phase 7D live-`db_capstone` upgrade + reseed; **CJ**/**CK** =
   client-confirmed cumulative `total_grafted` + corrected mortality-rate denominator
   (`SUM(total_grafted − regraft)`); **CL** = the Mortality cause-of-death dropdown + "Others"
@@ -6149,10 +6226,13 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   under the corrected `total_grafted` rule (verified backup; `cacao:health` now passes); **CW** = the
   three cross-batch `total_grafted` totals switched to `SUM(total_grafted - regraft)` (Stock Ledger
   nested totals row, Gap `totalExpected`, Inventory snapshot total); **CX** = `cacao:health` rule 5
-  reconciling `available_count` against `SUM(stock_out_details.quantity)`. **Committed:** CL–CR in
+  reconciling `available_count` against `SUM(stock_out_details.quantity)`; **CY** = the "counts each
+  plant once" help note on those same cross-batch totals (Stock Ledger/Gap Report/Inventory view, PDF and
+  CSV) + an owner-approved `db_capstone` reseed (verified backup 37,218 B; before 6 batches / after 5,
+  manual B004 removed; `cacao:health` clean before and after). **Committed:** CL–CR in
   `b939aab`; CT in `dccd154`+`7ec2f8c`; CU in `13e658e`; CV docs in `0a9251b`; CW in `f9bbd1e`; CX in
-  `89905c9`. Everything below in this section
-  is older context.
+  `89905c9`; CY code in `b451b9c` (docs in the following docs-only commit). Everything below in this
+  section is older context.
 - **▶ Session CG (DONE — Phase 7C: parent/sub-batch nesting + Stock Ledger / analytics alignment;
   commits `7c84843`, `59488db`, `cc89669`, `b780873`):** implemented PRD_UPDATED §9.3 / FR-08 nested
   display for parent batches and regraft sub-batches. Single helper **`App\Support\BatchTree`** (RULE 6)

@@ -8,6 +8,41 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## RESEED EXECUTED — live `db_capstone` re-reseeded with today's fixes (2026-10-01)
+- **One explicitly approved destructive action (project-owner sign-off), connection `mysql` / database
+  `db_capstone`.** Standing rule unchanged: tests run **only** against `db_capstone_test`; any further
+  destructive or schema action on the live DB needs fresh sign-off.
+- **Backup first (verified, left untouched outside the git repo):**
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_reseed_20261001_201512.sql`
+  — **37,218 B**, **23 `CREATE TABLE`** (all current tables), 15 `INSERT INTO`,
+  `--single-transaction --routines --triggers --events`, includes `CREATE DATABASE`/`USE db_capstone`,
+  clean `-- Dump completed on 2026-10-01 20:15:13` trailer.
+- **Before (raw):** connected DB `db_capstone`; **23 tables**; row counts — batches **6** (the 5-batch
+  seed + a manually-added **B004** Toledo batch of 50), stock_outs **2**, stock_out_details **2**
+  (a real B001 Stock Out of 30 on 2026-09-29), mortality_records 4, regraft_records 2, inventories 6,
+  activity_logs 13, users 1; `migrate:status` **53 Ran / 0 Pending**; **`cacao:health` PASSED (exit 0)**
+  (`6 batch(es) satisfy all invariants`) — the UI drift used the validated app paths, so all 5 rules
+  (including rule 5, `available_count == (total_grafted − regraft) − Σstock_out`) held.
+- **Run:** `php artisan migrate:fresh --seed --force` against `db_capstone` (all 53 migrations, exit 0).
+- **After (raw):** **23 tables**; row counts — batches **5**, stock_ins 4, stock_outs 1,
+  stock_out_details 1, mortality_records 4, regraft_records 2, inventories 5, scion_varieties 5,
+  suppliers 3, clients 3, users 1, activity_logs 11, analytics 0, sessions 0; `migrate:status`
+  **53 Ran / 0 Pending**; **`cacao:health` PASSED (exit 0)** (`5 batch(es) satisfy all invariants`).
+  **B004 is gone → it was manually added, not part of the standard seeder.**
+- **Seeded family (verified live):** B001 Batangas 500/400/100 (mortality 25) · B001-R1 Toledo
+  100/50/30 (parent B001, mortality 5, Stock Out 20) · B001-R1-R1 Criollo 30/30/0 (parent B001-R1) ·
+  B002 Trinitario 150/150/0 (mortality 15) · B003 Forastero 100/100/0 (mortality 10).
+- **KPIs (centralized `AnalyticsMetrics`):** raw `Σtotal_grafted` **880**; live population
+  `Σ(total_grafted − regraft)` **750**; Total Active Inventory **730**; Crude Mortality Rate
+  **7.33%** (numerator 55 / denominator 750); Regraft Deficit **25**. The three cross-batch totals all
+  read **750** (Stock Ledger nested summary, Gap Report Expected, Inventory snapshot total).
+- **End-to-end (read-only, seeded administrator via the HTTP kernel):** all **20 sidebar GET pages
+  return 200**; the Stock Out hint equals `survivingQuantity()` for B001 (**375** vs raw
+  `available_count` 400); Stock Ledger CSV 200 (`text/csv`); the new "counts each plant once" help note
+  renders on the Stock Ledger, Gap Report and Inventory pages and their PDF/CSV exports.
+- **This removes the last live-DB divergence:** live `db_capstone` now holds the corrected 5-batch seed
+  and `cacao:health` is clean under the new rule 5.
+
 ## RENAME — `Replanting_Record` → `Regraft_Record` (2026-09-30)
 - **Owner-directed, single coordinated rename** (the `replanting_records` table, PK/date columns,
   model, relations, controller, request, route, views, factory, seeders, analytics and tests were all
@@ -583,7 +618,7 @@ P5 open-flags note above).
 checkpoint `0803bdf`), the **analytics/report layer** (P5 — checkpoint `d139286`:
 `AnalyticsMetrics`, PDF/CSV classes, Dashboard, Stock Ledger monthly grid, Matrix, Historical) and the
 **seeders/tests/factories** (P6 — Session BZ) all match the revised model; the full MySQL suite is
-green (latest **342 passed / 1484 assertions**, Session CU). `/` (Dashboard) returns **200**. The
+green (latest **344 passed / 1506 assertions**, Session CY). `/` (Dashboard) returns **200**. The
 mapping below records the P1–P3 schema transition (now complete). (For full historical detail see
 `session.handoff.md` §2.)
 
