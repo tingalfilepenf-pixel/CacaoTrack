@@ -1,6 +1,58 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session CY — **live `db_capstone` re-reseeded with today's fixes; "counts each plant once" help note on the cross-batch totals**)
+> ### ▶ Continue here (latest: Session DA — **Stock Ledger "Ready to Plant" clarification footnote (view/PDF/CSV) + `cacao:health` on live `db_capstone` still passes**)
+> - **▶ Session DA (DONE — display-only "Ready to Plant" footnote added to the Stock Ledger; live `cacao:health` re-run clean; 2026-10-01):**
+>   **(1) Footnote (display/text only, no logic change)** — one line was appended to the SAME three locations as
+>   the Phase 7C Regraft/Grafted footnote: the on-screen grid note
+>   (`resources/views/analytics/stock-ledger.blade.php:235-239`), the PDF footnote
+>   (`App\Support\StockLedgerPdf::drawLedgerFootnote()`, `app/Support/StockLedgerPdf.php:222`) and the CSV
+>   footnote (`AnalyticsController::exportLedgerCsv`, `app/Http/Controllers/AnalyticsController.php:286`).
+>   Text: *"Ready to Plant reflects each batch's current balance, shown under its original grafted month —
+>   not activity within that month. A batch's balance does not move to a later month's row as time passes."*
+>   Three `StockLedgerNestingTest` assertions locked it in (view/CSV/PDF). **No formula, query, model, route
+>   or data change**; `AnalyticsMetrics::stockLedgerGrid()` and the Stock Out gate are untouched.
+>   **Verified:** `StockLedgerNestingTest` **9 passed / 50 assertions** on `db_capstone_test`; `vendor\bin\pint
+>   --test` clean; `php -l` clean; `php artisan view:cache` clean.
+>   **(2) Live `cacao:health` (read-only, no fix) — PASSES.** `php artisan cacao:health` against the current
+>   live `db_capstone` printed `Cacao health check passed. 6 batch(es) satisfy all invariants.` and exited
+>   **0** — all 5 rule checks (incl. the rule-5 reconciliation `available_count == (total_grafted − regraft)
+>   − Σstock_out`) hold on the drifted live data (6 batches incl. B002-R1; **3** regraft records; **2**
+>   stock-out details). No reseed / no DB write was performed.
+>   **(3) Commits:** footnote fix = `aa847f2`; handoff docs = this commit.
+> - **▶ Session CZ (DONE — read-only audit: "Ready to Plant" is `available_count` stamped on `grafted_date`, NOT `survivingQuantity()` and NOT month-scoped; NO code/data changed; 2026-10-01):**
+>   **Prompt:** investigate a reported 5-vs-15 Stock Ledger discrepancy (October 2026 "Ready to Plant" = 5,
+>   but a Stock Out of 15 against the same period was accepted). **Verdict: no same-batch violation — the
+>   5 and the 15 belong to two *different* batches; the root cause is the mapping, not the gate.**
+>   **(1) The column** — `AnalyticsMetrics::stockLedgerGrid()` (`app/Support/AnalyticsMetrics.php:542`)
+>   sets `ready` at **line 585**: `[$varietyId => (int) $batch->available_count]`. It reads the live
+>   **`batches.available_count`** (never `Batch::survivingQuantity()`), and it is **not month-scoped** —
+>   unlike Seedlings/Mortality/Regraft/Pullout, `ready` is the batch's *current* balance merely
+>   **stamped on the row of the batch's `grafted_date`** (batch query at `:557-561` filters
+>   `grafted_date`, not a balance date). The monthly total is just `accumulateLedgerTotals()` (`:885`)
+>   summing those stamps.
+>   **(2) The data (live `db_capstone`, read-only):** the October `5` is sub-batch **B002-R1**
+>   (Trinitario; `total_grafted=5`, `regraft=0`, `available_count=5`, `mort=0`, `surviving=5`; created
+>   `2026-10-01` by regraft #3 B002→B002-R1 qty 5 → `RegraftBatch` sets `total_grafted=available_count=5`).
+>   The accepted `15` is **B001** (Batangas; `total_grafted=500`, `regraft=100`, `available_count=385`,
+>   `effectiveMortality=25`, `surviving=375`; `stock_out_details` #2, release `2026-10-01`). B001's
+>   `ready` stamp (**385**) sits in the **July 2026** row, because its `grafted_date` is `2026-07-15`.
+>   Different batch **and** different variety.
+>   **(3) Gate vs display — different method + different scope.** The release gate
+>   (`StockOutController::lockAndValidateBatches`, `:197`/`:220`) uses **`survivingQuantity()`**; the
+>   column uses **`available_count`**. For one batch at one instant the display can never be *less* than
+>   the gate, since `survivingQuantity() = max(0, min(available_count, (total_grafted−regraft)−mort)) ≤
+>   available_count` — it actually shows **more** where mortality exists (B001: **385** displayed vs
+>   **375** gated). The real hazard is the **scope**: "Ready to Plant" is pinned to the grafted month,
+>   so October only totals batches grafted in October (B002-R1 = 5) and silently omits every older batch
+>   still releasable (B001's 385/375 lives in July) — a user reading October sees 5 and can't reconcile
+>   a 15 release from another batch.
+>   **(4) Nothing changed** — no formula, view or data touched. Ties to `AGENTS.md` P6 deferred item #4
+>   ("Ready to Plant" maps to `available_count`, pending client confirmation); a fix should wait on that
+>   definition. **Live state drift observed (owner testing since the CY reseed):** live `db_capstone` now
+>   has **6** batches (a new **B002-R1** Trinitario), regraft_records **3**, stock_out_details **2**
+>   (the new B001 Stock Out of **15**, `2026-10-01`), and B001 `available_count` **385** — so the CY
+>   "after" snapshot (5 batches / 1 stock_out / B001 400) no longer matches the live DB. No DB write was
+>   performed this session.
 > - **▶ Session CY (DONE — help note + live `db_capstone` reseed; commits `b451b9c` (code) + `6f41a6a` (docs); 2026-10-01):**
 >   **(1)** A one-line help note — *"Total counts each plant once; a regrafted plant's quantity is not
 >   added again under its new sub-batch."* (Gap Report: "Expected counts each plant once…"; Inventory:
