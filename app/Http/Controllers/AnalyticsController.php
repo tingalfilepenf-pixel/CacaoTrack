@@ -259,6 +259,8 @@ class AnalyticsController extends Controller
             }
         }
 
+        $columnHeaders[] = 'Remaining Available';
+
         fputcsv($handle, $columnHeaders);
 
         foreach ($grid['months'] as $month) {
@@ -286,7 +288,7 @@ class AnalyticsController extends Controller
         ));
 
         fputcsv($handle, []);
-        fputcsv($handle, ['Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same plants; no cross-column total is implied. Ready to Plant and Pullout both reflect each batch\'s current totals to date, shown under its original grafted month — not activity within that specific month.']);
+        fputcsv($handle, ['Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same plants; no cross-column total is implied. Pullout posts one dated row per Stock Out release. Remaining Available is the running balance after each event (grafted - regraft - mortality - pullout to date); a batch\'s final Remaining Available equals its surviving balance. Ready to Plant is each batch\'s current surviving figure, shown under its original grafted month.']);
 
         fputcsv($handle, []);
         fputcsv($handle, ['Batch summary (nested)']);
@@ -350,6 +352,8 @@ class AnalyticsController extends Controller
                 $line[] = $value > 0 ? $value : '';
             }
         }
+
+        $line[] = isset($row['remaining']) && $row['remaining'] !== null ? (int) $row['remaining'] : '';
 
         return $line;
     }

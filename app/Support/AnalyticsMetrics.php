@@ -562,21 +562,30 @@ class AnalyticsMetrics
 
     /**
      * Cacao Tree Stock Ledger as a MONTHLY GRID grouped by month, with dynamic
-     * per-Scion-Variety columns (matches the client's real manual ledger, not
-     * just PRD §9.3's looser column list).
+     * per-Scion-Variety columns (matches the client's real manual ledger).
      *
-     * Each month holds dated event rows and a per-month TOTAL; a flat grand
-     * total is returned alongside. Columns: Seedlings, Grafted, Mortality,
-     * Re Graft, Ready to Plant and Pullout — the last five broken out per Scion
-     * Variety.
+     * The grid is a true chronological transaction ledger: every row is a real
+     * dated operational event — batch establishment, each mortality record, each
+     * regraft-out, and each Stock Out detail line (Pullout posts one dated row
+     * per release, matching the client's spreadsheet) — plus the seedling Stock
+     * In receipts.
      *
-     * "Ready to Plant" (client terminology, kept verbatim — no rename) is the
-     * batch's surviving/sellable balance (`Batch::survivingQuantity()`, so
-     * recorded mortality is excluded) and "Pullout" is the batch's cumulative
-     * all-time Stock Out total. Both are per-batch CURRENT-STATE figures stamped
-     * on the batch's `grafted_date` row — not month-scoped activity flow.
+     * A running "Remaining Available" is tracked per batch in true chronological
+     * order and shown on every row (blank for the variety-agnostic seedlings):
      *
-     * @return array{varieties:array<int,array{id:int,name:string}>,months:array<int,array{key:string,label:string,rows:array<int,array<string,mixed>>,totals:array<string,mixed>}>,grandTotals:array<string,mixed>,summary:array<string,int>,hasData:bool}
+     *   remaining(as of event N) = total_grafted_at_establishment
+     *       - regraft_out_to_date - effective_mortality_to_date - stock_out_to_date
+     *
+     * The three outflows are gathered independently from the real records (never
+     * read back from a value that already nets some of them out), so the LAST row
+     * for a batch equals that batch's live {@see Batch::survivingQuantity()}. The
+     * two are reconciled for every batch and any mismatch fails loudly
+     * ({@see self::assertLedgerRunningBalanceReconciles()}).
+     *
+     * "Ready to Plant" (client terminology, kept verbatim — no rename) remains the
+     * batch's current surviving balance, stamped on its establishment row.
+     *
+     * @return array{varieties:array<int,array{id:int,name:string}>,months:array<int,array{key:string,label:string,rows:array<int,array<string,mixed>>,totals:array<string,mixed>}>,grandTotals:array<string,mixed>,summary:array<string,int>,hasData:bool,batchSummary:array<string,mixed>}
      */
     public static function stockLedgerGrid(
         ?int $batchId = null,
@@ -584,166 +593,79 @@ class AnalyticsMetrics
         ?string $from = null,
         ?string $to = null,
     ): array {
-        $referenced = [];
-        $events = [];
-
-        // Grafted + Ready to Plant + Pullout: one current-state row per batch
-        // (by grafted_date). Phase 7C: only ROOT batches contribute to the
-        // Grafted column — a regraft sub-batch's plants are a movement of the
-        // same population and appear under Regraft, so family grafted totals are
-        // not inflated.
-        // "Ready to Plant" is the batch's surviving/sellable balance and
-        // "Pullout" is its cumulative all-time Stock Out total; both are
-        // current-state, per-batch figures stamped on the grafted month.
-        $batches = self::batchQuery($batchId, $scionVarietyId)
-            ->when($from, fn (Builder $q) => $q->whereDate('grafted_date', '>=', $from))
-            ->when($to, fn (Builder $q) => $q->whereDate('grafted_date', '<=', $to))
+        // Build the FULL chronological event log for every batch (all time) so
+        // the running balance never depends on the display filters, then
+        // reconcile every batch's final balance against the authoritative live
+        // surviving quantity.
+        $allBatches = Batch::query()
+            ->with('scionVariety')
             ->orderBy('grafted_date')
+            ->orderBy('batch_code')
             ->get();
 
-        // Cumulative Pullout per batch — every Stock Out ever recorded against
-        // the batch (all-time, deliberately NOT month-filtered), gathered in one
-        // batched query (no N+1).
-        $batchIds = $batches->pluck('batch_id')->map(fn ($id) => (int) $id)->all();
-        $pulloutByBatch = $batchIds === []
-            ? collect()
-            : StockOutDetail::query()
-                ->whereIn('batch_id', $batchIds)
-                ->selectRaw('batch_id, COALESCE(SUM(quantity), 0) as total')
-                ->groupBy('batch_id')
-                ->pluck('total', 'batch_id');
+        $events = self::ledgerEvents($allBatches);
 
-        foreach ($batches as $batch) {
-            if (! $batch->grafted_date) {
+        // True chronological order; the establishment precedes withdrawals that
+        // share its date.
+        usort($events, fn (array $a, array $b): int => [$a['date'], $a['sort']] <=> [$b['date'], $b['sort']]);
+
+        $balances = [];
+        $referenced = [];
+        $displayed = [];
+
+        // Pass 1 — running balance for EVERY event, in chronological order.
+        foreach ($events as $index => $event) {
+            $balanceBatchId = $event['balance_batch_id'];
+
+            if ($balanceBatchId === null) {
                 continue;
             }
 
-            $varietyId = $batch->scion_variety_id ? (int) $batch->scion_variety_id : null;
-
-            if ($varietyId !== null) {
-                $referenced[$varietyId] = true;
-            }
-
-            $isRoot = $batch->parent_batch_id === null;
-
-            $events[] = [
-                'date' => $batch->grafted_date->toDateString(),
-                'description' => $isRoot
-                    ? 'Batch '.$batch->batch_code.' — established / grafted'
-                    : 'Sub-batch '.$batch->batch_code.' — ready to plant',
-                'seedlings' => 0,
-                'grafted' => $isRoot && $varietyId !== null ? [$varietyId => (int) $batch->total_grafted] : [],
-                'mortality' => [],
-                'regraft' => [],
-                'ready' => $varietyId !== null ? [$varietyId => (int) $batch->survivingQuantity()] : [],
-                'pullout' => $varietyId !== null ? [$varietyId => (int) ($pulloutByBatch[$batch->batch_id] ?? 0)] : [],
-            ];
+            $balances[$balanceBatchId] = ($balances[$balanceBatchId] ?? 0) + (int) $event['balance_delta'];
+            $events[$index]['remaining'] = $balances[$balanceBatchId];
         }
 
-        // Seedlings: Stock In (variety-agnostic; only when no batch narrowing).
-        // Phase 7C: only seedling-only receipts count — a scion-inclusive Stock In
-        // row (`scion_variety_id` set) must not inflate the Seedlings column.
-        if ($batchId === null) {
-            $stockIns = StockIn::query()
-                ->whereNull('scion_variety_id')
-                ->when($from, fn (Builder $q) => $q->whereDate('date_received', '>=', $from))
-                ->when($to, fn (Builder $q) => $q->whereDate('date_received', '<=', $to))
-                ->with('supplier')
-                ->orderBy('date_received')
-                ->get();
+        self::assertLedgerRunningBalanceReconciles($balances, $allBatches);
 
-            foreach ($stockIns as $stockIn) {
-                $origin = $stockIn->origin ? ' ('.$stockIn->origin.')' : '';
+        // Pass 2 — apply the display filters (batch / variety / date).
+        foreach ($events as $event) {
+            if ($event['seedling']) {
+                if ($batchId !== null) {
+                    continue;
+                }
+            } else {
+                if ($batchId !== null && (int) $event['display_batch_id'] !== $batchId) {
+                    continue;
+                }
 
-                $events[] = [
-                    'date' => $stockIn->date_received->toDateString(),
-                    'description' => 'Stock In — '.($stockIn->supplier?->supplier_name ?? 'Supplier').$origin,
-                    'seedlings' => (int) $stockIn->quantity,
-                    'grafted' => [],
-                    'mortality' => [],
-                    'regraft' => [],
-                    'ready' => [],
-                    'pullout' => [],
-                ];
+                if ($scionVarietyId !== null && (int) $event['display_variety_id'] !== $scionVarietyId) {
+                    continue;
+                }
             }
-        }
 
-        // Mortality per Scion Variety.
-        $mortalityRecords = self::mortalityQuery($batchId, $scionVarietyId, $from, $to)
-            ->with('batch')
-            ->get();
-
-        foreach ($mortalityRecords as $record) {
-            if (! $record->recorded_at) {
+            if ($from !== null && $event['date'] < $from) {
                 continue;
             }
 
-            $varietyId = $record->batch?->scion_variety_id ? (int) $record->batch->scion_variety_id : null;
-
-            if ($varietyId !== null) {
-                $referenced[$varietyId] = true;
+            if ($to !== null && $event['date'] > $to) {
+                continue;
             }
 
-            $events[] = [
-                'date' => $record->recorded_at->toDateString(),
-                'description' => 'Mortality — '.($record->cause ?: 'Unspecified').' ('.($record->batch?->batch_code ?? '—').')',
-                'seedlings' => 0,
-                'grafted' => [],
-                'mortality' => $varietyId !== null ? [$varietyId => (int) $record->quantity] : [],
-                'regraft' => [],
-                'ready' => [],
-                'pullout' => [],
-            ];
-        }
-
-        // Re Graft per Scion Variety. Regraft and Replanting are the same
-        // recorded procedure, so the ledger reads the real `regraft_records`
-        // rows. Phase 7C: the
-        // column is the SUB-BATCH's scion variety and the description names the
-        // source → sub-batch move.
-        $regraftRecords = RegraftRecord::query()
-            ->when($batchId, fn (Builder $q) => $q->where('batch_id', $batchId))
-            ->when($from, fn (Builder $q) => $q->whereDate('regraft_date', '>=', $from))
-            ->when($to, fn (Builder $q) => $q->whereDate('regraft_date', '<=', $to))
-            ->when($scionVarietyId, fn (Builder $q) => $q->whereHas('batch', fn (Builder $b) => $b->where('scion_variety_id', $scionVarietyId)))
-            ->with(['batch', 'parent'])
-            ->orderBy('regraft_date')
-            ->get();
-
-        foreach ($regraftRecords as $record) {
-            $varietyId = $record->batch?->scion_variety_id ? (int) $record->batch->scion_variety_id : null;
-
-            if ($varietyId !== null) {
-                $referenced[$varietyId] = true;
+            foreach (['grafted', 'mortality', 'regraft', 'ready', 'pullout'] as $dimension) {
+                foreach (array_keys($event[$dimension]) as $varietyId) {
+                    $referenced[(int) $varietyId] = true;
+                }
             }
 
-            $sourceCode = $record->parent?->batch_code ?? $record->batch?->batch_code ?? '—';
-            $subBatchCode = $record->batch?->batch_code ?? '—';
-
-            $events[] = [
-                'date' => $record->regraft_date->toDateString(),
-                'description' => 'Regraft '.$sourceCode.' → '.$subBatchCode.($record->remark ? ' — '.$record->remark : ''),
-                'seedlings' => 0,
-                'grafted' => [],
-                'mortality' => [],
-                'regraft' => $varietyId !== null ? [$varietyId => (int) $record->quantity] : [],
-                'ready' => [],
-                'pullout' => [],
-            ];
+            $displayed[] = $event;
         }
-
-        // Pullout is NOT a dated event row here: it is a cumulative, per-batch
-        // figure stamped on the batch's `grafted_date` row above (same scope as
-        // "Ready to Plant"), so it is intentionally not month-filtered.
 
         $varieties = self::ledgerVarietyColumns($referenced, $scionVarietyId);
-
-        usort($events, fn (array $a, array $b) => strcmp($a['date'], $b['date']));
 
         $months = [];
         $grandTotals = self::emptyLedgerTotals();
 
-        foreach ($events as $event) {
+        foreach ($displayed as $event) {
             $key = substr($event['date'], 0, 7);
 
             $months[$key] ??= [
@@ -774,9 +696,199 @@ class AnalyticsMetrics
             'months' => array_values($months),
             'grandTotals' => $grandTotals,
             'summary' => $summary,
-            'hasData' => $events !== [],
+            'hasData' => $displayed !== [],
             'batchSummary' => self::batchSummary($batchId, $scionVarietyId, $from, $to),
         ];
+    }
+
+    /**
+     * Build the full, unfiltered chronological event log for the given batches.
+     * Each event carries its date, the per-variety quantity dimensions the grid
+     * renders, the batch/variety it is attributed to for filtering, and the batch
+     * whose running balance it moves (with the signed delta).
+     *
+     * @param  Collection<int,Batch>  $batches
+     * @return list<array<string,mixed>>
+     */
+    protected static function ledgerEvents(Collection $batches): array
+    {
+        $events = [];
+
+        // Establishment — one current-state row per batch on its grafted date.
+        // Only ROOT batches contribute to the Grafted column (a regraft
+        // sub-batch's plants are a movement of the same population and appear
+        // under Regraft); "Ready to Plant" stays a per-batch current-state figure.
+        foreach ($batches as $batch) {
+            if (! $batch->grafted_date) {
+                continue;
+            }
+
+            $varietyId = $batch->scion_variety_id ? (int) $batch->scion_variety_id : null;
+            $isRoot = $batch->parent_batch_id === null;
+
+            $events[] = self::ledgerEvent([
+                'date' => $batch->grafted_date->toDateString(),
+                'sort' => 0,
+                'description' => $isRoot
+                    ? 'Batch '.$batch->batch_code.' — established / grafted'
+                    : 'Sub-batch '.$batch->batch_code.' — ready to plant',
+                'seedlings' => 0,
+                'grafted' => $isRoot && $varietyId !== null ? [$varietyId => (int) $batch->total_grafted] : [],
+                'ready' => $varietyId !== null ? [$varietyId => (int) $batch->survivingQuantity()] : [],
+                'display_batch_id' => (int) $batch->batch_id,
+                'display_variety_id' => $varietyId,
+                'balance_batch_id' => (int) $batch->batch_id,
+                'balance_delta' => (int) $batch->total_grafted,
+            ]);
+        }
+
+        // Seedlings — variety-agnostic Stock In receipts (seedling-only rows).
+        foreach (StockIn::query()->whereNull('scion_variety_id')->with('supplier')->get() as $stockIn) {
+            if (! $stockIn->date_received) {
+                continue;
+            }
+
+            $origin = $stockIn->origin ? ' ('.$stockIn->origin.')' : '';
+
+            $events[] = self::ledgerEvent([
+                'date' => $stockIn->date_received->toDateString(),
+                'sort' => 1,
+                'description' => 'Stock In — '.($stockIn->supplier?->supplier_name ?? 'Supplier').$origin,
+                'seedling' => true,
+                'seedlings' => (int) $stockIn->quantity,
+                'display_batch_id' => null,
+                'display_variety_id' => null,
+                'balance_batch_id' => null,
+                'balance_delta' => 0,
+            ]);
+        }
+
+        // Mortality — a dated outflow per record.
+        foreach (MortalityRecord::query()->with('batch')->get() as $record) {
+            if (! $record->recorded_at) {
+                continue;
+            }
+
+            $varietyId = $record->batch?->scion_variety_id ? (int) $record->batch->scion_variety_id : null;
+
+            $events[] = self::ledgerEvent([
+                'date' => $record->recorded_at->toDateString(),
+                'sort' => 1,
+                'description' => 'Mortality — '.($record->cause ?: 'Unspecified').' ('.($record->batch?->batch_code ?? '—').')',
+                'mortality' => $varietyId !== null ? [$varietyId => (int) $record->quantity] : [],
+                'display_batch_id' => (int) $record->batch_id,
+                'display_variety_id' => $varietyId,
+                'balance_batch_id' => (int) $record->batch_id,
+                'balance_delta' => -(int) $record->quantity,
+            ]);
+        }
+
+        // Regraft — a dated outflow from the SOURCE batch, shown (and filtered)
+        // against the sub-batch it created, under the sub-batch's variety.
+        foreach (RegraftRecord::query()->with(['batch', 'parent'])->get() as $record) {
+            if (! $record->regraft_date) {
+                continue;
+            }
+
+            $subBatch = $record->batch;
+            $parent = $record->parent;
+            $varietyId = $subBatch?->scion_variety_id ? (int) $subBatch->scion_variety_id : null;
+            $sourceCode = $parent?->batch_code ?? $subBatch?->batch_code ?? '—';
+            $subBatchCode = $subBatch?->batch_code ?? '—';
+
+            $events[] = self::ledgerEvent([
+                'date' => $record->regraft_date->toDateString(),
+                'sort' => 1,
+                'description' => 'Regraft '.$sourceCode.' → '.$subBatchCode.($record->remark ? ' — '.$record->remark : ''),
+                'regraft' => $varietyId !== null ? [$varietyId => (int) $record->quantity] : [],
+                'display_batch_id' => (int) $record->batch_id,
+                'display_variety_id' => $varietyId,
+                'balance_batch_id' => $parent ? (int) $parent->batch_id : null,
+                'balance_delta' => -(int) $record->quantity,
+            ]);
+        }
+
+        // Pullout — one dated row per Stock Out detail line (per the client's
+        // spreadsheet), reducing the released batch's running balance.
+        foreach (StockOutDetail::query()->with(['stockOut.client', 'batch'])->get() as $detail) {
+            $releaseDate = $detail->stockOut?->release_date;
+
+            if (! $releaseDate) {
+                continue;
+            }
+
+            $batch = $detail->batch;
+            $varietyId = $detail->scion_variety_id
+                ? (int) $detail->scion_variety_id
+                : ($batch?->scion_variety_id ? (int) $batch->scion_variety_id : null);
+            $quantity = (int) $detail->quantity;
+            $batchCode = $batch?->batch_code ?? '—';
+            $clientName = $detail->stockOut?->client?->client_name ?? 'Client';
+
+            $events[] = self::ledgerEvent([
+                'date' => $releaseDate->toDateString(),
+                'sort' => 1,
+                'description' => 'Pullout '.$batchCode.' → '.$clientName.' ('.number_format($quantity).' '.$detail->unit.')',
+                'pullout' => $varietyId !== null ? [$varietyId => $quantity] : [],
+                'display_batch_id' => (int) $detail->batch_id,
+                'display_variety_id' => $varietyId,
+                'balance_batch_id' => (int) $detail->batch_id,
+                'balance_delta' => -$quantity,
+            ]);
+        }
+
+        return $events;
+    }
+
+    /**
+     * Normalise a partial ledger event into the full shape the grid expects.
+     *
+     * @param  array<string,mixed>  $event
+     * @return array<string,mixed>
+     */
+    protected static function ledgerEvent(array $event): array
+    {
+        return array_merge([
+            'seedling' => false,
+            'seedlings' => 0,
+            'grafted' => [],
+            'mortality' => [],
+            'regraft' => [],
+            'ready' => [],
+            'pullout' => [],
+            'remaining' => null,
+        ], $event);
+    }
+
+    /**
+     * Reconcile every batch's final running balance against the authoritative
+     * live {@see Batch::survivingQuantity()}. A disagreement means the ledger's
+     * independent event mathematics and the live balance have diverged (e.g. a
+     * drifted `batches.regraft` counter or `available_count`) — fail loudly
+     * rather than render a plausible-looking but wrong figure.
+     *
+     * @param  array<int,int>  $balances
+     * @param  Collection<int,Batch>  $batches
+     */
+    protected static function assertLedgerRunningBalanceReconciles(array $balances, Collection $batches): void
+    {
+        foreach ($batches as $batch) {
+            if (! $batch->grafted_date) {
+                continue;
+            }
+
+            $final = (int) ($balances[(int) $batch->batch_id] ?? 0);
+            $surviving = $batch->survivingQuantity();
+
+            if ($final !== $surviving) {
+                throw new \RuntimeException(sprintf(
+                    'Stock Ledger running balance does not reconcile for batch %s: running balance %d, Batch::survivingQuantity() %d.',
+                    $batch->batch_code,
+                    $final,
+                    $surviving,
+                ));
+            }
+        }
     }
 
     /**

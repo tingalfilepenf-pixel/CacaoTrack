@@ -96,9 +96,9 @@
             <div class="text-danger small mt-2">{{ $message }}</div>
         @enderror
         <small class="text-muted d-block mt-2">
-            Monthly grid grouped by month, with dynamic per-Scion-Variety columns. Seedlings = Stock In quantity (seedling-only receipts);
-            Grafted = root-batch total grafted; Mortality / Regraft / Ready to Plant / Pullout, per scion variety.
-            <span class="fst-italic">Ready to Plant = each batch's surviving sellable balance (mortality excluded); Pullout = the batch's cumulative total to date. Both are current-state, per-batch figures shown under the batch's original grafted month.</span>
+            Chronological transaction ledger grouped by month, with dynamic per-Scion-Variety columns. Seedlings = Stock In quantity (seedling-only receipts);
+            Grafted = root-batch total grafted; Mortality / Regraft / Pullout each post one dated row per real event; Ready to Plant = each batch's current surviving balance.
+            <span class="fst-italic">Remaining Available is the running balance for each batch after every event (grafted &minus; regraft &minus; mortality &minus; pullout to date); a batch's final Remaining Available equals its surviving balance.</span>
             Filtering by a batch matches that exact batch only; selecting a parent does not include its sub-batches.
         </small>
     </div>
@@ -128,6 +128,7 @@
                                 @foreach ($sections as $sectionLabel)
                                     <th colspan="{{ $varietyCount }}" class="text-center">{{ $sectionLabel }}</th>
                                 @endforeach
+                                <th rowspan="2" class="align-middle text-end">Remaining Available</th>
                             </tr>
                             <tr class="text-center">
                                 @foreach ($sections as $sectionKey => $sectionLabel)
@@ -159,6 +160,7 @@
                                             @endforeach
                                         @endif
                                     @endforeach
+                                    <td class="text-end fw-bold text-success">{{ $row['remaining'] !== null ? number_format($row['remaining']) : '—' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -175,6 +177,7 @@
                                         @endforeach
                                     @endif
                                 @endforeach
+                                <td class="text-end">—</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -198,6 +201,7 @@
                             @foreach ($sections as $sectionLabel)
                                 <th colspan="{{ $varietyCount }}" class="text-center">{{ $sectionLabel }}</th>
                             @endforeach
+                            <th rowspan="2" class="align-middle text-end">Remaining Available</th>
                         </tr>
                         <tr class="text-center">
                             @foreach ($sections as $sectionKey => $sectionLabel)
@@ -224,6 +228,7 @@
                                     @endforeach
                                 @endif
                             @endforeach
+                            <td class="text-end">—</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -234,8 +239,10 @@
 
 <p class="text-muted small fst-italic">
     Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same
-    plants; no cross-column total is implied.
-    Ready to Plant and Pullout both reflect each batch's current totals to date, shown under its original grafted month — not activity within that specific month.
+    plants; no cross-column total is implied. Pullout posts one dated row per Stock Out release.
+    Remaining Available is the running balance after each event (grafted &minus; regraft &minus; mortality &minus; pullout to date);
+    a batch's final Remaining Available equals its surviving balance. Ready to Plant is each batch's current surviving figure,
+    shown under its original grafted month.
 </p>
 
 <div class="card mb-4">

@@ -279,23 +279,33 @@ class Batch extends Model
      * The surviving / releasable quantity of this batch — the single cap shared
      * by the regraft flow and Stock Out.
      *
-     * A dead root stock can neither be regrafted nor released, so the cap is the
-     * tightest of the live available balance and the still-attributable, surviving
-     * population (`total_grafted − regraft − effective mortality`,
-     * client-confirmed):
-     * `max(0, min(available_count, (total_grafted - regraft) - effective mortality))`.
+     * The client-confirmed surviving population subtracts EVERY outflow from the
+     * batch's establishment quantity, each once:
+     * `total_grafted − regraft − effective mortality − stock_out`.
+     *
+     * The live `available_count` already nets out regraft-out and Stock Out (it is
+     * set to `total_grafted` on create, then decremented by {@see RegraftBatch}
+     * and the Stock Out controller); mortality is the only outflow it does not
+     * reflect. So `available_count − effective mortality` is exactly the
+     * expression above, tracked from the authoritative live balance. Deriving it
+     * from `available_count` (rather than re-summing the Stock Out history) also
+     * keeps the record-correction flow correct, because that flow temporarily
+     * restores `available_count` before re-validating an edited release.
+     *
+     * Earlier this method instead took the tighter of two one-sided exclusions
+     * (`min(available_count, (total_grafted − regraft) − mortality)`), which
+     * subtracted only the larger of mortality / stock-out and thus over-stated
+     * the releasable balance whenever a batch had BOTH — it let dead plants be
+     * released. Subtracting both aligns the Stock Out gate with the Stock Ledger's
+     * running "Remaining Available" balance.
      *
      * It is used by {@see RegraftBatch} as the regraft cap and by the Stock Out
      * controller as the release cap, so plants already recorded as mortality can
-     * never be regrafted or released. This is why mortality does not have to
-     * decrement `available_count` — the surviving cap accounts for it.
+     * never be regrafted or released.
      */
     public function survivingQuantity(): int
     {
-        return max(0, min(
-            (int) $this->available_count,
-            ((int) $this->total_grafted - (int) $this->regraft) - $this->effectiveMortalityQuantity(),
-        ));
+        return max(0, (int) $this->available_count - $this->effectiveMortalityQuantity());
     }
 
     /**

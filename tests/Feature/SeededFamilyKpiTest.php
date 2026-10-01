@@ -233,10 +233,13 @@ class SeededFamilyKpiTest extends TestCase
 
         // Grafted = root batches only (B001 500 + B002 150 + B003 100).
         $this->assertSame(750, $grid['summary']['grafted']);
-        // Ready to Plant (surviving sellable balance, mortality excluded) =
-        // 375 + 50 + 30 + 135 + 90 = 680 (was 730 under the raw available_count).
-        $this->assertSame(680, $grid['summary']['ready_to_plant']);
-        // Pullout = cumulative all-time: the single B001-R1 release of 20.
+        // Ready to Plant (surviving sellable balance: mortality AND stock-out
+        // excluded) = 375 + 45 + 30 + 135 + 90 = 675. B001-R1 is 45 (was 50
+        // under the old one-sided cap that only subtracted the larger of
+        // mortality / stock-out), reflecting the approved gate alignment.
+        $this->assertSame(675, $grid['summary']['ready_to_plant']);
+        // Pullout now posts one dated row per Stock Out release; the total is
+        // unchanged at the single B001-R1 release of 20.
         $this->assertSame(20, $grid['summary']['pullout']);
         $this->assertSame(130, $grid['summary']['regraft']);
         $this->assertSame(800, $grid['summary']['seedlings']);

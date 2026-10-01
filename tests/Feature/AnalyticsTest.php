@@ -17,10 +17,14 @@ use Tests\TestCase;
  *
  * Fixture (real, non-zero mortality and regraft so the Gap Report has genuine
  * data to verify against):
- *   B001 / Criollo   grafted 200, available 170, grafted 2026-07-15
+ *   B001 / Criollo   grafted 200, regraft 15, available 185, grafted 2026-07-15
  *   B002 / Trinitario grafted 100, available 100, grafted 2026-08-20
  *   Mortality:    B001 Disease 25, B002 Pest 10  (total 35)
  *   Regraft:      B001 15
+ *
+ * The fixture is internally consistent (`available_count = total_grafted -
+ * regraft - stock_out`) so the Stock Ledger's loud running-balance reconciliation
+ * holds: B001 200 - 15 regraft - 25 mortality = 160 = 185 - 25.
  *
  * Corrected Gap formula (Session BS): gap = Batch::effectiveMortalityQuantity()
  * (recorded mortality), NOT total_grafted − available − stock_out (an identity
@@ -49,7 +53,7 @@ class AnalyticsTest extends TestCase
         $this->criollo = ScionVariety::create(['scion_variety_name' => 'Criollo']);
         $this->trinitario = ScionVariety::create(['scion_variety_name' => 'Trinitario']);
 
-        $this->b001 = $this->createBatch($this->criollo, 'B001', 200, 170, '2026-07-15');
+        $this->b001 = $this->createBatch($this->criollo, 'B001', 200, 185, '2026-07-15');
         $this->b002 = $this->createBatch($this->trinitario, 'B002', 100, 100, '2026-08-20');
 
         MortalityRecord::create([
@@ -70,6 +74,7 @@ class AnalyticsTest extends TestCase
 
         RegraftRecord::create([
             'batch_id' => $this->b001->batch_id,
+            'parent_batch_id' => $this->b001->batch_id,
             'user_id' => $this->user->id,
             'quantity' => 15,
             'regraft_date' => '2026-09-03',
@@ -125,7 +130,7 @@ class AnalyticsTest extends TestCase
             ->get(route('analytics.index'))
             ->assertOk()
             ->assertSee('Operational Analytics')
-            ->assertSee('270')    // total active inventory (170 + 100)
+            ->assertSee('285')    // total active inventory (185 + 100)
             ->assertSee('12.28')  // crude mortality rate = 35 / (200-15 + 100) = 35/285
             ->assertSee('20');    // total regraft deficit (B001 10 + B002 10)
     }
@@ -153,7 +158,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Operational Analytics', $content);
         $this->assertStringContainsString('Total Active Inventory', $content);
         $this->assertStringContainsString('Total Archived Inventory', $content);
-        $this->assertStringContainsString('270', $content);
+        $this->assertStringContainsString('285', $content);
         $this->assertStringContainsString('Crude Mortality Rate', $content);
         $this->assertStringContainsString('12.28%', $content);
         $this->assertStringContainsString('Regraft Deficit', $content);
@@ -186,12 +191,12 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Survival vs Mortality', $csv);
         $this->assertStringContainsString('Criollo', $csv);
         $this->assertStringContainsString('B001', $csv);
-        $this->assertStringContainsString('270', $csv);
+        $this->assertStringContainsString('285', $csv);
     }
 
     public function test_centralized_metrics_return_real_values(): void
     {
-        $this->assertSame(270, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame(285, AnalyticsMetrics::totalActiveInventory());
         $this->assertSame(0, AnalyticsMetrics::totalArchivedInventory());
         $this->assertSame(20, AnalyticsMetrics::totalRegraftDeficit());
         // Denominator = SUM(total_grafted - regraft) = (200-15) + 100 = 285;
@@ -487,9 +492,9 @@ class AnalyticsTest extends TestCase
         $profile = AnalyticsMetrics::ageProfile(null, null, '2026-09-14');
 
         $this->assertSame(['0-30 Days', '31-60 Days', '61-90 Days', '91+ Days'], $profile['labels']);
-        $this->assertSame(270, $profile['total']);
+        $this->assertSame(285, $profile['total']);
         $this->assertSame(100, $profile['values'][0]); // B002 is 25 days old
-        $this->assertSame(170, $profile['values'][2]); // B001 is 61 days old
+        $this->assertSame(185, $profile['values'][2]); // B001 is 61 days old
 
         $this->actingAs($this->user)
             ->get(route('analytics.historical.age-profile', ['as_of' => '2026-09-14']))
@@ -508,7 +513,7 @@ class AnalyticsTest extends TestCase
         // Cross-batch total counts each plant once: SUM(total_grafted - regraft)
         // = (200 - 15) + (100 - 0) = 285, NOT the raw total_grafted 200 + 100.
         $this->assertSame(285, $gap['totalExpected']);
-        $this->assertSame(270, $gap['totalActual']);     // available 170 + 100
+        $this->assertSame(285, $gap['totalActual']);     // available 185 + 100
         $this->assertSame(35, $gap['totalGap']);         // mortality 25 + 10
 
         $b001 = collect($gap['rows'])->firstWhere('batch', 'B001');
@@ -565,11 +570,11 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('B002', $content);
         $this->assertStringContainsString('Criollo', $content);
         $this->assertStringContainsString('Expected: 285', $content);
-        $this->assertStringContainsString('Available: 270', $content);
+        $this->assertStringContainsString('Available: 285', $content);
         // FPDF escapes the parentheses in the label.
         $this->assertStringContainsString('Gap \(effective mortality\): 35', $content);
         $this->assertStringContainsString('200', $content); // B001 expected (total grafted)
-        $this->assertStringContainsString('170', $content); // B001 available
+        $this->assertStringContainsString('185', $content); // B001 available
         $this->assertStringContainsString("Expected counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $content);
     }
 
@@ -597,9 +602,9 @@ class AnalyticsTest extends TestCase
 
         // fputcsv quotes headers containing spaces/parentheses.
         $this->assertStringContainsString('Batch,"Parent Batch",Variety,Expected,Available,"Pulled Out","Gap (Effective Mortality)"', $csv);
-        $this->assertStringContainsString('B001,,Criollo,200,170,0,25', $csv);
+        $this->assertStringContainsString('B001,,Criollo,200,185,0,25', $csv);
         $this->assertStringContainsString('B002,,Trinitario,100,100,0,10', $csv);
-        $this->assertStringContainsString('Total,,,285,270,0,35', $csv);
+        $this->assertStringContainsString('Total,,,285,285,0,35', $csv);
         $this->assertStringContainsString("Expected counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $csv);
     }
 
@@ -631,7 +636,7 @@ class AnalyticsTest extends TestCase
         $this->assertSame($this->user->id, $report->user_id);
         $this->assertSame('operational', $report->analysis_type);
         $this->assertSame('2026-09-01 to 2026-09-30', $report->analysis_period);
-        $this->assertSame(270, $report->result_summary['total_active_inventory']);
+        $this->assertSame(285, $report->result_summary['total_active_inventory']);
     }
 
     public function test_generate_report_rejects_unknown_analysis_type(): void

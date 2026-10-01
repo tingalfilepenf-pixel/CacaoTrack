@@ -173,7 +173,8 @@ class StockLedgerNestingTest extends TestCase
             ->assertOk()
             ->assertSee('Batch summary (nested)')
             ->assertSee('Sub-batch quantities appear under Regraft, not Grafted')
-            ->assertSee('Ready to Plant and Pullout both reflect each batch', false)
+            ->assertSee('Pullout posts one dated row per Stock Out release', false)
+            ->assertSee('Remaining Available is the running balance', false)
             ->assertSee("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", false)
             ->assertSee('B001-R1-R1')
             ->assertSee('↳');
@@ -193,7 +194,8 @@ class StockLedgerNestingTest extends TestCase
         $this->assertStringContainsString('Total Grafted', $csv);
         $this->assertStringContainsString('B001-R1-R1', $csv);
         $this->assertStringContainsString('Sub-batch quantities appear under Regraft, not Grafted', $csv);
-        $this->assertStringContainsString('Ready to Plant and Pullout both reflect each batch', $csv);
+        $this->assertStringContainsString('Pullout posts one dated row per Stock Out release', $csv);
+        $this->assertStringContainsString('Remaining Available is the running balance', $csv);
         $this->assertStringContainsString("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $csv);
     }
 
@@ -207,10 +209,12 @@ class StockLedgerNestingTest extends TestCase
         $content = $response->getContent();
 
         $this->assertStringStartsWith('%PDF', $content);
-        // FPDF escapes parentheses in the content stream.
+        // FPDF escapes parentheses in the content stream. The long footnote wraps
+        // across multiple FPDF lines, so only per-line fragments are contiguous.
         $this->assertStringContainsString('Batch summary \(nested\)', $content);
         $this->assertStringContainsString('B001-R1-R1', $content);
-        $this->assertStringContainsString('Ready to Plant and Pullout both reflect each batch', $content);
+        $this->assertStringContainsString('Remaining Available', $content);
+        $this->assertStringContainsString('Sub-batch quantities appear under Regraft, not Grafted', $content);
         $this->assertStringContainsString("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $content);
     }
 
@@ -263,75 +267,68 @@ class StockLedgerNestingTest extends TestCase
         return $rows;
     }
 
-    public function test_ledger_ready_and_pullout_are_current_state_per_batch_figures(): void
+    public function test_ledger_ready_is_current_state_and_pullout_posts_per_event(): void
     {
         $grid = AnalyticsMetrics::stockLedgerGrid();
         $rows = $this->perBatchRows($grid);
 
-        // Ready to Plant = survivingQuantity() (recorded mortality excluded);
-        // Pullout = cumulative all-time Stock Out for that batch. B001 has
-        // mortality 25 and no Stock Out; B001-R1 has a real Stock Out of 20.
+        // Ready to Plant = survivingQuantity() — every outflow (regraft,
+        // mortality AND stock-out) excluded. B001 has mortality 25 and no Stock
+        // Out; B001-R1 has mortality 5 and a real Stock Out of 20.
         $this->assertSame(375, array_sum($rows['B001']['ready']));
-        $this->assertSame(0, array_sum($rows['B001']['pullout']));
-
-        $this->assertSame(50, array_sum($rows['B001-R1']['ready']));
-        $this->assertSame(20, array_sum($rows['B001-R1']['pullout']));
-
+        $this->assertSame(45, array_sum($rows['B001-R1']['ready']));
         $this->assertSame(30, array_sum($rows['B001-R1-R1']['ready']));
-        $this->assertSame(0, array_sum($rows['B001-R1-R1']['pullout']));
-
-        // A batch with mortality but no pullout: surviving = min(150, 150-15).
         $this->assertSame(135, array_sum($rows['B002']['ready']));
-        $this->assertSame(0, array_sum($rows['B002']['pullout']));
+        $this->assertSame(90, array_sum($rows['B003']['ready']));
 
-        // 375 + 50 + 30 + 135 + 90; Pullout is the one real release (20).
-        $this->assertSame(680, $grid['summary']['ready_to_plant']);
+        // The establishment rows no longer carry a cumulative Pullout stamp.
+        $this->assertSame(0, array_sum($rows['B001']['pullout']));
+        $this->assertSame(0, array_sum($rows['B001-R1']['pullout']));
+
+        // Pullout posts as its own dated event row, attributed to the released
+        // batch/variety and summing to the real release of 20.
+        $pulloutRows = collect($grid['months'])
+            ->flatMap(fn (array $month) => $month['rows'])
+            ->filter(fn (array $row) => str_starts_with((string) $row['description'], 'Pullout '))
+            ->values();
+
+        $this->assertCount(1, $pulloutRows);
+        $this->assertSame('Pullout B001-R1 → Cacao Farmers Coop (20 pots)', $pulloutRows[0]['description']);
+        $this->assertSame(20, array_sum($pulloutRows[0]['pullout']));
+
+        // 375 + 45 + 30 + 135 + 90 = 675; Pullout is the one real release (20).
+        $this->assertSame(675, $grid['summary']['ready_to_plant']);
         $this->assertSame(20, $grid['summary']['pullout']);
     }
 
     /**
-     * Reconciliation (item 4): for every batch,
-     * `survivingQuantity() + cumulative_pullout == (total_grafted - regraft)`
-     * whenever recorded mortality has NOT cut the surviving pool below
-     * `available_count` (equivalently, mortality ≤ cumulative pullout). Where
-     * mortality does bite, the shortfall is exactly that mortality.
+     * Reconciliation: every batch's final running "Remaining Available" equals
+     * its live `Batch::survivingQuantity()` exactly (the ledger and the
+     * authoritative gate agree).
      */
-    public function test_ready_plus_cumulative_pullout_reconciles_each_batch(): void
+    public function test_each_batchs_final_running_balance_equals_its_surviving_quantity(): void
     {
-        $reconciled = 0;
-        $mortalityBound = 0;
+        $grid = AnalyticsMetrics::stockLedgerGrid();
 
-        foreach (Batch::query()->get() as $batch) {
-            $cumulativePullout = (int) $batch->stockOutDetails()->sum('quantity');
-            $mortality = $batch->effectiveMortalityQuantity();
-            $livePopulation = (int) $batch->total_grafted - (int) $batch->regraft;
-            $surviving = $batch->survivingQuantity();
+        $finalByBatch = [];
 
-            $mortalityReducedPool = (int) $batch->available_count > $livePopulation - $mortality;
+        foreach ($grid['months'] as $month) {
+            foreach ($month['rows'] as $row) {
+                $balanceBatch = $row['balance_batch_id'] ?? null;
 
-            if ($mortalityReducedPool) {
-                // Mortality is the binding cap, so surviving == live - mortality.
-                $this->assertSame(
-                    $livePopulation - $mortality,
-                    $surviving,
-                    "Reconciliation failed for {$batch->batch_code} (mortality-bound pool)",
-                );
-                $mortalityBound++;
-
-                continue;
+                if ($balanceBatch !== null && $row['remaining'] !== null) {
+                    $finalByBatch[$balanceBatch] = $row['remaining'];
+                }
             }
-
-            $this->assertSame(
-                $livePopulation,
-                $surviving + $cumulativePullout,
-                "Reconciliation failed for {$batch->batch_code}",
-            );
-            $reconciled++;
         }
 
-        // Seeded family: B001-R1 (P=20 ≥ M=5) and B001-R1-R1 (M=P=0) reconcile;
-        // B001, B002 and B003 are mortality-bound.
-        $this->assertSame(2, $reconciled);
-        $this->assertSame(3, $mortalityBound);
+        foreach (Batch::query()->get() as $batch) {
+            $this->assertArrayHasKey($batch->batch_id, $finalByBatch);
+            $this->assertSame(
+                $batch->survivingQuantity(),
+                $finalByBatch[$batch->batch_id],
+                "Running balance does not reconcile for {$batch->batch_code}",
+            );
+        }
     }
 }
