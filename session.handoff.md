@@ -1,6 +1,23 @@
 # Session Handoff — CacaoTrack
 
 > ### ▶ Continue here (latest: Session DA — **Stock Ledger "Ready to Plant" clarification footnote (view/PDF/CSV) + `cacao:health` on live `db_capstone` still passes**)
+> - **▶ NEXT UP (open threads — start here next session):**
+>   - **(a) The CZ "Ready to Plant" mismatch is documented, NOT fixed.** `AnalyticsMetrics::stockLedgerGrid()`
+>     (`app/Support/AnalyticsMetrics.php:585`) shows `available_count` stamped on the batch's `grafted_date`,
+>     while the Stock Out gate uses `Batch::survivingQuantity()` (`StockOutController.php:197,220`). DA only
+>     added a clarifying footnote. **Any fix is gated on the client's "Ready to Plant" definition** —
+>     `AGENTS.md` P6 deferred item #4 says leave it exactly as-is until the client confirms. Do not change
+>     the formula/mapping unprompted.
+>   - **(b) Live `db_capstone` has drifted since the CY reseed** (6 batches incl. B002-R1, 3 regraft records,
+>     2 stock-out details; B001 `available_count` 385). `cacao:health` still passes (exit 0, 6 batches). Any
+>     reseed / destructive action still needs fresh owner sign-off; tests only on `db_capstone_test`.
+>   - **(c) Full suite last green at `344 passed / 1506 assertions` (Session CY).** DA changed only footnote
+>     text; it re-ran just `StockLedgerNestingTest` (**9 passed / 50 assertions**). Re-run the full MySQL
+>     suite before any larger change: `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`.
+>   - **(d) Uncommitted docs only:** `git status` may show the two sample exports
+>     (`docs/cacao-operational-analytics-2026-09-25.csv`, `docs/cacao-stock-ledger.csv`) left untracked by
+>     design — do not add them.
+>   - **Client has since confirmed two business rules, not yet implemented:** (1) available_count represents 'ready to sell' — keep the 'Ready to Plant' label per client terminology, but the Ledger's figure should use survivingQuantity() instead of raw available_count, and Pullout should become a cumulative per-batch total instead of month-scoped (see item (a) above, now resolved). (2) Mortality should also roll up at the family level (a batch's total including all its descendant sub-batches), in addition to the existing per-batch figure, not replacing it — new rule, not yet built. Neither change has been implemented yet.
 > - **▶ Session DA (DONE — display-only "Ready to Plant" footnote added to the Stock Ledger; live `cacao:health` re-run clean; 2026-10-01):**
 >   **(1) Footnote (display/text only, no logic change)** — one line was appended to the SAME three locations as
 >   the Phase 7C Regraft/Grafted footnote: the on-screen grid note
