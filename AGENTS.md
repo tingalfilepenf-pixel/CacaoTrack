@@ -8,6 +8,40 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## OPERATIONAL DATA CLEARED — live `db_capstone` emptied for manual flow-testing (2026-10-01, Session DD)
+- **One explicitly project-owner-approved destructive action** (connection `mysql` / database
+  `db_capstone`): the operational/transaction tables were truncated so the owner can hand-enter every
+  number and follow the flows step by step. **No batch/mortality/regraft/stock-out scenario was
+  reseeded.** Standing rule unchanged: tests run **only** against `db_capstone_test`; any further
+  destructive or schema action on the live DB needs fresh sign-off.
+- **Backup first (verified, left untouched outside the repo):**
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_cleared_20261001_235027.sql`
+  — **36,106 B**, 23 `CREATE TABLE`, 15 `INSERT INTO`,
+  `--single-transaction --routines --triggers --events`, includes `CREATE DATABASE`/`USE db_capstone`,
+  `mysqldump` exit **0**, clean `-- Dump completed on 2026-10-01 23:50:27` trailer. **The full original
+  seeded baseline is recoverable from this file.**
+- **Truncated (FK-safe order — children before parents), `SET FOREIGN_KEY_CHECKS=0`, exit 0:**
+  `activity_logs`, `inventories`, `stock_out_details`, `stock_outs`, `regraft_records` *(the request named
+  `replanting_records`; the live table is `regraft_records` after the Session CR rename)*,
+  `mortality_records`, `batches`, `stock_ins`. `TRUNCATE` reset every `AUTO_INCREMENT` to **1** (verified
+  via `SHOW TABLE STATUS`), so the first UI-created batch is ID 1.
+- **Preserved unchanged (BEFORE == AFTER):** `users` **1**, `scion_varieties` **5**, `suppliers` **3**,
+  `clients` **3**. Also left untouched: `activity_tasks`, `task_completes`, `analytics`, `migrations`, and
+  the framework tables (`cache`, `jobs`, `sessions`, …).
+- **BEFORE counts:** activity_logs 11, inventories 5, stock_out_details 1, stock_outs 1, regraft_records 2,
+  mortality_records 4, batches 5, stock_ins 4; users 1, scion_varieties 5, suppliers 3, clients 3;
+  `migrate:status` 53 Ran / 0 Pending; `cacao:health` **PASSED (5 batches)**.
+- **AFTER counts:** all 8 truncated tables **0**; preserved tables still users 1 / scion_varieties 5 /
+  suppliers 3 / clients 3; `migrate:status` **53 Ran / 0 Pending**; `cacao:health` **PASSED**
+  ("Cacao health check passed. No batches to check.", exit 0).
+- **End-to-end (read-only, real login as the preserved administrator `admin@cacaotrack.test` — no new user
+  created):** Dashboard `/`, Batches `/operational/batches`, Stock In `/inventory/stock-in`, Stock Out
+  `/inventory/stock-out`, Inventory `/inventory`, Stock Ledger `/analytics/stock-ledger` all return **200**
+  with no error pages and render proper empty states ("No batches found", "No stock-in transactions found",
+  "No stock-out transactions found", "No inventory snapshots found", "No batch" on the ledger).
+- **`db_capstone` now holds 0 batches** with master/reference data intact; the seeder baseline can be
+  restored from the backup above (requires fresh sign-off).
+
 ## STOCK LEDGER REWORK + `survivingQuantity()` FIX (2026-10-01, Session DC)
 - **`Batch::survivingQuantity()` was corrected — it is the real Stock Out / Regraft validation gate, not a
   display value.** It previously returned

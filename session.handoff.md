@@ -1,6 +1,24 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session DC — **Stock Ledger Pullout as dated rows + running "Remaining Available"; `Batch::survivingQuantity()` corrected to also subtract stock-out**)
+> ### ▶ Continue here (latest: Session DD — **live `db_capstone` operational data cleared to empty for manual step-by-step flow testing; users + master/reference data preserved**)
+> - **▶ Session DD (DONE — owner-approved one-time clear of live `db_capstone` operational data; users + master data preserved; docs-only commit; 2026-10-01):**
+>   **Backup first** (verified, left untouched outside the repo):
+>   `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_cleared_20261001_235027.sql`
+>   (**36,106 B**, 23 `CREATE TABLE`, 15 `INSERT INTO`, `--single-transaction --routines --triggers --events`,
+>   clean `Dump completed on 2026-10-01 23:50:27` trailer, `mysqldump` exit 0). **The full seeded baseline is
+>   recoverable from this file.** **Truncated (FK-safe, `FOREIGN_KEY_CHECKS=0`, exit 0; `AUTO_INCREMENT`
+>   reset to 1):** activity_logs, inventories, stock_out_details, stock_outs, regraft_records,
+>   mortality_records, batches, stock_ins. (The request named `replanting_records`; the live table is
+>   `regraft_records` after the Session CR rename.) **Preserved (BEFORE == AFTER):** users 1,
+>   scion_varieties 5, suppliers 3, clients 3; also untouched: activity_tasks, task_completes, analytics,
+>   migrations, framework tables. **BEFORE:** activity_logs 11 / inventories 5 / stock_out_details 1 /
+>   stock_outs 1 / regraft_records 2 / mortality_records 4 / batches 5 / stock_ins 4; `cacao:health` PASSED
+>   (5 batches). **AFTER:** the 8 tables all **0**; preserved counts unchanged; `migrate:status`
+>   **53 Ran / 0 Pending**; `cacao:health` PASSED ("No batches to check.", exit 0). **End-to-end read-only as
+>   the preserved admin (`admin@cacaotrack.test`, no new user):** Dashboard, Batches, Stock In, Stock Out,
+>   Inventory and Stock Ledger all **200** with proper empty states. **No scenario reseeded** — the owner is
+>   entering every number manually. `db_capstone` now has 0 batches; restore the seeded baseline from the
+>   backup if needed (fresh sign-off).
 > - **▶ Session DC (DONE — Stock Ledger reworked to a true chronological ledger; `Batch::survivingQuantity()` corrected; docs-only commit; 2026-10-01):**
 >   **(1) `Batch::survivingQuantity()` bug fixed — this is the real Stock Out/Regraft validation gate, not a
 >   display value.** It previously returned
