@@ -59,6 +59,8 @@ class DashboardTest extends TestCase
         $response->assertSee('Total Active Inventory');
         $response->assertSee('Crude Mortality Rate');
         $response->assertSee('Regraft Deficit');
+        $response->assertSee('Archived:');
+        $response->assertViewHas('totalArchivedInventory', AnalyticsMetrics::totalArchivedInventory());
         $response->assertSee('Recent Activities');
     }
 
@@ -110,6 +112,7 @@ class DashboardTest extends TestCase
         $response->assertDontSee('survivalChart');
         $response->assertDontSee('inventoryVarietyChart');
         $response->assertViewHas('totalActiveInventory', 0);
+        $response->assertViewHas('totalArchivedInventory', 0);
         $response->assertViewHas('totalRegraftDeficit', 0);
     }
 

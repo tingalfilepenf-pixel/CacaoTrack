@@ -21,7 +21,8 @@ use Illuminate\Support\Facades\DB;
  * Every dashboard/report/chart value must trace back to actual database rows
  * through one of these definitions (RULE 12). Formulas that already exist on
  * the models are reused rather than re-implemented:
- *  - Total Active Inventory  -> Batch::totalAvailableQuantity()
+ *  - Total Active Inventory  -> SUM(batches.available_count) of ACTIVE batches
+ *  - Total Archived Inventory -> SUM(batches.available_count) of archived batches
  *  - Regraft Deficit         -> Batch::regraftDeficit()
  *  - Effective mortality     -> MortalityRecord::effectiveQuantity()
  *
@@ -78,13 +79,28 @@ class AnalyticsMetrics
 
     /**
      * Total Active Inventory (the dashboard "Current Inventory" KPI, PRD §10):
-     * the live available balance summed across ALL batches (archived included —
-     * the deliberate existing design decision). Replaces the removed
-     * `Inventory::totalActiveQuantity()`.
+     * the live available balance summed across ACTIVE batches only.
+     *
+     * Archived batches (`archived_at IS NOT NULL`) are EXCLUDED so an archived
+     * batch no longer inflates the live figure; the archived portion is reported
+     * separately by {@see self::totalArchivedInventory()}. Together the two
+     * figures equal the gross `SUM(batches.available_count)` across every batch.
+     * Replaces the removed `Inventory::totalActiveQuantity()`.
      */
     public static function totalActiveInventory(): int
     {
-        return Batch::totalAvailableQuantity();
+        return (int) Batch::query()->active()->sum('available_count');
+    }
+
+    /**
+     * Total Archived Inventory: the live available balance held by archived
+     * batches (`archived_at IS NOT NULL`). This is the counterpart of
+     * {@see self::totalActiveInventory()} — it is shown beside the active figure
+     * so nothing silently disappears when a batch is archived.
+     */
+    public static function totalArchivedInventory(): int
+    {
+        return (int) Batch::query()->archived()->sum('available_count');
     }
 
     public static function totalRegraftDeficit(): int
@@ -1044,6 +1060,7 @@ class AnalyticsMetrics
         return match ($type) {
             Analytic::TYPE_OPERATIONAL => [
                 'total_active_inventory' => self::totalActiveInventory(),
+                'total_archived_inventory' => self::totalArchivedInventory(),
                 'crude_mortality_rate' => self::crudeMortalityRate($batchId, $scionVarietyId, $from, $to),
                 'total_regraft_deficit' => self::totalRegraftDeficit(),
             ],

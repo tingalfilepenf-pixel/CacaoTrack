@@ -41,6 +41,46 @@ class SeededFamilyKpiTest extends TestCase
         );
     }
 
+    /**
+     * Archiving a batch (through the real archive route, not a raw delete) must
+     * move its available balance out of the active KPI and into the archived
+     * KPI, so the two add back up to the gross all-batch total.
+     */
+    public function test_archiving_a_batch_moves_its_inventory_from_active_to_archived(): void
+    {
+        $admin = User::where('email', 'admin@cacaotrack.test')->firstOrFail();
+        $batch = Batch::where('batch_code', 'B003')->firstOrFail();
+
+        // Baseline: every seeded batch is active, so the archived KPI is 0 and
+        // the active KPI is the full 730.
+        $this->assertNull($batch->archived_at);
+        $this->assertSame(730, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame(0, AnalyticsMetrics::totalArchivedInventory());
+
+        $this->actingAs($admin)
+            ->post(route('operational.batches.archive', $batch))
+            ->assertRedirect(route('operational.batches'));
+
+        $batch->refresh();
+        $this->assertNotNull($batch->archived_at);
+
+        $moved = (int) $batch->available_count;
+        $this->assertSame(100, $moved);
+
+        // The active figure drops by exactly this batch's available balance and
+        // the archived figure rises by the same amount.
+        $this->assertSame(730 - $moved, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame(630, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame($moved, AnalyticsMetrics::totalArchivedInventory());
+        $this->assertSame(100, AnalyticsMetrics::totalArchivedInventory());
+
+        // Conservation: active + archived still equals the gross all-batch sum.
+        $this->assertSame(
+            (int) Batch::query()->sum('available_count'),
+            AnalyticsMetrics::totalActiveInventory() + AnalyticsMetrics::totalArchivedInventory(),
+        );
+    }
+
     public function test_crude_mortality_rate_denominator_is_the_still_attributable_population(): void
     {
         $components = AnalyticsMetrics::mortalityRateComponents();

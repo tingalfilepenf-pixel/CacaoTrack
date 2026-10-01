@@ -45,7 +45,8 @@
                         <div>
                             <p class="text-muted text-uppercase small fw-bold mb-1">Total Active Inventory</p>
                             <h2 class="mb-0 text-success">{{ number_format($totalActiveInventory) }}</h2>
-                            <span class="text-muted small">Trees currently available</span>
+                            <span class="text-muted small">Active trees (archived batches excluded)</span>
+                            <br><span class="text-muted small">Archived: {{ number_format($totalArchivedInventory) }}</span>
                         </div>
                         <i class="bi bi-tree-fill stat-card-icon text-success"></i>
                     </div>

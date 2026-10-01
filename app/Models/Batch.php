@@ -333,10 +333,12 @@ class Batch extends Model
     }
 
     /**
-     * Total Available quantity KPI: the live available balance summed across
-     * batches. This replaces the old `Inventory::totalActiveQuantity()` now
-     * that the balance lives on `batches.available_count` (RULE 6). Archived
-     * batches are included so dashboard/report figures stay stable (Session AJ).
+     * Gross available quantity: the live available balance summed across ALL
+     * batches, archived included. This replaces the old
+     * `Inventory::totalActiveQuantity()`. NOTE: the "Total Active Inventory" KPI
+     * does NOT use this gross sum — `AnalyticsMetrics::totalActiveInventory()`
+     * applies the `active()` scope (archived batches excluded) and reports the
+     * archived portion separately via `AnalyticsMetrics::totalArchivedInventory()`.
      */
     public static function totalAvailableQuantity(): int
     {

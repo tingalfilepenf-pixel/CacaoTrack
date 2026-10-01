@@ -37,6 +37,7 @@ class AnalyticsController extends Controller
     {
         return [
             'totalActiveInventory' => AnalyticsMetrics::totalActiveInventory(),
+            'totalArchivedInventory' => AnalyticsMetrics::totalArchivedInventory(),
             'crudeMortalityRate' => AnalyticsMetrics::crudeMortalityRate(),
             'totalRegraftDeficit' => AnalyticsMetrics::totalRegraftDeficit(),
             'mortalityTrend' => AnalyticsMetrics::mortalityTrend(6),
@@ -59,6 +60,7 @@ class AnalyticsController extends Controller
             now()->format('M j, Y g:i A'),
             [
                 ['label' => 'Total Active Inventory', 'value' => number_format($data['totalActiveInventory'])],
+                ['label' => 'Total Archived Inventory', 'value' => number_format($data['totalArchivedInventory'])],
                 ['label' => 'Crude Mortality Rate', 'value' => number_format($data['crudeMortalityRate'], 2).'%'],
                 ['label' => 'Regraft Deficit', 'value' => number_format($data['totalRegraftDeficit'])],
             ],
@@ -96,6 +98,7 @@ class AnalyticsController extends Controller
         fputcsv($handle, []);
         fputcsv($handle, ['Key Performance Indicators', 'Value']);
         fputcsv($handle, ['Total Active Inventory', $data['totalActiveInventory']]);
+        fputcsv($handle, ['Total Archived Inventory', $data['totalArchivedInventory']]);
         fputcsv($handle, ['Crude Mortality Rate', number_format($data['crudeMortalityRate'], 2).'%']);
         fputcsv($handle, ['Regraft Deficit', $data['totalRegraftDeficit']]);
 

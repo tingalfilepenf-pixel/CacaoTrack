@@ -7,8 +7,9 @@ use FPDF;
 /**
  * Printable "Operational Analytics" report (FPDF, portrait).
  *
- * Covers the panelist-required operational dashboard (PRD §12): the three KPI
- * cards (Total Active Inventory, Crude Mortality Rate, Replanting Deficit) and
+ * Covers the panelist-required operational dashboard (PRD §12): the KPI cards
+ * (Total Active Inventory, Total Archived Inventory, Crude Mortality Rate,
+ * Regraft Deficit) and
  * the tabular values behind each on-screen chart (mortality trend, inventory by
  * variety, replanting deficit by batch, survival vs mortality). Every value is
  * passed in by the controller from the centralized AnalyticsMetrics methods
@@ -166,8 +167,9 @@ class OperationalAnalyticsPdf extends FPDF
 
         $x = 12.0;
         $y = $this->GetY();
-        $boxWidth = 60.0;
         $gap = 3.0;
+        $count = max(1, count($this->kpis));
+        $boxWidth = (self::CONTENT_WIDTH - ($gap * ($count - 1))) / $count;
         $boxHeight = 20.0;
 
         foreach ($this->kpis as $index => $kpi) {

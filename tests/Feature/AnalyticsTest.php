@@ -152,6 +152,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringStartsWith('%PDF', $content);
         $this->assertStringContainsString('Operational Analytics', $content);
         $this->assertStringContainsString('Total Active Inventory', $content);
+        $this->assertStringContainsString('Total Archived Inventory', $content);
         $this->assertStringContainsString('270', $content);
         $this->assertStringContainsString('Crude Mortality Rate', $content);
         $this->assertStringContainsString('12.28%', $content);
@@ -176,6 +177,7 @@ class AnalyticsTest extends TestCase
 
         $this->assertStringContainsString('Operational Analytics', $csv);
         $this->assertStringContainsString('Key Performance Indicators', $csv);
+        $this->assertStringContainsString('Total Archived Inventory', $csv);
         $this->assertStringContainsString('Crude Mortality Rate', $csv);
         $this->assertStringContainsString('12.28%', $csv);
         $this->assertStringContainsString('Mortality Trend (Last 6 Months)', $csv);
@@ -190,6 +192,7 @@ class AnalyticsTest extends TestCase
     public function test_centralized_metrics_return_real_values(): void
     {
         $this->assertSame(270, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame(0, AnalyticsMetrics::totalArchivedInventory());
         $this->assertSame(20, AnalyticsMetrics::totalRegraftDeficit());
         // Denominator = SUM(total_grafted - regraft) = (200-15) + 100 = 285;
         // 35 / 285 = 12.28%.
