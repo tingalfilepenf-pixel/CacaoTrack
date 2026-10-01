@@ -235,6 +235,7 @@
 <p class="text-muted small fst-italic">
     Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same
     plants; no cross-column total is implied.
+    Ready to Plant reflects each batch's current balance, shown under its original grafted month — not activity within that month. A batch's balance does not move to a later month's row as time passes.
 </p>
 
 <div class="card mb-4">

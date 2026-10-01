@@ -163,6 +163,7 @@ class StockLedgerNestingTest extends TestCase
             ->assertOk()
             ->assertSee('Batch summary (nested)')
             ->assertSee('Sub-batch quantities appear under Regraft, not Grafted')
+            ->assertSee('Ready to Plant reflects each batch', false)
             ->assertSee("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", false)
             ->assertSee('B001-R1-R1')
             ->assertSee('↳');
@@ -182,6 +183,7 @@ class StockLedgerNestingTest extends TestCase
         $this->assertStringContainsString('Total Grafted', $csv);
         $this->assertStringContainsString('B001-R1-R1', $csv);
         $this->assertStringContainsString('Sub-batch quantities appear under Regraft, not Grafted', $csv);
+        $this->assertStringContainsString('Ready to Plant reflects each batch', $csv);
         $this->assertStringContainsString("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $csv);
     }
 
@@ -198,6 +200,7 @@ class StockLedgerNestingTest extends TestCase
         // FPDF escapes parentheses in the content stream.
         $this->assertStringContainsString('Batch summary \(nested\)', $content);
         $this->assertStringContainsString('B001-R1-R1', $content);
+        $this->assertStringContainsString('Ready to Plant reflects each batch', $content);
         $this->assertStringContainsString("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $content);
     }
 
