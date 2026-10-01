@@ -1,7 +1,7 @@
 # Session Handoff — CacaoTrack
 
 > ### ▶ Continue here (latest: Session CY — **live `db_capstone` re-reseeded with today's fixes; "counts each plant once" help note on the cross-batch totals**)
-> - **▶ Session CY (DONE — help note + live `db_capstone` reseed; commit `b451b9c`; 2026-10-01):**
+> - **▶ Session CY (DONE — help note + live `db_capstone` reseed; commits `b451b9c` (code) + `6f41a6a` (docs); 2026-10-01):**
 >   **(1)** A one-line help note — *"Total counts each plant once; a regrafted plant's quantity is not
 >   added again under its new sub-batch."* (Gap Report: "Expected counts each plant once…"; Inventory:
 >   "Counts each plant once…") was added to the Stock Ledger nested Batch summary totals (view/PDF/CSV),
@@ -609,7 +609,7 @@
 >   **Stock Out unit dropdown → Pots only** (CQ; centralized `StockOutDetail::UNITS`) and the
 >   **`replanting_records` → `regraft_records` rename** (CR).
 >   **Full MySQL suite green: 344 passed / 1506 assertions** on `db_capstone_test` (CW +1 test, CX +1,
->   CY +7 assertions). Latest commits: `b451b9c` (CY code) + its docs-only commit, `89905c9` (CX),
+>   CY +7 assertions). Latest commits: `6f41a6a` (CY docs), `b451b9c` (CY code), `89905c9` (CX),
 >   `f9bbd1e` (CW), `0a9251b` (CV docs), `13e658e` (CU), `7ec2f8c` (CT Fix 2), `dccd154` (CT Fix 1),
 >   `b939aab` (CL–CR baseline), `4006b41` (CK).
 >   Current source of truth: canonical `docs/CacaoTrack_PRD.md` + `docs/CacaoTrack_ERD.md` (v2.0; the
@@ -668,15 +668,15 @@
 >   (never point tests at `db_capstone`) — expect **344 passed / 1506 assertions**. Also run
 >   `php artisan cacao:health` after a `migrate:fresh --seed` on `db_capstone_test` — it must pass
 >   clean (exit 0; it now also reconciles `available_count` against Stock Out history). Check the
->   checkpoint with `git log --oneline -5` (latest `b451b9c` + its docs-only commit, then `89905c9`,
->   `f9bbd1e`, `0a9251b`). Full detail: the Session CY/CX/CW/CV/CU/CT/CS/CR/CQ/CP/CO/CN/CM/CL/CK/CJ
+>   checkpoint with `git log --oneline -5` (latest `6f41a6a`, `b451b9c`, `89905c9`, `f9bbd1e`,
+>   `0a9251b`). Full detail: the Session CY/CX/CW/CV/CU/CT/CS/CR/CQ/CP/CO/CN/CM/CL/CK/CJ
 >   bullets in the banner above and the Session CH entry in §2, plus §3, §5 and §6 (and the earlier
 >   CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ entries).
 
 Paste this file into a new chat to continue. It captures the exact state of the
 project after **Session CY (2026-10-01)** — a "counts each plant once" help note now sits on the three
 cross-batch `total_grafted` totals (Stock Ledger nested summary, Gap Report Expected, Inventory Total
-Grafted card; view/PDF/CSV; commit `b451b9c`) and live `db_capstone` was re-reseeded with that code
+Grafted card; view/PDF/CSV; commits `b451b9c` + `6f41a6a`) and live `db_capstone` was re-reseeded with that code
 (verified backup; manual B004 removed; `cacao:health` clean). Session CX (2026-09-30) added the
 `cacao:health` `available_count` vs Stock Out reconciliation (rule 5, commit `89905c9`), and three
 cross-batch `total_grafted` totals use `SUM(total_grafted - regraft)` (commit `f9bbd1e`), on top of the
@@ -6231,7 +6231,7 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   CSV) + an owner-approved `db_capstone` reseed (verified backup 37,218 B; before 6 batches / after 5,
   manual B004 removed; `cacao:health` clean before and after). **Committed:** CL–CR in
   `b939aab`; CT in `dccd154`+`7ec2f8c`; CU in `13e658e`; CV docs in `0a9251b`; CW in `f9bbd1e`; CX in
-  `89905c9`; CY code in `b451b9c` (docs in the following docs-only commit). Everything below in this
+  `89905c9`; CY code in `b451b9c` (docs in `6f41a6a`). Everything below in this
   section is older context.
 - **▶ Session CG (DONE — Phase 7C: parent/sub-batch nesting + Stock Ledger / analytics alignment;
   commits `7c84843`, `59488db`, `cc89669`, `b780873`):** implemented PRD_UPDATED §9.3 / FR-08 nested
