@@ -167,6 +167,9 @@
                     </tfoot>
                 </table>
             </div>
+            <div class="px-3 py-2 text-muted small fst-italic border-top">
+                Expected counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.
+            </div>
         @endif
     </div>
 </div>

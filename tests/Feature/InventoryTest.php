@@ -69,6 +69,7 @@ class InventoryTest extends TestCase
             ->assertOk()
             ->assertSee('Record Monthly Inventory')
             ->assertSee('Total Grafted')
+            ->assertSee("Counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", false)
             ->assertSee('B001');
     }
 

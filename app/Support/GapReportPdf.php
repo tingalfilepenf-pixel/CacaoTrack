@@ -164,6 +164,26 @@ class GapReportPdf extends FPDF
         }
 
         $this->drawTotals();
+        $this->drawTotalNote();
+    }
+
+    /**
+     * Explains why the Expected total is smaller than the sum of the visible
+     * per-row Expected values (each plant counted once).
+     */
+    private function drawTotalNote(): void
+    {
+        $this->SetFont('Helvetica', 'I', 7);
+        $this->SetTextColor(...self::MUTED);
+        $this->SetX(12);
+        $this->MultiCell(
+            self::TABLE_WIDTH,
+            3.6,
+            $this->txt("Expected counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch."),
+            0,
+            'L',
+        );
+        $this->SetTextColor(...self::TEXT);
     }
 
     private function drawContinuationHeader(): void

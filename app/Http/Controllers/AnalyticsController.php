@@ -312,6 +312,9 @@ class AnalyticsController extends Controller
             $totals['total_grafted'], $totals['available'], $totals['regraft'], $totals['mortality'], $totals['stock_out'], '',
         ]);
 
+        fputcsv($handle, []);
+        fputcsv($handle, ["Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch."]);
+
         rewind($handle);
         $csv = (string) stream_get_contents($handle);
         fclose($handle);
@@ -712,6 +715,9 @@ class AnalyticsController extends Controller
         }
 
         fputcsv($handle, ['Total', '', '', $gap['totalExpected'], $gap['totalActual'], $gap['totalPulledOut'], $gap['totalGap']]);
+
+        fputcsv($handle, []);
+        fputcsv($handle, ["Expected counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch."]);
 
         rewind($handle);
         $csv = (string) stream_get_contents($handle);

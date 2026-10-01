@@ -270,6 +270,28 @@ class StockLedgerPdf extends FPDF
 
         $this->ensureSummarySpace(6.2);
         $this->drawSummaryTotals($this->batchSummary['totals'] ?? []);
+        $this->drawSummaryFootnote();
+    }
+
+    /**
+     * Explains why the summary totals row is smaller than the sum of the
+     * visible per-row `total_grafted` values (each plant counted once).
+     */
+    private function drawSummaryFootnote(): void
+    {
+        $this->ensureSummarySpace(6.4);
+
+        $this->SetX(12);
+        $this->SetFont('Helvetica', 'I', 7.5);
+        $this->SetTextColor(...self::MUTED);
+        $this->MultiCell(
+            self::TABLE_WIDTH,
+            3.6,
+            $this->txt("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch."),
+            0,
+            'L',
+        );
+        $this->SetTextColor(...self::TEXT);
     }
 
     private function drawSummaryContinuationHeader(): void

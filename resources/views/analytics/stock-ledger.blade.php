@@ -297,6 +297,9 @@
                     </tr>
                 </tfoot>
             </table>
+            <div class="px-3 py-2 text-muted small fst-italic border-top">
+                Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.
+            </div>
         </div>
     </div>
 </div>

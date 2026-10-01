@@ -522,7 +522,8 @@ class AnalyticsTest extends TestCase
         $this->actingAs($this->user)
             ->get(route('analytics.historical.gap-report'))
             ->assertOk()
-            ->assertSee('Total Gap');
+            ->assertSee('Total Gap')
+            ->assertSee("Expected counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", false);
     }
 
     public function test_gap_report_rejects_unknown_batch_filter(): void
@@ -566,6 +567,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Gap \(effective mortality\): 35', $content);
         $this->assertStringContainsString('200', $content); // B001 expected (total grafted)
         $this->assertStringContainsString('170', $content); // B001 available
+        $this->assertStringContainsString("Expected counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $content);
     }
 
     public function test_gap_report_pdf_export_applies_filters(): void
@@ -595,6 +597,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('B001,,Criollo,200,170,0,25', $csv);
         $this->assertStringContainsString('B002,,Trinitario,100,100,0,10', $csv);
         $this->assertStringContainsString('Total,,,285,270,0,35', $csv);
+        $this->assertStringContainsString("Expected counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $csv);
     }
 
     public function test_gap_report_exports_reject_unknown_batch_filter(): void

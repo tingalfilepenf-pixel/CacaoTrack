@@ -55,6 +55,7 @@
                 <div class="text-muted small fw-bold text-uppercase">Total Grafted</div>
                 <div class="fs-3 fw-bold text-success">{{ number_format($totalGrafted) }}</div>
                 <div class="text-muted small">Sum across the current snapshots</div>
+                <div class="text-muted small fst-italic">Counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.</div>
             </div>
         </div>
     </div>
