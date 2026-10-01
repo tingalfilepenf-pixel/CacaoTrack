@@ -8,6 +8,37 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## STOCK LEDGER REWORK + `survivingQuantity()` FIX (2026-10-01, Session DC)
+- **`Batch::survivingQuantity()` was corrected — it is the real Stock Out / Regraft validation gate, not a
+  display value.** It previously returned
+  `max(0, min(available_count, (total_grafted − regraft) − effective mortality))`: a `min` of two one-sided
+  exclusions, so when a batch carried BOTH mortality and a Stock Out it subtracted only the larger and still
+  counted the dead plants as releasable. Confirmed on the seeded **B001-R1** (established 100, regraft-out 30,
+  mortality 5, stock-out 20): old **50**, corrected **45**. It is now
+  `max(0, available_count − effectiveMortalityQuantity())` — algebraically
+  `total_grafted − regraft − mortality − stock_out`, because `available_count` already nets out regraft-out and
+  Stock Out. Call sites: `StockOutController` (per-line + per-batch gate), `App\Actions\RegraftBatch` (cap) and
+  `CorrectRecord::stockOut()` (stock-out re-validation). The bug had real-world impact: it could have approved
+  selling already-dead stock.
+- **This explicitly supersedes the earlier instruction in the same session not to modify `survivingQuantity()`
+  (the "PART 3" instruction), which predated discovering the bug.**
+- **Stock Ledger Pullout is now per-event.** Each `stock_out_details` line posts its own dated row
+  (`stock_outs.release_date`; description `Pullout {batch} → {client} ({qty} {unit})`), reverting the
+  cumulative-stamp design shipped earlier this session (commit `11f674b`) — matching Mortality/Regraft and the
+  client's own spreadsheet.
+- **New "Remaining Available" running-balance column** (on-screen, PDF and CSV) tracked per batch in true
+  chronological order: `total_grafted − regraft − mortality − pullout to date`, gathered independently from the
+  real records (never read back from a value that already nets outflows). Every batch's final value is
+  reconciled to `Batch::survivingQuantity()`; a mismatch fails loudly
+  (`AnalyticsMetrics::assertLedgerRunningBalanceReconciles()` throws `RuntimeException`).
+- **KPIs:** the three cross-batch totals are unchanged at **750** (Stock Ledger nested summary / Gap Report
+  Expected / Inventory snapshot); Crude Mortality Rate **7.33%** (55/750); Total Active Inventory **730**;
+  Regraft Deficit **25**. Ledger **Ready to Plant** summary **680 → 675** (only B001-R1 50 → 45); ledger
+  **Pullout** total unchanged at **20**.
+- **Verified:** full MySQL suite **367 passed / 1671 assertions** on `db_capstone_test`; Pint + `php -l` +
+  `view:cache` clean; B001-R1 running sequence **100 → 70 → 65 → 45**. Code/tests commit `839ecc2`; docs-only
+  commit follows. **`db_capstone` was NOT touched** (read-only verification only).
+
 ## RESEED EXECUTED — live `db_capstone` re-reseeded (2026-10-01, Session DB)
 - **One explicitly approved destructive action (project-owner sign-off), connection `mysql` / database
   `db_capstone`.** Standing rule unchanged: tests run **only** against `db_capstone_test`; any further

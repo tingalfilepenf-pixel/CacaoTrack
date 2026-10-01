@@ -1,6 +1,35 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session DB — **live `db_capstone` re-reseeded under today's fixes; verified backup; all 5 `cacao:health` rules pass**)
+> ### ▶ Continue here (latest: Session DC — **Stock Ledger Pullout as dated rows + running "Remaining Available"; `Batch::survivingQuantity()` corrected to also subtract stock-out**)
+> - **▶ Session DC (DONE — Stock Ledger reworked to a true chronological ledger; `Batch::survivingQuantity()` corrected; docs-only commit; 2026-10-01):**
+>   **(1) `Batch::survivingQuantity()` bug fixed — this is the real Stock Out/Regraft validation gate, not a
+>   display value.** It previously returned
+>   `max(0, min(available_count, (total_grafted − regraft) − effective mortality))` — a `min` of two one-sided
+>   exclusions, so when a batch carried BOTH mortality and a Stock Out it subtracted only the larger and counted
+>   the dead plants as still releasable. Confirmed on the seeded **B001-R1** (established 100, regraft-out 30,
+>   mortality 5, stock-out 20): old value **50**, corrected value **45**. It is now
+>   `max(0, available_count − effectiveMortalityQuantity())` — algebraically
+>   `total_grafted − regraft − mortality − stock_out`, because `available_count` already nets out regraft-out and
+>   Stock Out. Call sites: `StockOutController` (per-line + per-batch gate), `App\Actions\RegraftBatch` (cap) and
+>   `CorrectRecord::stockOut()` (stock-out re-validation). The bug had real-world impact: it could have approved
+>   selling already-dead stock. **This explicitly supersedes the earlier instruction in this session's history
+>   not to modify `survivingQuantity()` (the "PART 3" instruction), which predated discovering the bug.**
+>   **(2) Stock Ledger Pullout is now per-event.** Each Stock Out detail line posts its own dated row
+>   (`stock_outs.release_date`; description `Pullout {batch} → {client} ({qty} {unit})`), reverting the
+>   cumulative-stamp design shipped earlier this session (commit `11f674b`) — matching Mortality/Regraft and the
+>   client's own spreadsheet. **(3) New "Remaining Available" running-balance column** (on-screen, PDF and CSV)
+>   tracked per batch in true chronological order:
+>   `total_grafted − regraft − mortality − pullout to date`, gathered independently from the real records (never
+>   read back from a value that already nets outflows); every batch's final value is reconciled to
+>   `Batch::survivingQuantity()` and a mismatch fails loudly
+>   (`AnalyticsMetrics::assertLedgerRunningBalanceReconciles()` throws `RuntimeException`).
+>   **(4) Footnote/help text corrected** (view/PDF/CSV) to describe the running-balance behaviour.
+>   **KPIs:** cross-batch totals still **750** (Stock Ledger summary / Gap expected / Inventory snapshot); Crude
+>   Mortality Rate **7.33%** (55/750); Total Active Inventory **730**; Regraft Deficit **25**; ledger
+>   **Ready to Plant** summary **680 → 675** (B001-R1 50 → 45 only); ledger **Pullout** total unchanged **20**.
+>   **Verified:** full MySQL suite **367 passed / 1671 assertions** on `db_capstone_test`; Pint + `php -l` +
+>   `view:cache` clean; B001-R1 sequence **100 → 70 → 65 → 45**. **Code/tests commit `839ecc2`; this is the
+>   docs-only commit.** `db_capstone` untouched (read-only verification only).
 > - **▶ Session DB (DONE — one explicitly owner-approved destructive reseed of live `db_capstone`; 2026-10-01):**
 >   **Backup first** (verified, left untouched outside the git repo):
 >   `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_reseed_20261001_213846.sql`
