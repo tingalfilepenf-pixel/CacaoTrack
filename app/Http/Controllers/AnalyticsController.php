@@ -287,7 +287,7 @@ class AnalyticsController extends Controller
 
         fputcsv($handle, []);
         fputcsv($handle, ['Batch summary (nested)']);
-        fputcsv($handle, ['Batch or sub-batch', 'Parent Batch', 'Scion Variety', 'Total Grafted', 'Available', 'Regraft', 'Mortality', 'Stock Out', 'Date Grafted']);
+        fputcsv($handle, ['Batch or sub-batch', 'Parent Batch', 'Scion Variety', 'Total Grafted', 'Available', 'Regraft', 'Mortality', 'Family Mortality (incl. sub-batches)', 'Stock Out', 'Date Grafted']);
 
         foreach ($grid['batchSummary']['rows'] as $row) {
             $label = ($row['depth'] > 0 ? str_repeat('  ', $row['depth']).'↳ ' : '').$row['batch'];
@@ -301,6 +301,7 @@ class AnalyticsController extends Controller
                 $row['available'],
                 $row['regraft'],
                 $row['mortality'],
+                $row['family_mortality'],
                 $row['stock_out'],
                 $row['grafted_date'] ?? '',
             ]);
@@ -309,7 +310,7 @@ class AnalyticsController extends Controller
         $totals = $grid['batchSummary']['totals'];
         fputcsv($handle, [
             'Total', '', '',
-            $totals['total_grafted'], $totals['available'], $totals['regraft'], $totals['mortality'], $totals['stock_out'], '',
+            $totals['total_grafted'], $totals['available'], $totals['regraft'], $totals['mortality'], $totals['family_mortality'], $totals['stock_out'], '',
         ]);
 
         fputcsv($handle, []);

@@ -145,4 +145,83 @@ class SeededFamilyKpiTest extends TestCase
         $this->assertSame(130, $grid['summary']['regraft']);
         $this->assertSame(800, $grid['summary']['seedlings']);
     }
+
+    /**
+     * Family mortality rolls up a batch plus every descendant sub-batch
+     * (recursively), while the per-batch effective mortality stays untouched.
+     */
+    public function test_family_mortality_rolls_up_descendant_sub_batches(): void
+    {
+        $family = Batch::query()
+            ->whereIn('batch_code', ['B001', 'B001-R1', 'B001-R1-R1', 'B002', 'B003'])
+            ->get()
+            ->keyBy('batch_code');
+
+        // Descendant closure of B001 is the whole B001 family.
+        $this->assertEqualsCanonicalizing(
+            [
+                $family['B001']->batch_id,
+                $family['B001-R1']->batch_id,
+                $family['B001-R1-R1']->batch_id,
+            ],
+            $family['B001']->familyBatchIds(),
+        );
+
+        // B001: own mortality 25 + B001-R1 5 + B001-R1-R1 0 = 30.
+        $this->assertSame(25, $family['B001']->effectiveMortalityQuantity());
+        $this->assertSame(30, $family['B001']->familyMortality());
+
+        // B001-R1: own 5 + descendant B001-R1-R1 0 = 5.
+        $this->assertSame(5, $family['B001-R1']->effectiveMortalityQuantity());
+        $this->assertSame(5, $family['B001-R1']->familyMortality());
+
+        // B001-R1-R1: leaf — no descendants, no mortality.
+        $this->assertSame(0, $family['B001-R1-R1']->effectiveMortalityQuantity());
+        $this->assertSame(0, $family['B001-R1-R1']->familyMortality());
+
+        // No sub-batches: familyMortality === effectiveMortality (unchanged).
+        foreach (['B002' => 15, 'B003' => 10] as $code => $expected) {
+            $this->assertSame($expected, $family[$code]->effectiveMortalityQuantity());
+            $this->assertSame(
+                $family[$code]->effectiveMortalityQuantity(),
+                $family[$code]->familyMortality(),
+            );
+        }
+    }
+
+    /**
+     * Item 4: the family rollup is ADDITIONAL only — the Crude Mortality Rate
+     * numerator and the Gap Report keep summing per-batch effective mortality
+     * across the full batch list (each batch once), so they are unchanged.
+     */
+    public function test_family_mortality_rollup_does_not_change_the_headline_kpis(): void
+    {
+        $batches = Batch::query()->get();
+
+        $perBatchTotal = (int) $batches->sum(
+            fn (Batch $batch) => $batch->effectiveMortalityQuantity(),
+        );
+        $this->assertSame(55, $perBatchTotal);
+
+        // Summing familyMortality over EVERY row double-counts descendants
+        // (B001 30 + B001-R1 5 + B001-R1-R1 0 + B002 15 + B003 10 = 60). The
+        // KPIs must NOT equal this.
+        $familySumOverAllRows = (int) $batches->sum(
+            fn (Batch $batch) => $batch->familyMortality(),
+        );
+        $this->assertSame(60, $familySumOverAllRows);
+        $this->assertNotSame($perBatchTotal, $familySumOverAllRows);
+
+        // Crude Mortality Rate numerator/denominator unchanged: 55 / 750 = 7.33%.
+        $components = AnalyticsMetrics::mortalityRateComponents();
+        $this->assertSame(55, $components['numerator']);
+        $this->assertSame($perBatchTotal, $components['numerator']);
+        $this->assertSame(750, $components['denominator']);
+        $this->assertSame(7.33, AnalyticsMetrics::crudeMortalityRate());
+
+        // Gap Report total unchanged (per-batch effective mortality = 55).
+        $gap = AnalyticsMetrics::gapReport();
+        $this->assertSame(55, $gap['totalGap']);
+        $this->assertSame($perBatchTotal, $gap['totalGap']);
+    }
 }

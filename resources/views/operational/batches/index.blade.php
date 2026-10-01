@@ -439,6 +439,13 @@
                     </div>
                     <div class="col-md-3">
                         <div class="border rounded p-3 h-100">
+                            <div class="text-muted small fw-bold">Family Mortality (incl. sub-batches)</div>
+                            <div class="fs-5 fw-bold text-danger" id="detailsFamilyMortality">&mdash;</div>
+                            <div class="text-muted small">recorded plants (this batch + sub-batches)</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3 h-100">
                             <div class="text-muted small fw-bold">Regraft</div>
                             <div class="fs-5 fw-bold text-warning" id="detailsRegraft">&mdash;</div>
                             <div class="text-muted small">recorded entries</div>
@@ -550,6 +557,7 @@
                 setText('detailsTotal', Number(details.total_grafted || 0).toLocaleString());
                 setText('detailsAvailable', Number(details.available_count || 0).toLocaleString());
                 setText('detailsMortality', Number(details.mortality || 0).toLocaleString());
+                setText('detailsFamilyMortality', Number(details.family_mortality || 0).toLocaleString());
                 setText('detailsRegraft', Number(details.regraft || 0).toLocaleString());
                 setText('detailsInventoryDate', details.inventory_date);
                 setText('detailsInventoryStatus', details.inventory_status ? details.inventory_status.charAt(0).toUpperCase() + details.inventory_status.slice(1) : '—');

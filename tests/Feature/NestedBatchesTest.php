@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\Inventory;
+use App\Models\MortalityRecord;
 use App\Models\ScionVariety;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -115,6 +116,38 @@ class NestedBatchesTest extends TestCase
                     && $subRow['depth'] === 1
                     && $subRow['batch']->isSubBatch();
             });
+    }
+
+    public function test_batches_page_detail_shows_family_mortality_alongside_per_batch_mortality(): void
+    {
+        ['root' => $root, 'sub' => $sub] = $this->family();
+
+        MortalityRecord::create([
+            'batch_id' => $root->batch_id,
+            'user_id' => $this->user->id,
+            'quantity' => 25,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        MortalityRecord::create([
+            'batch_id' => $sub->batch_id,
+            'user_id' => $this->user->id,
+            'quantity' => 5,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-02',
+        ]);
+
+        $this->assertSame(30, $root->refresh()->familyMortality());
+        $this->assertSame(5, $sub->refresh()->familyMortality());
+
+        $this->actingAs($this->user)
+            ->get(route('operational.batches'))
+            ->assertOk()
+            ->assertSee('Family Mortality (incl. sub-batches)', false)
+            // The serialized details payload carries the rollup key alongside
+            // the existing per-batch `mortality` key.
+            ->assertSee('family_mortality', false);
     }
 
     public function test_inventory_page_nests_snapshots_and_shows_the_parent_column(): void

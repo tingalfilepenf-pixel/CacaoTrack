@@ -42,15 +42,16 @@ class StockLedgerPdf extends FPDF
 
     /** @var array<string,float> Nested batch-summary column widths (sum = TABLE_WIDTH). */
     private const SUMMARY_COLUMNS = [
-        'batch' => 46.0,
-        'parent' => 26.0,
-        'variety' => 40.0,
-        'total_grafted' => 26.0,
-        'available' => 26.0,
-        'regraft' => 24.0,
-        'mortality' => 26.0,
-        'stock_out' => 30.0,
-        'grafted_date' => 29.0,
+        'batch' => 44.0,
+        'parent' => 24.0,
+        'variety' => 34.0,
+        'total_grafted' => 24.0,
+        'available' => 24.0,
+        'regraft' => 22.0,
+        'mortality' => 24.0,
+        'family_mortality' => 29.0,
+        'stock_out' => 24.0,
+        'grafted_date' => 24.0,
     ];
 
     /** Brand palette (restrained agricultural green + neutral greys). */
@@ -321,6 +322,7 @@ class StockLedgerPdf extends FPDF
             'available' => 'Available',
             'regraft' => 'Regraft',
             'mortality' => 'Mortality',
+            'family_mortality' => 'Family Mortality (incl. sub-batches)',
             'stock_out' => 'Stock Out',
             'grafted_date' => 'Date Grafted',
         ];
@@ -337,7 +339,7 @@ class StockLedgerPdf extends FPDF
         $this->SetLineWidth(0.2);
 
         foreach ($headers as $key => $label) {
-            $align = in_array($key, ['total_grafted', 'available', 'regraft', 'mortality', 'stock_out'], true) ? 'R' : 'L';
+            $align = in_array($key, ['total_grafted', 'available', 'regraft', 'mortality', 'family_mortality', 'stock_out'], true) ? 'R' : 'L';
             [$size, $text] = $this->fitText($label, self::SUMMARY_COLUMNS[$key] - 1.4, 'B', 6.8);
             $this->SetFillColor(...self::BRAND);
             $this->SetTextColor(255, 255, 255);
@@ -390,6 +392,7 @@ class StockLedgerPdf extends FPDF
             'available' => [number_format((int) $row['available']), 'R', self::TEXT, ''],
             'regraft' => [number_format((int) $row['regraft']), 'R', self::WARNING, ''],
             'mortality' => [number_format((int) $row['mortality']), 'R', self::DANGER, ''],
+            'family_mortality' => [number_format((int) $row['family_mortality']), 'R', self::DANGER, 'B'],
             'stock_out' => [number_format((int) $row['stock_out']), 'R', self::TEXT, ''],
             'grafted_date' => [(string) ($row['grafted_date'] ?? '—'), 'L', self::MUTED, ''],
         ];
@@ -442,6 +445,7 @@ class StockLedgerPdf extends FPDF
             'available' => (int) ($totals['available'] ?? 0),
             'regraft' => (int) ($totals['regraft'] ?? 0),
             'mortality' => (int) ($totals['mortality'] ?? 0),
+            'family_mortality' => (int) ($totals['family_mortality'] ?? 0),
             'stock_out' => (int) ($totals['stock_out'] ?? 0),
         ];
 
@@ -450,7 +454,7 @@ class StockLedgerPdf extends FPDF
         foreach ($values as $key => $value) {
             $color = match ($key) {
                 'regraft' => self::WARNING,
-                'mortality' => self::DANGER,
+                'mortality', 'family_mortality' => self::DANGER,
                 default => self::TEXT,
             };
             $this->SetTextColor(...$color);

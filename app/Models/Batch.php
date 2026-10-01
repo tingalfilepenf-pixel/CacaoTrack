@@ -188,6 +188,66 @@ class Batch extends Model
     }
 
     /**
+     * This batch's id plus every descendant reachable through
+     * `parent_batch_id`, breadth-first (B001 -> B001-R1 -> B001-R1-R1).
+     *
+     * One indexed `whereIn(parent_batch_id)` query per generation, so the cost
+     * is O(family depth) queries and the walk stops as soon as a generation has
+     * no children. A `visited` set keeps it terminating even if a cycle were
+     * ever introduced (it cannot be while {@see RegraftBatch} only ever links a
+     * new sub-batch to an existing source). Current data max depth is 2.
+     *
+     * @return list<int>
+     */
+    public function familyBatchIds(): array
+    {
+        $rootId = (int) $this->batch_id;
+        $ids = [$rootId];
+        $visited = [$rootId => true];
+        $frontier = [$rootId];
+
+        while ($frontier !== []) {
+            $children = self::query()
+                ->whereIn('parent_batch_id', $frontier)
+                ->pluck('batch_id')
+                ->map(fn ($id) => (int) $id)
+                ->reject(fn (int $id) => isset($visited[$id]))
+                ->values();
+
+            if ($children->isEmpty()) {
+                break;
+            }
+
+            foreach ($children as $id) {
+                $visited[$id] = true;
+                $ids[] = $id;
+            }
+
+            $frontier = $children->all();
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Family mortality: effective mortality for this batch AND every descendant
+     * sub-batch (recursively). For a batch with no sub-batches it equals the
+     * existing per-batch {@see effectiveMortalityQuantity()} exactly — that
+     * single-batch figure is left untouched.
+     *
+     * This is an ADDITIONAL, display-only figure. The two headline KPIs are
+     * deliberately unchanged: the Crude Mortality Rate numerator and the Gap
+     * Report already sum each batch's own `effectiveMortalityQuantity()` across
+     * the full batch list (each batch counted exactly once), so they must NOT
+     * use this rollup — applying it per batch would double-count every
+     * sub-batch once per ancestor.
+     */
+    public function familyMortality(): int
+    {
+        return MortalityRecord::effectiveQuantityForBatches($this->familyBatchIds());
+    }
+
+    /**
      * Remaining quantity that may still be recorded as mortality.
      *
      * The mortality quantity is bounded by the batch's still-attributable

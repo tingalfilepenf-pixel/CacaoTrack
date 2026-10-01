@@ -117,6 +117,7 @@ class StockLedgerNestingTest extends TestCase
             'available' => 400,
             'regraft' => 100,
             'mortality' => 25,
+            'family_mortality' => 30,
             'stock_out' => 0,
             'grafted_date' => '2026-07-15',
         ], $byCode['B001']);
@@ -131,6 +132,7 @@ class StockLedgerNestingTest extends TestCase
             'available' => 50,
             'regraft' => 30,
             'mortality' => 5,
+            'family_mortality' => 5,
             'stock_out' => 20,
             'grafted_date' => '2026-09-05',
         ], $byCode['B001-R1']);
@@ -145,6 +147,7 @@ class StockLedgerNestingTest extends TestCase
             'available' => 30,
             'regraft' => 0,
             'mortality' => 0,
+            'family_mortality' => 0,
             'stock_out' => 0,
             'grafted_date' => '2026-09-08',
         ], $byCode['B001-R1-R1']);
@@ -154,6 +157,13 @@ class StockLedgerNestingTest extends TestCase
         // cumulative 500 + 100 + 30 + 150 + 100 = 880.
         $this->assertSame(750, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['total_grafted']);
         $this->assertSame(730, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['available']);
+
+        // Family-mortality total sums ROOT rows only (30 + 15 + 10 = 55), so it
+        // equals the per-batch mortality total and the global recorded
+        // mortality — never the sum of the visible column (which double-counts
+        // a sub-batch once per ancestor).
+        $this->assertSame(55, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['family_mortality']);
+        $this->assertSame(55, AnalyticsMetrics::stockLedgerGrid()['batchSummary']['totals']['mortality']);
     }
 
     public function test_ledger_page_shows_the_footnote_and_nested_summary(): void

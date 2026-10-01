@@ -255,6 +255,7 @@
                         <th class="text-end">Available</th>
                         <th class="text-end">Regraft</th>
                         <th class="text-end">Mortality</th>
+                        <th class="text-end">Family Mortality (incl. sub-batches)</th>
                         <th class="text-end">Stock Out</th>
                         <th>Date Grafted</th>
                     </tr>
@@ -277,12 +278,13 @@
                             <td class="text-end fw-bold text-success">{{ number_format($row['available']) }}</td>
                             <td class="text-end text-warning">{{ number_format($row['regraft']) }}</td>
                             <td class="text-end text-danger">{{ number_format($row['mortality']) }}</td>
+                            <td class="text-end text-danger fw-bold">{{ number_format($row['family_mortality']) }}</td>
                             <td class="text-end">{{ number_format($row['stock_out']) }}</td>
                             <td class="text-muted">{{ $row['grafted_date'] ?? '—' }}</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center text-muted py-4">No batches for the selected filters.</td>
+                            <td colspan="10" class="text-center text-muted py-4">No batches for the selected filters.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -293,6 +295,7 @@
                         <td class="text-end">{{ number_format($grid['batchSummary']['totals']['available']) }}</td>
                         <td class="text-end text-warning">{{ number_format($grid['batchSummary']['totals']['regraft']) }}</td>
                         <td class="text-end text-danger">{{ number_format($grid['batchSummary']['totals']['mortality']) }}</td>
+                        <td class="text-end text-danger fw-bold">{{ number_format($grid['batchSummary']['totals']['family_mortality']) }}</td>
                         <td class="text-end">{{ number_format($grid['batchSummary']['totals']['stock_out']) }}</td>
                         <td></td>
                     </tr>

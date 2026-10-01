@@ -748,7 +748,7 @@ class AnalyticsMetrics
      * are clearly distinguishable. Every value is computed from real records;
      * nothing is stored (Phase 7C).
      *
-     * @return array{rows:list<array<string,mixed>>,totals:array{total_grafted:int,available:int,regraft:int,mortality:int,stock_out:int}}
+     * @return array{rows:list<array<string,mixed>>,totals:array{total_grafted:int,available:int,regraft:int,mortality:int,family_mortality:int,stock_out:int}}
      */
     public static function batchSummary(
         ?int $batchId = null,
@@ -788,6 +788,10 @@ class AnalyticsMetrics
                 'available' => (int) $batch->available_count,
                 'regraft' => (int) $batch->regraft,
                 'mortality' => (int) ($mortalityByBatch[$batch->batch_id] ?? 0),
+                // Additional display figure: this batch plus all of its
+                // descendant sub-batches. The per-batch `mortality` above is
+                // unchanged (single-batch effective mortality).
+                'family_mortality' => $batch->familyMortality(),
                 'stock_out' => (int) ($stockOutByBatch[$batch->batch_id] ?? 0),
                 'grafted_date' => $batch->grafted_date?->format('Y-m-d'),
             ];
@@ -807,6 +811,14 @@ class AnalyticsMetrics
                 'available' => (int) collect($rows)->sum('available'),
                 'regraft' => (int) collect($rows)->sum('regraft'),
                 'mortality' => (int) collect($rows)->sum('mortality'),
+                // Family mortality double-counts by construction (a sub-batch
+                // appears in its own row AND in each ancestor's rollup), so the
+                // total sums ROOT rows only — each family counted once. This
+                // equals the per-batch `mortality` total (both = global recorded
+                // mortality), never the sum of the visible column.
+                'family_mortality' => (int) collect($rows)
+                    ->where('depth', 0)
+                    ->sum('family_mortality'),
                 'stock_out' => (int) collect($rows)->sum('stock_out'),
             ],
         ];
