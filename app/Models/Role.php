@@ -60,10 +60,21 @@ class Role
         'manage_inventory' => 'Manage Master Data & Batches',
         'manage_stock' => 'Perform Stock Transactions',
         'record_operations' => 'Record Operations (Checklist, Mortality, Regraft)',
+        'correct_records' => 'Correct Mistakes (Edit Recorded Entries)',
         'view_analytics' => 'View Analytics',
         'generate_reports' => 'Generate Reports',
         'view_activity' => 'View Activity History',
     ];
+
+    /**
+     * Access restrictions that are administrator-only by default. They are
+     * excluded from {@see defaultPermissionsFor()} for every non-administrator
+     * role so a new Manager/Staff account cannot correct records unless an
+     * administrator explicitly grants it.
+     *
+     * @var list<string>
+     */
+    public const ADMIN_ONLY_PERMISSIONS = ['manage_users', 'correct_records'];
 
     public static function isSystem(string $roleName): bool
     {
@@ -73,7 +84,8 @@ class Role
     /**
      * Default access restrictions for a role name, used when seeding or
      * building factory/test users. Administrator keeps every permission;
-     * every other role gets all except `manage_users`.
+     * every other role gets all except the administrator-only ones
+     * (`manage_users`, `correct_records`).
      *
      * @return list<string>
      */
@@ -83,6 +95,6 @@ class Role
 
         return $roleName === self::ADMINISTRATOR
             ? $all
-            : array_values(array_diff($all, ['manage_users']));
+            : array_values(array_diff($all, self::ADMIN_ONLY_PERMISSIONS));
     }
 }

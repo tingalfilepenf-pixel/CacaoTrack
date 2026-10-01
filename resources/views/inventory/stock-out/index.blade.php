@@ -192,6 +192,23 @@
                                 <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#stockOutDetails{{ $stockOut->stock_out_id }}" aria-expanded="false" title="View lines">
                                     <i class="bi bi-eye"></i> View
                                 </button>
+                                @if (auth()->user()->hasPermission('correct_records'))
+                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#correctStockOutModal"
+                                        data-action="{{ route('corrections.stock-out', $stockOut) }}"
+                                        data-client-id="{{ $stockOut->client_id }}"
+                                        data-release-date="{{ $stockOut->release_date?->toDateString() }}"
+                                        data-lines="{{ json_encode($detailLines->map(fn ($line) => [
+                                            'id' => $line->stock_out_detail_id,
+                                            'batch_id' => $line->batch_id,
+                                            'batch_code' => $line->batch?->batch_code ?? '—',
+                                            'quantity' => (int) $line->quantity,
+                                            'unit' => $line->unit,
+                                            'unit_price' => $line->unit_price,
+                                        ])->values()) }}"
+                                        title="Correct this release">
+                                        <i class="bi bi-pencil"></i> Correct
+                                    </button>
+                                @endif
                             </td>
                         </tr>
                         <tr>
@@ -416,6 +433,70 @@
         </div>
     </div>
 </div>
+
+@if (auth()->user()->hasPermission('correct_records'))
+<!-- Correct Stock Out Modal (administrator only — OD-5) -->
+<div class="modal fade" id="correctStockOutModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-warning">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="bi bi-pencil me-1"></i>Correct Stock-Out Record</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="correctStockOutForm" method="POST" action="">
+                @csrf
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        The original quantities are returned to their batches first, then the edited lines are re-validated
+                        against the surviving cap and released again — all in one transaction. Lines are edited in place.
+                    </p>
+                    @error('details', 'stockout_correction')
+                        <div class="alert alert-danger py-2 small">{{ $message }}</div>
+                    @enderror
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="correctStockOutClient" class="form-label text-muted small fw-bold">Client <span class="text-danger">*</span></label>
+                            <select class="form-select @error('client_id', 'stockout_correction') is-invalid @enderror" id="correctStockOutClient" name="client_id" required>
+                                @foreach ($clients as $client)
+                                    <option value="{{ $client->client_id }}">{{ $client->client_name }}</option>
+                                @endforeach
+                            </select>
+                            @error('client_id', 'stockout_correction')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                        <div class="col-md-6">
+                            <label for="correctStockOutDate" class="form-label text-muted small fw-bold">Release Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control @error('release_date', 'stockout_correction') is-invalid @enderror" id="correctStockOutDate"
+                                name="release_date" max="{{ now()->toDateString() }}" required>
+                            @error('release_date', 'stockout_correction')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>BATCH</th>
+                                    <th class="text-end" style="width: 120px;">QUANTITY</th>
+                                    <th style="width: 120px;">UNIT</th>
+                                    <th class="text-end" style="width: 140px;">UNIT PRICE</th>
+                                </tr>
+                            </thead>
+                            <tbody id="correctStockOutLines"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-bold">Save Correction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endif
 @endsection
 
 @push('scripts')
@@ -655,6 +736,50 @@
                 const btn = document.getElementById('clientSubmitBtn');
                 btn.disabled = true;
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+            });
+        }
+
+        const correctStockOutUnits = @json(\App\Models\StockOutDetail::UNITS);
+        const correctStockOutModalEl = document.getElementById('correctStockOutModal');
+        if (correctStockOutModalEl) {
+            correctStockOutModalEl.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                if (!button) {
+                    return;
+                }
+
+                document.getElementById('correctStockOutForm').action = button.getAttribute('data-action');
+                document.getElementById('correctStockOutClient').value = button.getAttribute('data-client-id') || '';
+                document.getElementById('correctStockOutDate').value = button.getAttribute('data-release-date') || '';
+
+                let lines = [];
+                try {
+                    lines = JSON.parse(button.getAttribute('data-lines') || '[]');
+                } catch (error) {
+                    lines = [];
+                }
+
+                const tbody = document.getElementById('correctStockOutLines');
+                tbody.innerHTML = '';
+
+                lines.forEach(function (line, index) {
+                    const unitOptions = correctStockOutUnits.map(function (unit) {
+                        return '<option value="' + unit + '"' + (unit === line.unit ? ' selected' : '') + '>' + unit + '</option>';
+                    }).join('');
+
+                    const priceValue = (line.unit_price === null || line.unit_price === undefined) ? '' : line.unit_price;
+
+                    const row = document.createElement('tr');
+                    row.innerHTML =
+                        '<td>' + (line.batch_code || '—') +
+                            '<input type="hidden" name="details[' + index + '][id]" value="' + line.id + '">' +
+                            '<input type="hidden" name="details[' + index + '][batch_id]" value="' + line.batch_id + '">' +
+                        '</td>' +
+                        '<td class="text-end"><input type="number" min="1" class="form-control form-control-sm text-end" name="details[' + index + '][quantity]" value="' + line.quantity + '" required></td>' +
+                        '<td><select class="form-select form-select-sm" name="details[' + index + '][unit]">' + unitOptions + '</select></td>' +
+                        '<td class="text-end"><input type="number" step="0.01" min="0" class="form-control form-control-sm text-end" name="details[' + index + '][unit_price]" value="' + priceValue + '"></td>';
+                    tbody.appendChild(row);
+                });
             });
         }
     });

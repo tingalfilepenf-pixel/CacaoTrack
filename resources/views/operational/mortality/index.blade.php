@@ -157,6 +157,17 @@
                                     data-details="{{ json_encode($details) }}" title="View Details">
                                     <i class="bi bi-eye"></i> View
                                 </button>
+                                @if (auth()->user()->hasPermission('correct_records'))
+                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#correctMortalityModal"
+                                        data-action="{{ route('corrections.mortality', $record) }}"
+                                        data-batch="{{ $record->batch?->batch_code ?? '—' }}"
+                                        data-quantity="{{ (int) $record->quantity }}"
+                                        data-recorded-at="{{ $record->recorded_at?->toDateString() }}"
+                                        data-cause="{{ $record->cause }}"
+                                        title="Correct this entry">
+                                        <i class="bi bi-pencil"></i> Correct
+                                    </button>
+                                @endif
                             </td>
                         </tr>
                     @empty
@@ -243,8 +254,9 @@
                         @enderror
                     </div>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>Mortality records are record-only and cannot be edited later. A dead root
-                        stock cannot be regrafted — it is counted as mortality. Mortality cannot exceed the batch's remaining capacity.
+                        <i class="bi bi-info-circle me-1"></i>An Administrator can correct a mistaken entry with the
+                        <strong>Correct</strong> action; a dead root stock cannot be regrafted — it is counted as mortality.
+                        Mortality cannot exceed the batch's remaining capacity, including when corrected.
                     </p>
                 </div>
                 <div class="modal-footer">
@@ -296,6 +308,74 @@
         </div>
     </div>
 </div>
+
+@if (auth()->user()->hasPermission('correct_records'))
+<!-- Correct Mortality Modal (administrator only — OD-5) -->
+<div class="modal fade" id="correctMortalityModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="bi bi-pencil me-1"></i>Correct Mortality Record</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="correctMortalityForm" method="POST" action="">
+                @csrf
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        Editing the entry re-validates it against the batch's remaining mortality capacity and records the
+                        before/after values in Activity History.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label text-muted small fw-bold">Batch</label>
+                        <input type="text" class="form-control" id="correctBatchLabel" value="" readonly>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="correctQuantity" class="form-label text-muted small fw-bold">Quantity <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control @error('quantity', 'mortality') is-invalid @enderror" id="correctQuantity"
+                                name="quantity" min="1" required>
+                            @error('quantity', 'mortality')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                        <div class="col-md-6">
+                            <label for="correctDate" class="form-label text-muted small fw-bold">Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control @error('recorded_at', 'mortality') is-invalid @enderror" id="correctDate"
+                                name="recorded_at" max="{{ now()->toDateString() }}" required>
+                            @error('recorded_at', 'mortality')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="correctCause" class="form-label text-muted small fw-bold">Cause of Death <span class="text-danger">*</span></label>
+                        <select class="form-select @error('cause', 'mortality') is-invalid @enderror" id="correctCause" name="cause" required>
+                            @foreach (\App\Models\MortalityRecord::CAUSES as $causeOption)
+                                <option value="{{ $causeOption }}">{{ $causeOption }}</option>
+                            @endforeach
+                        </select>
+                        @error('cause', 'mortality')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                    <div class="mb-3 d-none" id="correctCauseOtherWrapper">
+                        <label for="correctCauseOther" class="form-label text-muted small fw-bold">Description <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control @error('cause_other', 'mortality') is-invalid @enderror" id="correctCauseOther"
+                            name="cause_other" maxlength="200" placeholder="Specify the cause of death">
+                        @error('cause_other', 'mortality')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Save Correction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endif
 @endsection
 
 @push('scripts')
@@ -305,6 +385,13 @@
 
         @if ($errors->mortality->any())
             new bootstrap.Modal(recordModalEl).show();
+        @endif
+
+        @if ($errors->mortality_correction->any())
+            const correctMortalityErrorEl = document.getElementById('correctMortalityModal');
+            if (correctMortalityErrorEl) {
+                new bootstrap.Modal(correctMortalityErrorEl).show();
+            }
         @endif
 
         const detailsModal = document.getElementById('detailsModal');
@@ -338,6 +425,38 @@
             });
         }
 
+        const correctMortalityModal = document.getElementById('correctMortalityModal');
+        if (correctMortalityModal) {
+            correctMortalityModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                if (!button) {
+                    return;
+                }
+
+                document.getElementById('correctMortalityForm').action = button.getAttribute('data-action');
+                document.getElementById('correctBatchLabel').value = button.getAttribute('data-batch') || '';
+                document.getElementById('correctQuantity').value = button.getAttribute('data-quantity') || '';
+                document.getElementById('correctDate').value = button.getAttribute('data-recorded-at') || '';
+
+                const others = @json(\App\Models\MortalityRecord::CAUSE_OTHERS);
+                const cause = button.getAttribute('data-cause') || '';
+                const select = document.getElementById('correctCause');
+                const otherWrapper = document.getElementById('correctCauseOtherWrapper');
+                const otherInput = document.getElementById('correctCauseOther');
+
+                if (cause === others || cause.indexOf(others + ':') === 0) {
+                    select.value = others;
+                    otherInput.value = cause === others ? '' : cause.substring(others.length + 2);
+                } else {
+                    select.value = cause;
+                    otherInput.value = '';
+                }
+
+                otherWrapper.classList.toggle('d-none', select.value !== others);
+                otherInput.required = select.value === others;
+            });
+        }
+
         const othersCause = @json(\App\Models\MortalityRecord::CAUSE_OTHERS);
         const causeSelect = document.getElementById('recordCause');
         const causeOtherWrapper = document.getElementById('recordCauseOtherWrapper');
@@ -359,6 +478,15 @@
         if (causeSelect) {
             causeSelect.addEventListener('change', syncCauseOther);
             syncCauseOther();
+        }
+
+        const correctCauseSelect = document.getElementById('correctCause');
+        if (correctCauseSelect) {
+            correctCauseSelect.addEventListener('change', function () {
+                const isOthers = correctCauseSelect.value === othersCause;
+                document.getElementById('correctCauseOtherWrapper').classList.toggle('d-none', !isOthers);
+                document.getElementById('correctCauseOther').required = isOthers;
+            });
         }
 
         const form = document.getElementById('recordMortalityForm');

@@ -30,6 +30,7 @@ class ActivityLog extends Model
         'mortality_recorded' => 'Mortality Recorded',
         'mortality_adjusted' => 'Mortality Adjusted',
         'regraft_recorded' => 'Regraft Recorded',
+        'record_corrected' => 'Record Corrected',
         'stock_in_recorded' => 'Stock In Recorded',
         'stock_out_recorded' => 'Stock Out Recorded',
         'stock_reversal_recorded' => 'Stock Reversal Recorded',
@@ -76,6 +77,8 @@ class ActivityLog extends Model
     public const TYPE_MORTALITY_ADJUSTED = 'mortality_adjusted';
 
     public const TYPE_REGRAFT_RECORDED = 'regraft_recorded';
+
+    public const TYPE_RECORD_CORRECTED = 'record_corrected';
 
     public const TYPE_STOCK_IN_RECORDED = 'stock_in_recorded';
 
@@ -152,6 +155,7 @@ class ActivityLog extends Model
         'mortality_recorded' => 'bg-danger',
         'mortality_adjusted' => 'bg-warning text-dark',
         'regraft_recorded' => 'bg-success',
+        'record_corrected' => 'bg-warning text-dark',
         'stock_in_recorded' => 'bg-info text-dark',
         'stock_out_recorded' => 'bg-secondary',
         'stock_reversal_recorded' => 'bg-dark',
@@ -260,5 +264,36 @@ class ActivityLog extends Model
             'description' => $summary,
             'activity_date' => $activityDate ?? now(),
         ]);
+    }
+
+    /**
+     * Record the correction of a previously recorded operational entry (OD-5).
+     *
+     * A correction reuses the single audit writer above and serializes the old
+     * and new value of every changed field into the description as compact JSON,
+     * so the Activity History shows exactly what changed rather than a generic
+     * "record was edited". `user_id` (who) and `activity_date` (when) come from
+     * the same writer; the record type/reference and the before/after map are in
+     * the payload.
+     *
+     * @param  array<string, array{from: mixed, to: mixed}>  $changes
+     */
+    public static function recordCorrection(
+        string $recordLabel,
+        int|string $recordReference,
+        ?int $batchId,
+        array $changes,
+        ?int $userId = null,
+        mixed $activityDate = null,
+    ): self {
+        $payload = json_encode($changes, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return self::record(
+            $batchId,
+            self::TYPE_RECORD_CORRECTED,
+            "Corrected {$recordLabel} #{$recordReference}: {$payload}",
+            $userId,
+            $activityDate,
+        );
     }
 }

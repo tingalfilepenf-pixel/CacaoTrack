@@ -346,6 +346,26 @@ class Batch extends Model
     }
 
     /**
+     * Whether this batch has activity that DEPENDS on it as a regraft
+     * sub-batch: recorded mortality, a stock-out, or a further regraft out of
+     * it. Used by the record-correction flow to lock a regraft transaction once
+     * the sub-batch it created has been used.
+     *
+     * Deliberately different from {@see hasOperationalRecords()}, which counts a
+     * sub-batch's own creation `regraft_records` row (that row's `batch_id` is
+     * the sub-batch) and therefore reports true for every regraft-created
+     * batch. Here the batch's own creation record is ignored; only downstream
+     * activity locks it.
+     */
+    public function hasDependentActivity(): bool
+    {
+        return $this->mortalityRecords()->exists()
+            || $this->stockOutDetails()->exists()
+            || $this->subBatches()->exists()
+            || (int) $this->regraft > 0;
+    }
+
+    /**
      * Whether this batch already has operational records that depend on its
      * counts. Deliberately excludes Activity_Log (batch lifecycle rows are
      * written with a NULL batch_id) so a freshly created batch stays editable.

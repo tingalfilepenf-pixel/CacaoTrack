@@ -186,7 +186,8 @@
                         <th>SUB-BATCH VARIETY</th>
                         <th class="text-end">QUANTITY</th>
                         <th>REMARK</th>
-                        <th class="pe-4">RECORDED BY</th>
+                        <th>RECORDED BY</th>
+                        <th class="text-end pe-4">ACTION</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -201,11 +202,25 @@
                             <td>{{ $record->batch?->scionVariety?->scion_variety_name ?? '—' }}</td>
                             <td class="text-end fw-bold text-success">{{ number_format($record->quantity) }}</td>
                             <td class="text-muted small">{{ $record->remark ?? '—' }}</td>
-                            <td class="pe-4">{{ $record->user?->name ?? 'Unknown user' }}</td>
+                            <td>{{ $record->user?->name ?? 'Unknown user' }}</td>
+                            <td class="text-end pe-4">
+                                @if (auth()->user()->hasPermission('correct_records'))
+                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#correctRegraftModal"
+                                        data-action="{{ route('corrections.regraft', $record) }}"
+                                        data-sub-batch="{{ $record->batch?->batch_code ?? '—' }}"
+                                        data-quantity="{{ (int) $record->quantity }}"
+                                        data-regraft-date="{{ $record->regraft_date?->toDateString() }}"
+                                        data-scion-variety-id="{{ $record->batch?->scion_variety_id }}"
+                                        data-remark="{{ $record->remark }}"
+                                        title="Correct this regraft">
+                                        <i class="bi bi-pencil"></i> Correct
+                                    </button>
+                                @endif
+                            </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-5">
+                            <td colspan="8" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                 No regraft records found for the current filters.
                             </td>
@@ -311,6 +326,74 @@
         </div>
     </div>
 </div>
+
+@if (auth()->user()->hasPermission('correct_records'))
+<!-- Correct Regraft Modal (administrator only — OD-5) -->
+<div class="modal fade" id="correctRegraftModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content border-warning">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="bi bi-pencil me-1"></i>Correct Regraft Record</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="correctRegraftForm" method="POST" action="">
+                @csrf
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        The source batch's balance and the sub-batch are adjusted together. A regraft whose sub-batch already
+                        has mortality, a stock-out or a further regraft cannot be corrected.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label text-muted small fw-bold">Sub-Batch</label>
+                        <input type="text" class="form-control" id="correctRegraftSubBatch" value="" readonly>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="correctRegraftQuantity" class="form-label text-muted small fw-bold">Quantity <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control @error('quantity', 'regraft_correction') is-invalid @enderror" id="correctRegraftQuantity"
+                                name="quantity" min="1" required>
+                            @error('quantity', 'regraft_correction')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                        <div class="col-md-6">
+                            <label for="correctRegraftDate" class="form-label text-muted small fw-bold">Regraft Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control @error('regraft_date', 'regraft_correction') is-invalid @enderror" id="correctRegraftDate"
+                                name="regraft_date" max="{{ now()->toDateString() }}" required>
+                            @error('regraft_date', 'regraft_correction')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="correctRegraftVariety" class="form-label text-muted small fw-bold">Sub-Batch Scion Variety <span class="text-danger">*</span></label>
+                        <select class="form-select @error('scion_variety_id', 'regraft_correction') is-invalid @enderror" id="correctRegraftVariety" name="scion_variety_id" required>
+                            @foreach ($scionVarieties as $scionVariety)
+                                <option value="{{ $scionVariety->scion_variety_id }}">{{ $scionVariety->scion_variety_name }}</option>
+                            @endforeach
+                        </select>
+                        @error('scion_variety_id', 'regraft_correction')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                    <div class="mb-3">
+                        <label for="correctRegraftRemark" class="form-label text-muted small fw-bold">Remarks</label>
+                        <textarea class="form-control @error('remark', 'regraft_correction') is-invalid @enderror" id="correctRegraftRemark"
+                            name="remark" rows="2" maxlength="255"></textarea>
+                        @error('remark', 'regraft_correction')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-bold">Save Correction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endif
 @endsection
 
 @push('scripts')
@@ -370,6 +453,34 @@
                 const btn = document.getElementById('recordRegraftSubmitBtn');
                 btn.disabled = true;
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+            });
+        }
+
+        @if ($errors->regraft_correction->any())
+            const correctRegraftErrorEl = document.getElementById('correctRegraftModal');
+            if (correctRegraftErrorEl) {
+                new bootstrap.Modal(correctRegraftErrorEl).show();
+            }
+        @endif
+
+        const correctRegraftModalEl = document.getElementById('correctRegraftModal');
+        if (correctRegraftModalEl) {
+            correctRegraftModalEl.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                if (!button) {
+                    return;
+                }
+
+                document.getElementById('correctRegraftForm').action = button.getAttribute('data-action');
+                document.getElementById('correctRegraftSubBatch').value = button.getAttribute('data-sub-batch') || '';
+                document.getElementById('correctRegraftQuantity').value = button.getAttribute('data-quantity') || '';
+                document.getElementById('correctRegraftDate').value = button.getAttribute('data-regraft-date') || '';
+                document.getElementById('correctRegraftRemark').value = button.getAttribute('data-remark') || '';
+
+                const varietyId = button.getAttribute('data-scion-variety-id');
+                if (varietyId) {
+                    document.getElementById('correctRegraftVariety').value = varietyId;
+                }
             });
         }
     });

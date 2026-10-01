@@ -5,6 +5,7 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BatchController;
 use App\Http\Controllers\ClientController;
+use App\Http\Controllers\CorrectionController;
 use App\Http\Controllers\DailyChecklistController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
@@ -53,6 +54,18 @@ Route::prefix('operational')->middleware(['auth', 'permission:record_operations'
     Route::put('/batches/{batch}', [BatchController::class, 'update'])->name('operational.batches.update');
     Route::post('/batches/{batch}/archive', [BatchController::class, 'archive'])->name('operational.batches.archive');
     Route::post('/batches/{batch}/restore', [BatchController::class, 'restore'])->name('operational.batches.restore');
+});
+
+// Record corrections (OD-5): fix a mistaken mortality, regraft, stock-out or
+// stock-in entry. Gated by the `correct_records` access restriction, which is
+// administrator-only by default (see Role::ADMIN_ONLY_PERMISSIONS). No new
+// table and no revival of the removed Mortality_Adjustments / Stock_Reversal
+// concepts — a correction re-validates and writes before/after to Activity_Log.
+Route::prefix('corrections')->middleware(['auth', 'permission:correct_records'])->group(function () {
+    Route::post('/mortality/{mortality}', [CorrectionController::class, 'mortality'])->name('corrections.mortality');
+    Route::post('/regraft/{regraft}', [CorrectionController::class, 'regraft'])->name('corrections.regraft');
+    Route::post('/stock-in/{stockIn}', [CorrectionController::class, 'stockIn'])->name('corrections.stock-in');
+    Route::post('/stock-out/{stockOut}', [CorrectionController::class, 'stockOut'])->name('corrections.stock-out');
 });
 
 // Scion Variety master data (FR-07). Lives in the Operational area but keeps

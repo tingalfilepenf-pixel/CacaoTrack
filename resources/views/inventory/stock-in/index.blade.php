@@ -206,6 +206,20 @@
                                     data-details="{{ json_encode($details) }}" title="View">
                                     <i class="bi bi-eye"></i> View
                                 </button>
+                                @if (auth()->user()->hasPermission('correct_records'))
+                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#correctStockInModal"
+                                        data-action="{{ route('corrections.stock-in', $stockIn) }}"
+                                        data-supplier-id="{{ $stockIn->supplier_id }}"
+                                        data-scion-variety-id="{{ $stockIn->scion_variety_id }}"
+                                        data-quantity="{{ (int) $stockIn->quantity }}"
+                                        data-unit-price="{{ $stockIn->unit_price }}"
+                                        data-origin="{{ $stockIn->origin }}"
+                                        data-notes="{{ $stockIn->notes }}"
+                                        data-date-received="{{ $stockIn->date_received?->toDateString() }}"
+                                        title="Correct this receiving">
+                                        <i class="bi bi-pencil"></i> Correct
+                                    </button>
+                                @endif
                             </td>
                         </tr>
                     @empty
@@ -483,6 +497,100 @@
         </div>
     </div>
 </div>
+
+@if (auth()->user()->hasPermission('correct_records'))
+<!-- Correct Stock In Modal (administrator only — OD-5) -->
+<div class="modal fade" id="correctStockInModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content border-warning">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="bi bi-pencil me-1"></i>Correct Stock-In Record</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="correctStockInForm" method="POST" action="">
+                @csrf
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        The corrected receiving is validated exactly like a new entry (a scion variety and a unit price go
+                        together, or neither does) and the before/after values are recorded in Activity History.
+                    </p>
+                    <div class="mb-3">
+                        <label for="correctStockInSupplier" class="form-label text-muted small fw-bold">Supplier <span class="text-danger">*</span></label>
+                        <select class="form-select @error('supplier_id', 'stockin_correction') is-invalid @enderror" id="correctStockInSupplier" name="supplier_id" required>
+                            @foreach ($suppliers as $supplier)
+                                <option value="{{ $supplier->supplier_id }}">{{ $supplier->supplier_name }}</option>
+                            @endforeach
+                        </select>
+                        @error('supplier_id', 'stockin_correction')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="correctStockInQuantity" class="form-label text-muted small fw-bold">Quantity <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control @error('quantity', 'stockin_correction') is-invalid @enderror" id="correctStockInQuantity"
+                                name="quantity" min="1" required>
+                            @error('quantity', 'stockin_correction')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                        <div class="col-md-6">
+                            <label for="correctStockInDate" class="form-label text-muted small fw-bold">Date Received <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control @error('date_received', 'stockin_correction') is-invalid @enderror" id="correctStockInDate"
+                                name="date_received" max="{{ now()->toDateString() }}" required>
+                            @error('date_received', 'stockin_correction')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="correctStockInVariety" class="form-label text-muted small fw-bold">Scion Variety</label>
+                            <select class="form-select @error('scion_variety_id', 'stockin_correction') is-invalid @enderror" id="correctStockInVariety" name="scion_variety_id">
+                                <option value="">— Seedling only —</option>
+                                @foreach ($scionVarieties as $scionVariety)
+                                    <option value="{{ $scionVariety->scion_variety_id }}">{{ $scionVariety->scion_variety_name }}</option>
+                                @endforeach
+                            </select>
+                            @error('scion_variety_id', 'stockin_correction')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                        <div class="col-md-6">
+                            <label for="correctStockInUnitPrice" class="form-label text-muted small fw-bold">Unit Price</label>
+                            <input type="number" step="0.01" min="0" class="form-control @error('unit_price', 'stockin_correction') is-invalid @enderror" id="correctStockInUnitPrice"
+                                name="unit_price">
+                            @error('unit_price', 'stockin_correction')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="correctStockInOrigin" class="form-label text-muted small fw-bold">Origin <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control @error('origin', 'stockin_correction') is-invalid @enderror" id="correctStockInOrigin"
+                            name="origin" maxlength="255" required>
+                        @error('origin', 'stockin_correction')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                    <div class="mb-3">
+                        <label for="correctStockInNotes" class="form-label text-muted small fw-bold">Notes</label>
+                        <textarea class="form-control @error('notes', 'stockin_correction') is-invalid @enderror" id="correctStockInNotes"
+                            name="notes" rows="2" maxlength="1000"></textarea>
+                        @error('notes', 'stockin_correction')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-bold">Save Correction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endif
 @endsection
 
 @push('scripts')
@@ -605,6 +713,32 @@
 
         guardSubmit('stockInForm', 'stockInSubmitBtn', 'Saving...');
         guardSubmit('supplierForm', 'supplierSubmitBtn', 'Saving...');
+
+        @if ($errors->stockin_correction->any())
+            const correctStockInErrorEl = document.getElementById('correctStockInModal');
+            if (correctStockInErrorEl) {
+                new bootstrap.Modal(correctStockInErrorEl).show();
+            }
+        @endif
+
+        const correctStockInModalEl = document.getElementById('correctStockInModal');
+        if (correctStockInModalEl) {
+            correctStockInModalEl.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                if (!button) {
+                    return;
+                }
+
+                document.getElementById('correctStockInForm').action = button.getAttribute('data-action');
+                document.getElementById('correctStockInSupplier').value = button.getAttribute('data-supplier-id') || '';
+                document.getElementById('correctStockInVariety').value = button.getAttribute('data-scion-variety-id') || '';
+                document.getElementById('correctStockInUnitPrice').value = button.getAttribute('data-unit-price') || '';
+                document.getElementById('correctStockInQuantity').value = button.getAttribute('data-quantity') || '';
+                document.getElementById('correctStockInOrigin').value = button.getAttribute('data-origin') || '';
+                document.getElementById('correctStockInNotes').value = button.getAttribute('data-notes') || '';
+                document.getElementById('correctStockInDate').value = button.getAttribute('data-date-received') || '';
+            });
+        }
     });
 </script>
 @endpush
