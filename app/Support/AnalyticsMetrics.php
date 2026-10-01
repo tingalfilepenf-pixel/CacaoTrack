@@ -125,6 +125,20 @@ class AnalyticsMetrics
      * `SUM(total_grafted - regraft)` counts each physical plant exactly once, at
      * wherever it currently is.
      *
+     * Date-filter symmetry (period rate): the NUMERATOR is the mortality
+     * recorded within `[from, to]`, so when a date range is active the
+     * DENOMINATOR must be the population present during that same period or the
+     * rate is meaningless (period deaths ÷ all-time population). The rule chosen
+     * here is the simplest defensible one: a batch contributes its FULL live
+     * population when `grafted_date <= to`, because a plant grafted at or before
+     * the end of the window existed for at least part of the window. A batch
+     * grafted AFTER the window is excluded (it did not exist yet), and a batch
+     * grafted before `from` is still included in full (it was present throughout
+     * the window). No lower bound on `grafted_date` is applied — a plant already
+     * standing when the window opens is exactly part of that period's population.
+     * When no end date is supplied (no filter, or an open-ended `from`-only
+     * filter) every batch counts, so the unfiltered rate is unchanged.
+     *
      * @return array{numerator:int,denominator:int}
      */
     public static function mortalityRateComponents(
@@ -133,9 +147,17 @@ class AnalyticsMetrics
         ?string $from = null,
         ?string $to = null,
     ): array {
+        $denominator = self::batchQuery($batchId, $scionVarietyId);
+
+        // Period denominator: only batches that already existed by the end of
+        // the filter window (grafted_date is NOT NULL, so no null-handling).
+        if ($to !== null) {
+            $denominator->whereDate('grafted_date', '<=', $to);
+        }
+
         return [
             'numerator' => self::effectiveMortality($batchId, $scionVarietyId, $from, $to),
-            'denominator' => (int) self::batchQuery($batchId, $scionVarietyId)->sum(DB::raw('total_grafted - regraft')),
+            'denominator' => (int) $denominator->sum(DB::raw('total_grafted - regraft')),
         ];
     }
 

@@ -81,6 +81,62 @@ class SeededFamilyKpiTest extends TestCase
         );
     }
 
+    /**
+     * Date-filter asymmetry fix: with a date range active the denominator must
+     * be the population present during that same window, not the all-time
+     * population. Rule: full inclusion when `grafted_date <= to` (a plant that
+     * existed at any point in the window contributes); a batch grafted after the
+     * window is excluded.
+     */
+    public function test_date_filtered_mortality_rate_scopes_the_denominator_to_batches_present_in_the_window(): void
+    {
+        // B003's only mortality record was entered on 2026-08-28. Filtering to
+        // that single day counts 10 deaths over the population that already
+        // existed by 2026-08-28: B001 (400) + B002 (150) + B003 (100) = 650. The
+        // two regraft sub-batches (B001-R1 70, grafted 2026-09-05; B001-R1-R1 30,
+        // grafted 2026-09-08) did not exist yet and are excluded.
+        $filtered = AnalyticsMetrics::mortalityRateComponents(null, null, '2026-08-28', '2026-08-28');
+
+        $this->assertSame(10, $filtered['numerator']);
+        $this->assertSame(650, $filtered['denominator']);
+        $this->assertNotSame(
+            AnalyticsMetrics::mortalityRateComponents()['denominator'],
+            $filtered['denominator'],
+        );
+        $this->assertSame(1.54, AnalyticsMetrics::crudeMortalityRate(null, null, '2026-08-28', '2026-08-28'));
+
+        // A wider window ending 2026-09-01 still excludes the September-grafted
+        // sub-batches: B003 10 + B001 25 + B002 15 = 50 deaths over the same 650
+        // (the pre-fix code wrongly divided by the all-time 750).
+        $wider = AnalyticsMetrics::mortalityRateComponents(null, null, '2026-08-28', '2026-09-01');
+        $this->assertSame(50, $wider['numerator']);
+        $this->assertSame(650, $wider['denominator']);
+        $this->assertNotSame(750, $wider['denominator']);
+
+        // Once the window reaches the sub-batches' grafted dates they are
+        // included again and the denominator is back to the full 750.
+        $late = AnalyticsMetrics::mortalityRateComponents(null, null, '2026-09-10', '2026-09-10');
+        $this->assertSame(5, $late['numerator']);
+        $this->assertSame(750, $late['denominator']);
+    }
+
+    /**
+     * The fix only changes behaviour when a date range is active: the unfiltered
+     * rate stays exactly 55 / 750 = 7.33%, and an open-ended `from`-only filter
+     * (no end date) still counts every batch.
+     */
+    public function test_unfiltered_mortality_rate_remains_the_all_time_baseline(): void
+    {
+        $components = AnalyticsMetrics::mortalityRateComponents();
+
+        $this->assertSame(55, $components['numerator']);
+        $this->assertSame(750, $components['denominator']);
+        $this->assertSame(7.33, AnalyticsMetrics::crudeMortalityRate());
+
+        $fromOnly = AnalyticsMetrics::mortalityRateComponents(null, null, '2026-09-01', null);
+        $this->assertSame(750, $fromOnly['denominator']);
+    }
+
     public function test_crude_mortality_rate_denominator_is_the_still_attributable_population(): void
     {
         $components = AnalyticsMetrics::mortalityRateComponents();
