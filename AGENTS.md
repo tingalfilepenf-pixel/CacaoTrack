@@ -8,7 +8,47 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
-## RESEED EXECUTED — live `db_capstone` re-reseeded with today's fixes (2026-10-01)
+## RESEED EXECUTED — live `db_capstone` re-reseeded (2026-10-01, Session DB)
+- **One explicitly approved destructive action (project-owner sign-off), connection `mysql` / database
+  `db_capstone`.** Standing rule unchanged: tests run **only** against `db_capstone_test`; any further
+  destructive or schema action on the live DB needs fresh sign-off.
+- **Backup first (verified, left untouched outside the git repo):**
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_reseed_20261001_213846.sql`
+  — **37,202 B**, **23 `CREATE TABLE`** (all current tables), 15 `INSERT INTO`,
+  `--single-transaction --routines --triggers --events`, includes `CREATE DATABASE`/`USE db_capstone`,
+  SHA-256 `244875CA5818E2695BF1759696FF7E28C1E63D8E055EDA63AB77C84F037E2FB9`, clean
+  `-- Dump completed on 2026-10-01 21:38:46` trailer.
+- **Before (raw):** connected DB `db_capstone`; **23 tables**; row counts — batches **6** (5-batch seed
+  + a **B002-R1** created through the UI on 2026-10-01), stock_outs 2, stock_out_details 2,
+  mortality_records 4, regraft_records **3**, inventories 5, activity_logs 13, **sessions 3**, users 1;
+  `migrate:status` **53 Ran / 0 Pending**; **`cacao:health` PASSED (exit 0)**
+  (`6 batch(es) satisfy all invariants`) — all 5 rules held on the drifted live data.
+- **Run:** `php artisan migrate:fresh --seed --force` against `db_capstone` (all 53 migrations,
+  `ActivityLogSeeder` seeded, exit 0).
+- **After (raw):** **23 tables**; row counts — batches **5**, stock_ins 4, stock_outs 1,
+  stock_out_details 1, mortality_records 4, regraft_records 2, inventories 5, scion_varieties 5,
+  suppliers 3, clients 3, users 1, activity_logs 11, analytics 0, **sessions 0** (`1` after the
+  read-only HTTP smoke, which writes one incidental session row); `migrate:status` **53 Ran / 0
+  Pending**; **`cacao:health` PASSED (exit 0)** (`5 batch(es) satisfy all invariants`, all 5 rules).
+- **Seeded family (verified live):** B001 Batangas 500/400/100 (parent —, mortality 25, familyMortality
+  30, surviving 375) · B001-R1 Toledo 100/50/30 (parent B001, mortality 5, Stock Out 20, surviving 50)
+  · B001-R1-R1 Criollo 30/30/0 (parent B001-R1, surviving 30) · B002 Trinitario 150/150/0 (mortality 15,
+  surviving 135) · B003 Forastero 100/100/0 (mortality 10, surviving 90).
+- **KPIs (centralized `AnalyticsMetrics`):** raw `Σtotal_grafted` **880**; live population
+  `Σ(total_grafted − regraft)` **750**; Total Active Inventory **730**; Crude Mortality Rate
+  **7.33%** (numerator 55 / denominator 750); Regraft Deficit **25**. The three cross-batch totals all
+  read **750** (Stock Ledger nested summary, Gap Report Expected, Inventory snapshot total). Stock
+  Ledger **Ready to Plant** totals **680** (per batch 375 / 50 / 30 / 135 / 90) and cumulative
+  **Pullout** totals **20** (B001-R1 only).
+- **End-to-end (read-only, seeded administrator via the HTTP kernel):** all **20 sidebar GET pages
+  return 200**; render checks all pass — the Stock Ledger shows **Ready to Plant**, **Pullout** and the
+  **Family Mortality (incl. sub-batches)** column, plus the Ready-to-Plant/Pullout footnote and the
+  "Total counts each plant once…" note; the Batches detail modal shows **Family Mortality (incl.
+  sub-batches)**; the Gap Report shows the "Expected counts each plant once…" note.
+- **This removes the CZ-observed live drift** (6 batches incl. B002-R1, 3 regraft records, 2 Stock Out
+  details): live `db_capstone` now holds the corrected 5-batch seed and `cacao:health` is clean.
+
+## RESEED EXECUTED — live `db_capstone` re-reseeded with today's fixes (2026-10-01) — SUPERSEDED by the Session DB reseed above
 - **One explicitly approved destructive action (project-owner sign-off), connection `mysql` / database
   `db_capstone`.** Standing rule unchanged: tests run **only** against `db_capstone_test`; any further
   destructive or schema action on the live DB needs fresh sign-off.
