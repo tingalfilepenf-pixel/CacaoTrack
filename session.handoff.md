@@ -28,23 +28,32 @@
 >   once" note; the Batches detail modal shows Family Mortality; the Gap Report note is present).
 >   **This clears the CZ live-drift note** (6 batches incl. B002-R1 / 3 regraft records / 2 Stock Out
 >   details). Docs-only commit follows; no code changed.
-> - **▶ NEXT UP (open threads — start here next session):**
->   - **(a) The CZ "Ready to Plant" mismatch is RESOLVED (fixed, not just documented).** `AnalyticsMetrics::stockLedgerGrid()`
->     now sets `ready` to `Batch::survivingQuantity()` and `pullout` to the batch's cumulative all-time Stock Out,
->     both stamped on the batch's `grafted_date` row — matching the Stock Out gate's surviving cap. The "Ready to
->     Plant" label is kept per client terminology. **Commit `11f674b`.** (The client has now confirmed the definition;
->     no longer blocked on `AGENTS.md` P6 deferred item #4.)
->   - **(b) Live `db_capstone` is now freshly reseeded (Session DB, 2026-10-01)** — 5-batch seed,
->     `cacao:health` PASSED (5 batches, all 5 rules). The CZ-observed drift (6 batches incl. B002-R1,
->     3 regraft records, 2 Stock Out details) is gone. Any further reseed / destructive action still needs
->     fresh owner sign-off; tests only on `db_capstone_test`.
->   - **(c) Full suite last green at `349 passed / 1554 assertions` (after `11f674b` + `d43c2d5`).** Session
->     DB changed docs only (no code) and did not re-run the suite. Re-run the full MySQL suite before any
->     larger change: `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`.
->   - **(d) Uncommitted docs only:** `git status` may show the two sample exports
->     (`docs/cacao-operational-analytics-2026-09-25.csv`, `docs/cacao-stock-ledger.csv`) left untracked by
->     design — do not add them.
->   - **Both client-confirmed rules are now IMPLEMENTED and committed — do NOT re-investigate:** (1) the Stock Ledger's "Ready to Plant" figure uses `survivingQuantity()` (mortality excluded) and Pullout is a cumulative per-batch total, with the 'Ready to Plant' label kept — commit `11f674b`; (2) family-level mortality rollup — `Batch::familyMortality()` plus the "Family Mortality (incl. sub-batches)" column/tile, ADDITIONAL to the unchanged per-batch figure (Crude Mortality Rate numerator and Gap total unchanged) — commit `d43c2d5`.
+> - **▶ NEXT UP (start here next session):**
+>   - **(0) Verify the baseline first.** Full MySQL suite:
+>     `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
+>     → expect **349 passed / 1554 assertions**. Then on a fresh `migrate:fresh --seed` of
+>     `db_capstone_test` run `php artisan cacao:health` → must pass (exit 0, all 5 rules).
+>     Live `db_capstone` is freshly reseeded (5-batch seed) and must be left alone this session.
+>   - **(1) Remaining Session CS Tier-1 — safe, code-only, no client decision needed:**
+>     (i) log Inventory snapshots to `Activity_Log`; (ii) fix the "Total **Active** Inventory
+>     includes archived" label; (iii) point `phpunit.xml` at MySQL `db_capstone_test`.
+>   - **(2) Tier-2 — needs an owner/client decision, do NOT implement unprompted:** whether mortality
+>     should decrement `available_count`; Active-vs-archived basis; the Regraft Deficit formula; the
+>     date-filtered rate definition.
+>   - **(3) Tier-3 — needs an approved ERD revision:** DB unique index for one monthly Inventory
+>     snapshot per batch; Stock In↔Batch traceability (`OD-8`); scion freshness (`OD-13`).
+>   - **(4) Client-gated features — do not build unprompted:** scion-receipt Edit/Archive/Details;
+>     scion-receipt traceability (graft/regraft → a scion-inclusive `Stock_In` row, no balance
+>     deduction); scion freshness/viability rule. See `AGENTS.md` §"P6 deferred items".
+>   - **(5) Docs-only housekeeping:** the two sample exports
+>     (`docs/cacao-operational-analytics-2026-09-25.csv`, `docs/cacao-stock-ledger.csv`) stay
+>     untracked by design — do not add them.
+>   - **Do NOT re-investigate (already implemented + committed):** (1) the Stock Ledger's "Ready to
+>     Plant" figure uses `survivingQuantity()` (mortality excluded) and Pullout is a cumulative
+>     per-batch total, with the 'Ready to Plant' label kept — commit `11f674b`; (2) family-level
+>     mortality rollup — `Batch::familyMortality()` plus the "Family Mortality (incl. sub-batches)"
+>     column/tile, ADDITIONAL to the unchanged per-batch figure (Crude Mortality Rate numerator and
+>     Gap total unchanged) — commit `d43c2d5`.
 > - **▶ Session DA (DONE — display-only "Ready to Plant" footnote added to the Stock Ledger; live `cacao:health` re-run clean; 2026-10-01):**
 >   **(1) Footnote (display/text only, no logic change)** — one line was appended to the SAME three locations as
 >   the Phase 7C Regraft/Grafted footnote: the on-screen grid note
