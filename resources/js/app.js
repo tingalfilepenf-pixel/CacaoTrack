@@ -33,4 +33,34 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+
+    // Show/hide password toggles (Users Management, Profile).
+    const togglePasswordVisibility = function (toggle) {
+        const input = toggle.closest('.input-group')?.querySelector('input');
+        if (!input) { return; }
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        const icon = toggle.querySelector('i');
+        if (icon) {
+            icon.classList.toggle('bi-eye', !show);
+            icon.classList.toggle('bi-eye-slash', show);
+        }
+        toggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    };
+
+    document.addEventListener('click', function (event) {
+        const toggle = event.target.closest('.toggle-password');
+        if (toggle) {
+            togglePasswordVisibility(toggle);
+        }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') { return; }
+        const toggle = event.target.closest('.toggle-password');
+        if (toggle) {
+            event.preventDefault();
+            togglePasswordVisibility(toggle);
+        }
+    });
 });

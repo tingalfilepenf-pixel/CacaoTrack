@@ -206,8 +206,9 @@
                         <select class="form-select @error('batch_id', 'mortality') is-invalid @enderror" id="recordBatch" name="batch_id" required>
                             <option value="" disabled @selected(old('batch_id') === null)>Select Batch</option>
                             @foreach ($activeBatches as $batch)
+                                @php $breakdown = $activeBatchBreakdowns[$batch->batch_id] ?? null; @endphp
                                 <option value="{{ $batch->batch_id }}" @selected(old('batch_id') == $batch->batch_id)>
-                                    {{ $batch->batch_code }} ({{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}) — remaining: {{ $batch->remainingMortalityCapacity() }}
+                                    {{ $batch->batch_code }} ({{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }})@if ($breakdown) — Original: {{ number_format($breakdown['original_quantity']) }} | Stock Out: {{ number_format($breakdown['stock_out_quantity']) }} | Remaining: {{ number_format($breakdown['remaining_quantity']) }}@endif
                                 </option>
                             @endforeach
                         </select>
@@ -256,7 +257,7 @@
                     <p class="text-muted small mb-0">
                         <i class="bi bi-info-circle me-1"></i>An Administrator can correct a mistaken entry with the
                         <strong>Correct</strong> action; a dead root stock cannot be regrafted — it is counted as mortality.
-                        Mortality cannot exceed the batch's remaining capacity, including when corrected.
+                        Mortality cannot exceed the batch's remaining quantity (original less Stock Out and prior mortality), including when corrected.
                     </p>
                 </div>
                 <div class="modal-footer">
@@ -322,7 +323,7 @@
                 @csrf
                 <div class="modal-body">
                     <p class="text-muted small">
-                        Editing the entry re-validates it against the batch's remaining mortality capacity and records the
+                        Editing the entry re-validates it against the batch's remaining quantity and records the
                         before/after values in Activity History.
                     </p>
                     <div class="mb-3">

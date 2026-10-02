@@ -61,14 +61,16 @@ class CorrectRecord
 
             $newQuantity = (int) $data['quantity'];
 
-            // Capacity available to THIS record: the batch's still-attributable
-            // population minus every OTHER mortality record.
-            $capacity = ((int) $batch->total_grafted - (int) $batch->regraft)
-                - MortalityRecord::effectiveQuantityForBatch($batch->batch_id, $locked->mortality_id);
+            // Capacity available to THIS record: the batch's live remaining
+            // balance minus every OTHER mortality record. `available_count`
+            // already nets out regraft-out and Stock Out/Pull-Out, so this is
+            // the same remaining-quantity rule a new entry is validated against.
+            $capacity = max(0, (int) $batch->available_count
+                - MortalityRecord::effectiveQuantityForBatch($batch->batch_id, $locked->mortality_id));
 
             if ($newQuantity > $capacity) {
                 $this->fail('mortality_correction', [
-                    'quantity' => "Mortality cannot exceed the batch's remaining mortality capacity of {$capacity} for {$batch->batch_code}.",
+                    'quantity' => "Mortality cannot exceed the batch's remaining quantity of {$capacity} for {$batch->batch_code}.",
                 ]);
             }
 

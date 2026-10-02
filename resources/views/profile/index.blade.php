@@ -153,25 +153,34 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label text-muted small fw-bold" for="currentPassword">Current Password <span class="text-danger">*</span></label>
-                        <input type="password" id="currentPassword" name="current_password" required autocomplete="current-password"
-                            class="form-control @error('current_password', 'password') is-invalid @enderror">
-                        @error('current_password', 'password')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
+                        <div class="input-group has-validation">
+                            <input type="password" id="currentPassword" name="current_password" required autocomplete="current-password"
+                                class="form-control @error('current_password', 'password') is-invalid @enderror">
+                            <span class="input-group-text toggle-password" role="button" tabindex="0" aria-label="Show password"><i class="bi bi-eye"></i></span>
+                            @error('current_password', 'password')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label text-muted small fw-bold" for="newPassword">New Password <span class="text-danger">*</span></label>
-                        <input type="password" id="newPassword" name="password" required minlength="8" autocomplete="new-password"
-                            class="form-control @error('password', 'password') is-invalid @enderror">
-                        @error('password', 'password')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
+                        <div class="input-group has-validation">
+                            <input type="password" id="newPassword" name="password" required minlength="8" autocomplete="new-password"
+                                class="form-control @error('password', 'password') is-invalid @enderror">
+                            <span class="input-group-text toggle-password" role="button" tabindex="0" aria-label="Show password"><i class="bi bi-eye"></i></span>
+                            @error('password', 'password')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
                         <div class="form-text">At least 8 characters.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label text-muted small fw-bold" for="newPasswordConfirmation">Confirm New Password <span class="text-danger">*</span></label>
-                        <input type="password" id="newPasswordConfirmation" name="password_confirmation" required minlength="8" autocomplete="new-password"
-                            class="form-control">
+                        <div class="input-group">
+                            <input type="password" id="newPasswordConfirmation" name="password_confirmation" required minlength="8" autocomplete="new-password"
+                                class="form-control">
+                            <span class="input-group-text toggle-password" role="button" tabindex="0" aria-label="Show password"><i class="bi bi-eye"></i></span>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">

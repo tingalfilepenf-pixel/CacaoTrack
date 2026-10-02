@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\ActivityLog;
 use App\Models\Batch;
+use App\Models\Client;
 use App\Models\MortalityRecord;
 use App\Models\ScionVariety;
+use App\Models\StockOut;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -13,9 +15,11 @@ use Tests\TestCase;
 
 /**
  * Mortality Tracking on the client-approved model: record-only
- * (Mortality_Adjustments was removed), the cap is
- * `max(0, (total_grafted - regraft) - effective mortality)`, and recording NEVER
- * mutates `batches.available_count` or the `regraft` counter.
+ * (Mortality_Adjustments was removed), the cap is the batch's live remaining
+ * balance — the same `Batch::survivingQuantity()` gate Stock Out and Regraft
+ * use, i.e. establishment quantity net of regraft-out, Stock Out and recorded
+ * mortality — and recording NEVER mutates `batches.available_count` or the
+ * `regraft` counter.
  */
 class MortalityTest extends TestCase
 {
@@ -283,5 +287,91 @@ class MortalityTest extends TestCase
             ->assertOk()
             ->assertSee('Disease')
             ->assertSee('B001');
+    }
+
+    public function test_the_dropdown_reports_original_stock_out_and_remaining_separately(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, totalGrafted: 200);
+
+        $this->recordStockOutOf($user, $batch, 50);
+
+        $breakdown = $batch->fresh()->quantityBreakdown();
+
+        // Original is the historical establishment log, never the live balance.
+        $this->assertSame(200, $breakdown['original_quantity']);
+        $this->assertSame(50, $breakdown['stock_out_quantity']);
+        $this->assertSame(50, $breakdown['pullout_quantity']);
+        $this->assertSame(0, $breakdown['mortality_quantity']);
+        $this->assertSame(150, $breakdown['remaining_quantity']);
+
+        $this->actingAs($user)
+            ->get(route('operational.mortality'))
+            ->assertOk()
+            ->assertSee('Original: 200')
+            ->assertSee('Stock Out: 50')
+            ->assertSee('Remaining: 150');
+    }
+
+    public function test_mortality_cannot_exceed_the_remaining_quantity_after_stock_out(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, totalGrafted: 200);
+
+        $this->recordStockOutOf($user, $batch, 50);
+
+        // The original 200 minus the 50 released leaves only 150 available to
+        // mortality; 151 must be rejected.
+        $this->actingAs($user)
+            ->from(route('operational.mortality'))
+            ->post(route('operational.mortality.records.store'), [
+                'batch_id' => $batch->batch_id,
+                'quantity' => 151,
+                'cause' => 'Disease',
+                'recorded_at' => '2026-09-10',
+            ])
+            ->assertSessionHasErrors(['quantity'], null, 'mortality');
+
+        $this->assertDatabaseCount('mortality_records', 0);
+
+        // Exactly the remaining 150 is allowed.
+        $this->actingAs($user)
+            ->post(route('operational.mortality.records.store'), [
+                'batch_id' => $batch->batch_id,
+                'quantity' => 150,
+                'cause' => 'Disease',
+                'recorded_at' => '2026-09-10',
+            ])
+            ->assertRedirect(route('operational.mortality'));
+
+        $this->assertSame(150, $batch->fresh()->effectiveMortalityQuantity());
+        $this->assertSame(0, $batch->fresh()->remainingMortalityCapacity());
+    }
+
+    /**
+     * Release `$quantity` from a batch through a real Stock Out detail and drop
+     * the batch's live balance accordingly (the normal validated path).
+     */
+    private function recordStockOutOf(User $user, Batch $batch, int $quantity): void
+    {
+        $client = Client::create([
+            'client_name' => 'Mountain View Estate',
+            'contact_number' => '09170000000',
+            'address' => 'Batangas',
+        ]);
+
+        $stockOut = StockOut::create([
+            'client_id' => $client->client_id,
+            'user_id' => $user->id,
+            'release_date' => '2026-09-05',
+        ]);
+
+        $stockOut->details()->create([
+            'batch_id' => $batch->batch_id,
+            'quantity' => $quantity,
+            'unit' => 'pots',
+        ]);
+
+        $batch->update(['available_count' => (int) $batch->available_count - $quantity]);
     }
 }

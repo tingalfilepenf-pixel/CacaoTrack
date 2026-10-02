@@ -49,7 +49,10 @@ body {
     flex-shrink: 0;
 }
 
-#sidebar .nav {
+/* Scope scroll/fill/padding to the TOP-LEVEL nav only. The selector used to be
+   `#sidebar .nav`, which also matched the nested submenu `.nav` containers and
+   added 3rem of dead space under every expanded submenu. */
+#sidebar > .nav {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
@@ -58,15 +61,29 @@ body {
     padding-bottom: 3rem; /* Extra padding for bottom accessibility */
 }
 
-#sidebar .nav::-webkit-scrollbar {
+#sidebar > .nav::-webkit-scrollbar {
     width: 6px;
 }
-#sidebar .nav::-webkit-scrollbar-track {
+#sidebar > .nav::-webkit-scrollbar-track {
     background: transparent;
 }
-#sidebar .nav::-webkit-scrollbar-thumb {
+#sidebar > .nav::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.2);
     border-radius: 3px;
+}
+
+/* A collapsed submenu must occupy zero layout space: no height, margin, padding
+   or border may survive the collapse. */
+#sidebar .collapse:not(.show) {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+}
+#sidebar .collapse > .nav {
+    margin-bottom: 0;
+    padding-bottom: 0;
 }
 
 #sidebar .nav-link {
@@ -214,4 +231,13 @@ body {
     }
     
     /* When sidebar is visible on mobile, we might want an overlay, but keeping it simple for now */
+}
+
+/* Show/hide password toggle (login, Users, Profile) */
+.input-group-text.toggle-password {
+    cursor: pointer;
+}
+.input-group-text.toggle-password:focus {
+    outline: 2px solid var(--primary-color, #2e7d32);
+    outline-offset: -2px;
 }

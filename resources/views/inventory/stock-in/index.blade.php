@@ -287,10 +287,7 @@
 
                     <!-- Shared receiving fields (apply to both seedlings and scion) -->
                     <div class="mb-3">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label text-muted small fw-bold mb-0" for="stockInSupplier">Supplier <span class="text-danger">*</span></label>
-                            <button type="button" class="btn btn-link btn-sm p-0" id="switchToSupplierBtn">+ Add Supplier</button>
-                        </div>
+                        <label class="form-label text-muted small fw-bold" for="stockInSupplier">Supplier <span class="text-danger">*</span></label>
                         <select class="form-select @error('supplier_id', 'stockin') is-invalid @enderror" id="stockInSupplier" name="supplier_id" required>
                             <option value="" disabled @selected(old('supplier_id') === null)>Select Supplier</option>
                             @foreach ($suppliers as $supplier)
@@ -652,14 +649,6 @@
 
         const initialEntryTab = document.querySelector('#stockInTabs .nav-link.active');
         setEntryType(initialEntryTab ? initialEntryTab.getAttribute('data-entry-type') : 'seedling');
-
-        const switchBtn = document.getElementById('switchToSupplierBtn');
-        if (switchBtn) {
-            switchBtn.addEventListener('click', function () {
-                bootstrap.Modal.getInstance(stockInModalEl)?.hide();
-                new bootstrap.Modal(supplierModalEl).show();
-            });
-        }
 
         const detailsModal = document.getElementById('stockInDetailsModal');
         if (detailsModal) {

@@ -280,10 +280,7 @@
                 <div class="modal-body">
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <label class="form-label text-muted small fw-bold mb-0" for="stockOutClient">Client <span class="text-danger">*</span></label>
-                                <button type="button" class="btn btn-link btn-sm p-0" id="switchToClientBtn">+ Add Client</button>
-                            </div>
+                            <label class="form-label text-muted small fw-bold" for="stockOutClient">Client <span class="text-danger">*</span></label>
                             <select class="form-select @error('client_id', 'stockout') is-invalid @enderror" id="stockOutClient" name="client_id" required>
                                 <option value="" disabled @selected(old('client_id') === null)>Select Client</option>
                                 @foreach ($clients as $client)
@@ -516,14 +513,6 @@
         @elseif ($errors->client->any())
             new bootstrap.Modal(clientModalEl).show();
         @endif
-
-        const switchBtn = document.getElementById('switchToClientBtn');
-        if (switchBtn) {
-            switchBtn.addEventListener('click', function () {
-                bootstrap.Modal.getInstance(stockOutModalEl)?.hide();
-                new bootstrap.Modal(clientModalEl).show();
-            });
-        }
 
         let lineIndex = 0;
 

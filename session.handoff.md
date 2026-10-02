@@ -1,6 +1,92 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session DD — **live `db_capstone` operational data cleared to empty for manual step-by-step flow testing; users + master/reference data preserved**)
+> ### ▶ Continue here (latest: Session DH — **Users + Profile show/hide password toggles; sidebar dead-space fixed + accordion (only one expandable section open); no schema/route/data change**)
+> - **▶ Session DH (DONE — Users/Profile show-password toggles + sidebar collapse dead-space fix; no schema, route, permission or data change; `db_capstone` untouched; 2026-10-02):**
+>   Owner-directed UI pass, view/CSS/JS only. **(1) Show/hide password toggles (owner request; validated
+>   against PRD FR-02 / §13 and ERD `Users`):** every password input on **Users Management** (Add User
+>   modal: `password` + `password_confirmation`) and **Profile** (Change Password modal:
+>   `current_password`, `password`, `password_confirmation`) is now wrapped in an
+>   `.input-group.has-validation` with an eye `input-group-text.toggle-password`. The toggle flips the
+>   input `type` and swaps `bi-eye`/`bi-eye-slash`; the `.invalid-feedback` stays inside the group so
+>   server-side validation still renders. **Centralized (RULE 6):** one delegated click + keydown handler
+>   in `resources/js/app.js` (`togglePasswordVisibility()`, applies to any `.toggle-password`), plus a
+>   `.toggle-password { cursor:pointer }` / `:focus` rule in `resources/css/app.css`. Login already had
+>   its own toggle (unchanged). **No security change — the input `type` toggle is client-side only;
+>   passwords remain hashed and are never displayed (FR-02).** Files:
+>   `resources/views/users/index.blade.php`, `resources/views/profile/index.blade.php`,
+>   `resources/js/app.js`, `resources/css/app.css`.
+>   **(2) Sidebar excessive-blank-space fix + accordion:** the CSS rule `#sidebar .nav { flex:1;
+>   overflow-y:auto; padding-bottom:3rem; }` also matched the **nested submenu** `.nav` containers, so
+>   every expanded submenu carried 3rem of dead space (the gaps under "Client" / "Gap Report"). Scoped it
+>   to the top-level nav (`#sidebar > .nav`) and added an explicit reset
+>   (`#sidebar .collapse:not(.show) { display:none; height:0; margin:0; padding:0; border:0 }`,
+>   `#sidebar .collapse > .nav` padding reset) so a collapsed submenu occupies **zero** layout space.
+>   Added `id="sidebarNav"` to the nav container and `data-bs-parent="#sidebarNav"` to the three
+>   collapsible sections (`inventoryManageCollapse`, `tabularCollapse`, `historicalCollapse`), so opening
+>   one **auto-collapses the others** (Bootstrap accordion). Labels, routes, icons and permissions
+>   unchanged. Files: `resources/css/app.css`, `resources/views/layouts/sidebar.blade.php`.
+>   **Verified:** `npm run build` re-run + `php artisan view:cache` clean; full MySQL suite
+>   **369 passed / 1687 assertions** on `db_capstone_test`; **no migration / model / controller / request
+>   / route / seeder / test / PRD-ERD change; `db_capstone` NOT touched.**
+> - **▶ Session DG (DONE — UI-only branding/header tweaks; no schema, route, permission or data change; `db_capstone` untouched; 2026-10-02):**
+>   Owner-directed cosmetic pass, all view/asset-only. **(1) Navbar** (`resources/views/layouts/navbar.blade.php`):
+>   removed the right-side **user profile dropdown** (avatar + name + Profile/Logout); Profile and Logout
+>   remain reachable from the sidebar **Account** section. **(2) Login page**
+>   (`resources/views/auth/login.blade.php`): replaced the tree icon with the company logo
+>   `<img src="{{ asset('images/cacao-logo.jpg') }}">` above the "CACAO TRACK" title (new `.login-logo` style,
+>   140px). **(3) Sidebar header** (`resources/views/layouts/sidebar.blade.php`): replaced the tree icon +
+>   "CACAO TRACK" text with the same logo (`height/width 40px; object-fit: contain; border-radius: 50%`).
+>   **(4) Asset:** the logo was copied into the repo at **`public/images/cacao-logo.jpg`** (from
+>   `C:\Users\Filepen\Downloads\RU-CHRIS-Cacao-agri.jpg`, 113,330 B); the `public/images/` folder was created.
+>   **(5) Reverted experiments (no net change):** a temporary dashboard `page_actions` profile dropdown was
+>   added then removed, and a temporary white sidebar-header background (`resources/css/app.css`) was applied
+>   then reverted to the original `#212529`; `npm run build` was re-run (assets current). **Diagnostic note:**
+>   a reported `/login` "error" was a **stopped `php artisan serve`** (nothing listening on :8000), not an app
+>   error — `GET /login` returns **200** through the HTTP kernel. **Verified:** `php artisan view:cache` clean.
+>   **No migration / model / controller / route / seeder / test / PRD-ERD change; `db_capstone` NOT touched.**
+> - **▶ Session DF (DONE — Mortality Tracking dropdown exposes original vs Stock Out vs remaining; mortality validation capped by the live remaining balance; 2026-10-02):**
+>   Owner-directed fix. **Root cause:** the Record Mortality batch dropdown called
+>   `Batch::remainingMortalityCapacity()` = `(total_grafted − regraft) − mortality`, which ignores Stock Out,
+>   so it showed a value that was neither the historical original nor the live remaining, and hid the original
+>   quantity after a Stock Out. **Fix (one shared definition, RULE 6):**
+>   **(1) `Batch::quantityBreakdown()`** (new, `app/Models/Batch.php`) returns the five requested values
+>   separately — `original_quantity` (`total_grafted`, the cumulative establishment log; Stock Out never
+>   reduces it), `stock_out_quantity` (Σ `stock_out_details.quantity`), `pullout_quantity` (the SAME recorded
+>   transaction as Stock Out in CacaoTrack, PRD §2.8), `mortality_quantity` (effective recorded mortality) and
+>   `remaining_quantity` (`survivingQuantity()` = `available_count − mortality`). `survivingQuantity()` gained
+>   an optional precomputed-mortality arg so the breakdown reuses one mortality sum (no extra query).
+>   **(2) `Batch::remainingMortalityCapacity()` now delegates to `survivingQuantity()`**, so the mortality gate
+>   subtracts Stock Out/Pull-Out exactly like the Stock Out and Regraft caps.
+>   **(3) `MortalityController@index`** builds a per-batch breakdown map and passes it to the view;
+>   **`@store`** validates `quantity ≤ remaining quantity` (message now "…remaining quantity of {n}…").
+>   **(4) Dropdown text** (`resources/views/operational/mortality/index.blade.php`) now reads e.g.
+>   `B001 (Batangas) — Original: 200 | Stock Out: 50 | Remaining: 150`; the in-modal helper notes now say
+>   "remaining quantity".
+>   **(5) `CorrectRecord::mortality()`** re-validates a correction as `available_count − other mortality`
+>   (Stock Out now excluded), matching a new entry.
+>   **Interpretation note:** the request's rule 4 said "validate against the remaining quantity" but then "not
+>   greater than 200" (the original); the stricter **remaining = 150** was implemented, which also guarantees
+>   ≤200 (sold 50 + died 150 = 200 original). **Supersedes the previously-"CONFIRMED" mortality cap**
+>   `max(0, (total_grafted − regraft) − mortality)` recorded in `AGENTS.md` (CONFIRMED section) / the Phase 7B
+>   notes — that doc line is now stale and should be reconciled (owner-directed change; mortality still does
+>   **not** mutate `available_count` or the regraft counter).
+>   **No historical Stock Out/grafting/mortality records, schema, routes or permission keys were touched; no
+>   migration.** **Verified:** full MySQL suite **369 passed / 1687 assertions** on `db_capstone_test` (was
+>   367/1671; +2 `MortalityTest` cases: breakdown/display + cap-after-Stock-Out); `php -l` clean; Pint clean;
+>   `php artisan view:cache` clean. **`db_capstone` NOT touched.**
+> - **▶ Session DE (DONE — removed the inline quick-add links from the Stock In / Stock Out modal forms; view-only, no schema/data change; 2026-10-01):**
+>   Owner-requested UI tidy-up. **Stock In** (`resources/views/inventory/stock-in/index.blade.php`):
+>   removed the **`+ Add Supplier`** link beside the form's Supplier label and its now-dead
+>   `switchToSupplierBtn` JS handler; the shared Supplier `<select>` still renders and is still required.
+>   **Stock Out** (`resources/views/inventory/stock-out/index.blade.php`): removed the **`+ Add Client`**
+>   link beside the form's Client label and its now-dead `switchToClientBtn` JS handler; the Client
+>   `<select>` is unchanged and still required. The page-level **New Supplier** / **New Client** buttons in
+>   `@section('page_actions')` and their modals (`supplierModal` / `clientModal`) are **kept** — only the
+>   duplicate in-form links were removed. Compliant with PRD FR-09/FR-11/FR-12 and ERD §3.7/§3.14/§3.15
+>   (Supplier/Client remain selectable; no field, route, validation or schema touched — RULE 4, no new
+>   table). **Verified:** `php artisan view:cache` clean; no remaining `switchToSupplierBtn` /
+>   `switchToClientBtn` references. No test files changed; full suite not re-run this session (view-only
+>   change). `db_capstone` untouched.
 > - **▶ Session DD (DONE — owner-approved one-time clear of live `db_capstone` operational data; users + master data preserved; docs-only commit; 2026-10-01):**
 >   **Backup first** (verified, left untouched outside the repo):
 >   `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_cleared_20261001_235027.sql`
@@ -75,18 +161,35 @@
 >   once" note; the Batches detail modal shows Family Mortality; the Gap Report note is present).
 >   **This clears the CZ live-drift note** (6 batches incl. B002-R1 / 3 regraft records / 2 Stock Out
 >   details). Docs-only commit follows; no code changed.
-> - **▶ NEXT UP (start here next session):**
->   - **(0) Verify the baseline first.** Full MySQL suite:
+> - **▶ NEXT UP (start here next session — manual flow-testing / vibecoding):**
+>   - **(0) Live `db_capstone` is intentionally EMPTY of operational data — 0 batches; do NOT reseed.**
+>     The owner is hand-entering every number to follow the flows step by step. Master/reference data is
+>     intact and must stay: **users 1 · scion_varieties 5 · suppliers 3 · clients 3**; also untouched:
+>     activity_tasks, task_completes, analytics, migrations, framework tables. The seeded baseline is NOT
+>     in the DB — it lives only in the Session DD backup. Any restore/reseed needs fresh owner sign-off.
+>   - **(0a) Quick state check (read-only).** `php artisan cacao:health` → until batches are entered it
+>     should print `Cacao health check passed. No batches to check.` (exit 0); once batches exist it
+>     validates all 5 rules. To inspect counts:
+>     `mysql -u root -h 127.0.0.1 db_capstone -t -e "SELECT 'batches' t, COUNT(*) c FROM batches;"`.
+>     Backup available if a restore is ever approved:
+>     `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_cleared_20261001_235027.sql` (36,106 B).
+>   - **(0b) Manual entry order to exercise the flows end-to-end:** (i) **Batches** — create a root batch
+>     (first `batch_id` will be **1**, `batch_code` B001); (ii) **Mortality Tracking**; (iii) **Regraft**
+>     (cap = `Batch::survivingQuantity()`); (iv) **Stock In** — Seedlings tab, then the Scion tab;
+>     (v) **Stock Out** (gate = `survivingQuantity()`; unit is **pots** only); (vi) **Inventory** —
+>     "Record Monthly Inventory" snapshot. Re-run `cacao:health` and glance at the Dashboard / Stock
+>     Ledger after each step.
+>   - **(0c) Code/test baseline (unchanged, code-side only):** full MySQL suite
 >     `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->     → expect **349 passed / 1554 assertions**. Then on a fresh `migrate:fresh --seed` of
->     `db_capstone_test` run `php artisan cacao:health` → must pass (exit 0, all 5 rules).
->     Live `db_capstone` is freshly reseeded (5-batch seed) and must be left alone this session.
+>     → **369 passed / 1687 assertions** (Session DF). Run tests **only** against `db_capstone_test`.
 >   - **(1) Remaining Session CS Tier-1 — safe, code-only, no client decision needed:**
 >     (i) log Inventory snapshots to `Activity_Log`; (ii) fix the "Total **Active** Inventory
 >     includes archived" label; (iii) point `phpunit.xml` at MySQL `db_capstone_test`.
 >   - **(2) Tier-2 — needs an owner/client decision, do NOT implement unprompted:** whether mortality
 >     should decrement `available_count`; Active-vs-archived basis; the Regraft Deficit formula; the
->     date-filtered rate definition.
+>     date-filtered rate definition. (The mortality **cap** was owner-directed in Session DF — a new entry
+>     is now validated against the live remaining `survivingQuantity()`; mortality still does not mutate
+>     `available_count`.)
 >   - **(3) Tier-3 — needs an approved ERD revision:** DB unique index for one monthly Inventory
 >     snapshot per batch; Stock In↔Batch traceability (`OD-8`); scion freshness (`OD-13`).
 >   - **(4) Client-gated features — do not build unprompted:** scion-receipt Edit/Archive/Details;
@@ -100,7 +203,9 @@
 >     per-batch total, with the 'Ready to Plant' label kept — commit `11f674b`; (2) family-level
 >     mortality rollup — `Batch::familyMortality()` plus the "Family Mortality (incl. sub-batches)"
 >     column/tile, ADDITIONAL to the unchanged per-batch figure (Crude Mortality Rate numerator and
->     Gap total unchanged) — commit `d43c2d5`.
+>     Gap total unchanged) — commit `d43c2d5`; (3) the Mortality Tracking dropdown shows
+>     **Original / Stock Out / Remaining** from `Batch::quantityBreakdown()` and the mortality cap is the
+>     live remaining balance — Session DF (see the top banner).
 > - **▶ Session DA (DONE — display-only "Ready to Plant" footnote added to the Stock Ledger; live `cacao:health` re-run clean; 2026-10-01):**
 >   **(1) Footnote (display/text only, no logic change)** — one line was appended to the SAME three locations as
 >   the Phase 7C Regraft/Grafted footnote: the on-screen grid note

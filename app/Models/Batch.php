@@ -250,15 +250,48 @@ class Batch extends Model
     /**
      * Remaining quantity that may still be recorded as mortality.
      *
-     * The mortality quantity is bounded by the batch's still-attributable
-     * population (`total_grafted − regraft`, client-confirmed), so the cap is
-     * `max(0, (total_grafted - regraft) - effective mortality)`. Recording
-     * mortality still does **not** mutate `available_count` or the `regraft`
-     * counter.
+     * This is the batch's live remaining balance — the SAME shared cap as
+     * Stock Out and Regraft ({@see survivingQuantity()}): the establishment
+     * quantity net of regraft-out, Stock Out/Pull-Out and recorded mortality.
+     * Stock Out therefore reduces the mortality cap, so plants already released
+     * can never be recorded as deaths afterwards. Recording mortality still
+     * does **not** mutate `available_count` or the `regraft` counter.
      */
     public function remainingMortalityCapacity(): int
     {
-        return max(0, ((int) $this->total_grafted - (int) $this->regraft) - $this->effectiveMortalityQuantity());
+        return $this->survivingQuantity();
+    }
+
+    /**
+     * The separate quantity figures exposed by the Mortality Tracking batch
+     * dropdown, each taken from its own authoritative source so a live balance
+     * is never mistaken for the historical original quantity:
+     *
+     *  - `original_quantity`  : `total_grafted`, the cumulative, non-decreasing
+     *                           establishment log; Stock Out never reduces it
+     *                           (client-confirmed).
+     *  - `stock_out_quantity` : sum of this batch's Stock Out detail lines.
+     *  - `pullout_quantity`   : in CacaoTrack "Pull-Out" and "Stock Out" are the
+     *                           same recorded transaction (PRD §2.8), so this
+     *                           equals the Stock Out total.
+     *  - `mortality_quantity` : effective recorded mortality.
+     *  - `remaining_quantity` : the live balance after regraft, Stock Out and
+     *                           mortality ({@see survivingQuantity()}).
+     *
+     * @return array{original_quantity:int,stock_out_quantity:int,pullout_quantity:int,mortality_quantity:int,remaining_quantity:int}
+     */
+    public function quantityBreakdown(): array
+    {
+        $stockOut = (int) $this->stockOutDetails()->sum('quantity');
+        $mortality = $this->effectiveMortalityQuantity();
+
+        return [
+            'original_quantity' => (int) $this->total_grafted,
+            'stock_out_quantity' => $stockOut,
+            'pullout_quantity' => $stockOut,
+            'mortality_quantity' => $mortality,
+            'remaining_quantity' => $this->survivingQuantity($mortality),
+        ];
     }
 
     /**
@@ -302,10 +335,16 @@ class Batch extends Model
      * It is used by {@see RegraftBatch} as the regraft cap and by the Stock Out
      * controller as the release cap, so plants already recorded as mortality can
      * never be regrafted or released.
+     *
+     * The optional `$mortalityQuantity` lets a caller that has already summed the
+     * batch's mortality reuse it instead of issuing a second query, while still
+     * going through this one definition (RULE 6).
      */
-    public function survivingQuantity(): int
+    public function survivingQuantity(?int $mortalityQuantity = null): int
     {
-        return max(0, (int) $this->available_count - $this->effectiveMortalityQuantity());
+        $mortality = $mortalityQuantity ?? $this->effectiveMortalityQuantity();
+
+        return max(0, (int) $this->available_count - $mortality);
     }
 
     /**

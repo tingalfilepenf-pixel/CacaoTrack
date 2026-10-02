@@ -48,10 +48,20 @@ class MortalityController extends Controller
             ->paginate(10)
             ->withQueryString();
 
+        $activeBatches = Batch::active()->with('scionVariety')->orderBy('batch_code')->get();
+
+        // Each batch's original / Stock Out / mortality / remaining figures,
+        // kept separate so the dropdown never shows a live balance as the
+        // historical original quantity (RULE 6: one shared definition).
+        $activeBatchBreakdowns = $activeBatches->mapWithKeys(
+            fn (Batch $batch) => [$batch->batch_id => $batch->quantityBreakdown()],
+        );
+
         return view('operational.mortality.index', [
             'records' => $records,
             'batches' => Batch::with('scionVariety')->orderBy('batch_code')->get(),
-            'activeBatches' => Batch::active()->with('scionVariety')->orderBy('batch_code')->get(),
+            'activeBatches' => $activeBatches,
+            'activeBatchBreakdowns' => $activeBatchBreakdowns,
             'scionVarieties' => ScionVariety::orderBy('scion_variety_name')->get(),
             'filters' => $filters,
             'totalMortality' => $filteredRecords->sum(fn (MortalityRecord $record) => $record->effectiveQuantity()),
@@ -82,7 +92,7 @@ class MortalityController extends Controller
 
                 if ((int) $validated['quantity'] > $capacity) {
                     $this->failValidation([
-                        'quantity' => "Mortality cannot exceed the batch's remaining mortality capacity of {$capacity} for {$batch->batch_code}.",
+                        'quantity' => "Mortality cannot exceed the batch's remaining quantity of {$capacity} for {$batch->batch_code}.",
                     ], 'mortality');
                 }
 

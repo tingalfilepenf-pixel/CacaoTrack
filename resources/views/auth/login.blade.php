@@ -28,6 +28,11 @@
             font-size: 3rem;
             color: var(--primary-color);
         }
+        .login-header .login-logo {
+            width: 140px;
+            height: auto;
+            margin-bottom: 1rem;
+        }
         .login-btn {
             background-color: var(--primary-color);
             border-color: var(--primary-color);
@@ -55,7 +60,7 @@
     <div class="card login-card p-4">
         <div class="card-body">
             <div class="login-header">
-                <i class="bi bi-tree-fill mb-2 d-inline-block"></i>
+                <img src="{{ asset('images/cacao-logo.jpg') }}" alt="RU-CHRIS CRIOLLO Cacao Agriventures Inc." class="login-logo">
                 <h4 class="fw-bold mb-0">CACAO TRACK</h4>
                 <p class="text-muted small mt-1">Cacao Mortality Tracking and Inventory System</p>
             </div>

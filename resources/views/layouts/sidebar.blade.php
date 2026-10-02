@@ -29,11 +29,10 @@
 @endphp
 <nav id="sidebar">
     <div class="sidebar-header">
-        <i class="bi bi-tree-fill text-success me-2"></i>
-        <span>CACAO TRACK</span>
+        <img src="{{ asset('images/cacao-logo.jpg') }}" alt="CACAO TRACK" style="height: 40px; width: 40px; object-fit: contain; border-radius: 50%;">
     </div>
     
-    <div class="nav flex-column py-2">
+    <div class="nav flex-column py-2" id="sidebarNav">
         <a href="/" class="nav-link {{ request()->is('/') ? 'active' : '' }}">
             <i class="bi bi-speedometer2"></i>
             <span>Dashboard</span>
@@ -94,7 +93,7 @@
                 <span>Management</span>
                 <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
             </a>
-            <div class="collapse {{ $managementOpen ? 'show' : '' }}" id="inventoryManageCollapse">
+            <div class="collapse {{ $managementOpen ? 'show' : '' }}" id="inventoryManageCollapse" data-bs-parent="#sidebarNav">
                 <div class="nav flex-column ms-3" style="font-size: 0.9rem;">
                     <a href="{{ route('inventory.suppliers') }}" class="nav-link py-1 {{ request()->routeIs('inventory.suppliers') ? 'text-white' : '' }}"><i class="bi bi-truck me-2"></i>Supplier</a>
                     <a href="{{ route('inventory.clients') }}" class="nav-link py-1 {{ request()->routeIs('inventory.clients') ? 'text-white' : '' }}"><i class="bi bi-people me-2"></i>Client</a>
@@ -116,7 +115,7 @@
                 <span>Tabular Deliverables</span>
                 <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
             </a>
-            <div class="collapse {{ $tabularOpen ? 'show' : '' }}" id="tabularCollapse">
+            <div class="collapse {{ $tabularOpen ? 'show' : '' }}" id="tabularCollapse" data-bs-parent="#sidebarNav">
                 <div class="nav flex-column ms-3" style="font-size: 0.9rem;">
                     <a href="{{ route('analytics.stock-ledger') }}" class="nav-link py-1 {{ request()->routeIs('analytics.stock-ledger') ? 'text-white' : '' }}"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Stock Ledger</a>
                     <a href="{{ route('analytics.mortality-matrix') }}" class="nav-link py-1 {{ request()->routeIs('analytics.mortality-matrix') ? 'text-white' : '' }}"><i class="bi bi-grid-3x3 me-2"></i>Root Cause Matrix</a>
@@ -129,7 +128,7 @@
                 <span>Historical</span>
                 <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
             </a>
-            <div class="collapse {{ $historicalOpen ? 'show' : '' }}" id="historicalCollapse">
+            <div class="collapse {{ $historicalOpen ? 'show' : '' }}" id="historicalCollapse" data-bs-parent="#sidebarNav">
                 <div class="nav flex-column ms-3" style="font-size: 0.9rem;">
                     <a href="{{ route('analytics.historical.seasonality') }}" class="nav-link py-1 {{ request()->routeIs('analytics.historical.seasonality') ? 'text-white' : '' }}"><i class="bi bi-thermometer-half me-2"></i>Seasonality Heatmap</a>
                     <a href="{{ route('analytics.historical.age-profile') }}" class="nav-link py-1 {{ request()->routeIs('analytics.historical.age-profile') ? 'text-white' : '' }}"><i class="bi bi-bar-chart-steps me-2"></i>Age Profile</a>

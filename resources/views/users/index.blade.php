@@ -322,17 +322,23 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label text-muted small fw-bold" for="addUserPassword">Password <span class="text-danger">*</span></label>
-                            <input type="password" class="form-control @error('password', 'user') is-invalid @enderror" id="addUserPassword"
-                                name="password" required minlength="8" autocomplete="new-password">
-                            @error('password', 'user')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
+                            <div class="input-group has-validation">
+                                <input type="password" class="form-control @error('password', 'user') is-invalid @enderror" id="addUserPassword"
+                                    name="password" required minlength="8" autocomplete="new-password">
+                                <span class="input-group-text toggle-password" role="button" tabindex="0" aria-label="Show password"><i class="bi bi-eye"></i></span>
+                                @error('password', 'user')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
                             <div class="form-text">At least 8 characters. Never displayed after saving.</div>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label text-muted small fw-bold" for="addUserPasswordConfirmation">Confirm Password <span class="text-danger">*</span></label>
-                            <input type="password" class="form-control" id="addUserPasswordConfirmation"
-                                name="password_confirmation" required minlength="8" autocomplete="new-password">
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="addUserPasswordConfirmation"
+                                    name="password_confirmation" required minlength="8" autocomplete="new-password">
+                                <span class="input-group-text toggle-password" role="button" tabindex="0" aria-label="Show password"><i class="bi bi-eye"></i></span>
+                            </div>
                         </div>
                     </div>
                 </div>
