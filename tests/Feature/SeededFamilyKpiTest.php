@@ -42,13 +42,31 @@ class SeededFamilyKpiTest extends TestCase
     }
 
     /**
-     * Archiving a batch (through the real archive route, not a raw delete) must
-     * move its available balance out of the active KPI and into the archived
-     * KPI, so the two add back up to the gross all-batch total.
+     * The Inventory summary cards read the same seeded live values as the
+     * operational KPIs: mortality 55, regrafted 130, active inventory 730,
+     * 5 batches.
+     */
+    public function test_inventory_summary_cards_match_the_seeded_live_kpis(): void
+    {
+        $this->actingAs(User::where('email', 'admin@cacaotrack.test')->firstOrFail())
+            ->get(route('inventory.index'))
+            ->assertOk()
+            // Mortality: 25 + 5 + 15 + 10 = 55. Regrafted: B001 100 +
+            // B001-R1 30 = 130. Active inventory: 400 + 50 + 30 + 150 + 100 =
+            // 730. Batches: B001, B001-R1, B001-R1-R1, B002, B003.
+            ->assertViewHas('totalMortality', 55)
+            ->assertViewHas('totalRegrafted', 130)
+            ->assertViewHas('totalActiveInventory', 730)
+            ->assertViewHas('totalBatches', 5);
+    }
+
+    /**
+     * An archived batch (legacy state — the archive route was replaced by a
+     * guarded Delete) must move its available balance out of the active KPI and
+     * into the archived KPI, so the two add back up to the gross all-batch total.
      */
     public function test_archiving_a_batch_moves_its_inventory_from_active_to_archived(): void
     {
-        $admin = User::where('email', 'admin@cacaotrack.test')->firstOrFail();
         $batch = Batch::where('batch_code', 'B003')->firstOrFail();
 
         // Baseline: every seeded batch is active, so the archived KPI is 0 and
@@ -57,10 +75,7 @@ class SeededFamilyKpiTest extends TestCase
         $this->assertSame(730, AnalyticsMetrics::totalActiveInventory());
         $this->assertSame(0, AnalyticsMetrics::totalArchivedInventory());
 
-        $this->actingAs($admin)
-            ->post(route('operational.batches.archive', $batch))
-            ->assertRedirect(route('operational.batches'));
-
+        $batch->update(['archived_at' => now()]);
         $batch->refresh();
         $this->assertNotNull($batch->archived_at);
 
@@ -216,15 +231,15 @@ class SeededFamilyKpiTest extends TestCase
         $this->assertSame(750, $gapTotal);
         $this->assertNotSame($rawSum, $gapTotal);
 
-        // 3. Inventory snapshot total, both centralized and through the page.
+        // 3. Inventory snapshot total (centralized). The Inventory page now
+        // shows live per-batch summary cards, not this snapshot total.
         $snapshotTotal = (int) Inventory::query()->sum(DB::raw('total_grafted - regraft'));
         $this->assertSame(750, $snapshotTotal);
         $this->assertNotSame($rawSum, $snapshotTotal);
 
-        $this->actingAs(User::where('email', 'admin@cacaotrack.test')->firstOrFail())
-            ->get(route('inventory.index'))
-            ->assertOk()
-            ->assertViewHas('totalGrafted', 750);
+        // 4. Dashboard "Total Grafted" KPI (centralized AnalyticsMetrics).
+        $this->assertSame(750, AnalyticsMetrics::totalGrafted());
+        $this->assertNotSame($rawSum, AnalyticsMetrics::totalGrafted());
     }
 
     public function test_ledger_summary_conserves_the_seeded_population(): void

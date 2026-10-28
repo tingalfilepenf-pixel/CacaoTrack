@@ -38,22 +38,6 @@
     </div>
 @endif
 
-<ul class="nav nav-pills mb-3">
-    <li class="nav-item">
-        <a class="nav-link {{ $status === 'archived' ? '' : 'active' }}" href="{{ route('operational.batches', collect($filters)->except('tab')->filter()->all()) }}">
-            <i class="bi bi-list-ul me-1"></i> Active
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link {{ $status === 'archived' ? 'active' : '' }}" href="{{ route('operational.batches', array_merge(collect($filters)->except('tab')->filter()->all(), ['tab' => 'archived'])) }}">
-            <i class="bi bi-archive me-1"></i> Archived
-            @if ($archivedCount > 0)
-                <span class="badge bg-secondary ms-1">{{ $archivedCount }}</span>
-            @endif
-        </a>
-    </li>
-</ul>
-
 <!-- Summary -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
@@ -98,7 +82,6 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="GET" action="{{ route('operational.batches') }}" class="row g-3 align-items-end">
-            <input type="hidden" name="tab" value="{{ $status }}">
             <div class="col-md-4">
                 <label for="filterSearch" class="form-label text-muted small fw-bold mb-1">Search</label>
                 <div class="input-group input-group-sm">
@@ -139,13 +122,7 @@
 <!-- Batches Table -->
 <div class="card mb-4">
     <div class="card-header bg-white py-3">
-        <h6 class="m-0 font-weight-bold text-primary">
-            @if ($status === 'archived')
-                <i class="bi bi-archive me-2"></i>Archived Batches
-            @else
-                Batch Directory
-            @endif
-        </h6>
+        <h6 class="m-0 font-weight-bold text-primary">Batch Directory</h6>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -176,18 +153,13 @@
                                 'parentMissing' => $node['parent_missing'],
                                 'ancestors' => $node['ancestors'],
                                 'hasChildren' => $parentIds->contains($node['batch']->batch_id),
-                                'status' => $status,
                             ])
                         @endforeach
                     @empty
                         <tr>
                             <td colspan="8" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                                @if ($status === 'archived')
-                                    No archived batches. Archived batches appear here and can be restored.
-                                @else
-                                    No batches found for the current filters.
-                                @endif
+                                No batches found for the current filters.
                             </td>
                         </tr>
                     @endforelse
@@ -216,12 +188,9 @@
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="addBatchCode">Batch Code <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control @error('batch_code', 'batch') is-invalid @enderror" id="addBatchCode"
-                                name="batch_code" maxlength="255" required value="{{ old('batch_code') }}" placeholder="e.g. B004">
-                            @error('batch_code', 'batch')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
+                            <label class="form-label text-muted small fw-bold" for="addBatchCode">Batch Code</label>
+                            <input type="text" class="form-control" id="addBatchCode" value="{{ $nextBatchCode }}" disabled readonly>
+                            <div class="form-text">Assigned automatically when the batch is saved.</div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-muted small fw-bold" for="addScionVariety">Scion Variety <span class="text-muted fw-normal">(optional)</span></label>
@@ -236,12 +205,9 @@
                             @enderror
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="addGraftedDate">Grafted Date <span class="text-danger">*</span></label>
-                            <input type="date" class="form-control @error('grafted_date', 'batch') is-invalid @enderror" id="addGraftedDate"
-                                name="grafted_date" max="{{ now()->format('Y-m-d') }}" required value="{{ old('grafted_date') }}">
-                            @error('grafted_date', 'batch')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
+                            <label class="form-label text-muted small fw-bold" for="addGraftedDate">Grafted Date</label>
+                            <input type="text" class="form-control" id="addGraftedDate" value="{{ now()->format('M d, Y') }}" disabled readonly>
+                            <div class="form-text">Set automatically to today when the batch is saved.</div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-muted small fw-bold" for="addStatus">Status <span class="text-danger">*</span></label>
@@ -348,27 +314,28 @@
     </div>
 </div>
 
-<!-- Archive Batch Modal -->
-<div class="modal fade" id="archiveBatchModal" tabindex="-1" aria-hidden="true">
+<!-- Delete Batch Modal -->
+<div class="modal fade" id="deleteBatchModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-warning">
-                <h5 class="modal-title">Archive Batch</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Delete Batch</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="archiveBatchForm" method="POST" action="{{ route('operational.batches.archive', ['batch' => '__ID__']) }}" data-action-template="{{ route('operational.batches.archive', ['batch' => '__ID__']) }}">
+            <form id="deleteBatchForm" method="POST" action="{{ route('operational.batches.destroy', ['batch' => '__ID__']) }}" data-action-template="{{ route('operational.batches.destroy', ['batch' => '__ID__']) }}">
                 @csrf
+                @method('DELETE')
                 <div class="modal-body">
-                    <p class="mb-2">Archive <strong id="archiveBatchCode">&mdash;</strong>?</p>
+                    <p class="mb-2">Permanently delete <strong id="deleteBatchCode">&mdash;</strong>?</p>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>Archiving hides the batch from the active directory and from new
-                        operational forms, but its inventory, mortality, regraft, stock and activity history are preserved.
-                        You can restore it anytime from the Archived tab.
+                        <i class="bi bi-exclamation-triangle me-1"></i>This cannot be undone. A batch with dependent records
+                        (mortality, regraft, stock-out lines, inventory snapshots or activity history) cannot be deleted,
+                        so its records are preserved.
                     </p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning">Archive Batch</button>
+                    <button type="submit" class="btn btn-danger">Delete Batch</button>
                 </div>
             </form>
         </div>
@@ -480,7 +447,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         const addModalEl = document.getElementById('addBatchModal');
         const editModalEl = document.getElementById('editBatchModal');
-        const archiveModalEl = document.getElementById('archiveBatchModal');
+        const deleteModalEl = document.getElementById('deleteBatchModal');
         const detailsModalEl = document.getElementById('batchDetailsModal');
 
         @if (old('edit_batch_id'))
@@ -522,15 +489,15 @@
             });
         }
 
-        if (archiveModalEl) {
-            archiveModalEl.addEventListener('show.bs.modal', function (event) {
+        if (deleteModalEl) {
+            deleteModalEl.addEventListener('show.bs.modal', function (event) {
                 const button = event.relatedTarget;
                 if (!button) {
                     return;
                 }
 
-                applyAction(document.getElementById('archiveBatchForm'), button.getAttribute('data-batch-id'));
-                setText('archiveBatchCode', button.getAttribute('data-batch-code'));
+                applyAction(document.getElementById('deleteBatchForm'), button.getAttribute('data-batch-id'));
+                setText('deleteBatchCode', button.getAttribute('data-batch-code'));
             });
         }
 

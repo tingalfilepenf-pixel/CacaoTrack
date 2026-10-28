@@ -38,22 +38,6 @@
     </div>
 @endif
 
-<ul class="nav nav-pills mb-3">
-    <li class="nav-item">
-        <a class="nav-link {{ $status === 'archived' ? '' : 'active' }}" href="{{ route('operational.scion-varieties', array_filter(['search' => $filters['search'] ?? null])) }}">
-            <i class="bi bi-list-ul me-1"></i> Active
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link {{ $status === 'archived' ? 'active' : '' }}" href="{{ route('operational.scion-varieties', array_filter(['search' => $filters['search'] ?? null, 'tab' => 'archived'])) }}">
-            <i class="bi bi-archive me-1"></i> Archived
-            @if ($archivedCount > 0)
-                <span class="badge bg-secondary ms-1">{{ $archivedCount }}</span>
-            @endif
-        </a>
-    </li>
-</ul>
-
 <!-- Summary -->
 <div class="row g-3 mb-4">
     <div class="col-md-4">
@@ -89,7 +73,6 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="GET" action="{{ route('operational.scion-varieties') }}" class="row g-3 align-items-end">
-            <input type="hidden" name="tab" value="{{ $status }}">
             <div class="col-md-4">
                 <label for="filterSearch" class="form-label text-muted small fw-bold mb-1">Search</label>
                 <div class="input-group input-group-sm">
@@ -112,13 +95,7 @@
 <!-- Scion Varieties Table -->
 <div class="card mb-4">
     <div class="card-header bg-white py-3">
-        <h6 class="m-0 font-weight-bold text-primary">
-            @if ($status === 'archived')
-                <i class="bi bi-archive me-2"></i>Archived Scion Varieties
-            @else
-                Scion Variety Directory
-            @endif
-        </h6>
+        <h6 class="m-0 font-weight-bold text-primary">Scion Variety Directory</h6>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -146,9 +123,6 @@
                             <td class="ps-4 fw-medium text-primary">{{ $scionVariety->reference() }}</td>
                             <td class="fw-medium">
                                 {{ $scionVariety->scion_variety_name }}
-                                @if ($status === 'archived' && $scionVariety->archived_at)
-                                    <div class="text-muted small fw-normal">Archived {{ $scionVariety->archived_at->format('M j, Y g:i A') }}</div>
-                                @endif
                             </td>
                             <td class="text-muted">{{ $scionVariety->description ?: '—' }}</td>
                             <td>
@@ -169,18 +143,16 @@
                                     data-description="{{ $scionVariety->description }}" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                @if ($status === 'archived')
-                                    <form method="POST" action="{{ route('operational.scion-varieties.restore', $scionVariety) }}" class="d-inline">
-                                        @csrf
-                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Restore">
-                                            <i class="bi bi-arrow-counterclockwise"></i>
-                                        </button>
-                                    </form>
-                                @else
-                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#archiveScionVarietyModal"
+                                @if ($scionVariety->canBeDeleted())
+                                    <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteScionVarietyModal"
                                         data-scion-variety-id="{{ $scionVariety->scion_variety_id }}"
-                                        data-scion-variety-name="{{ $scionVariety->scion_variety_name }}" title="Archive">
-                                        <i class="bi bi-archive"></i>
+                                        data-scion-variety-name="{{ $scionVariety->scion_variety_name }}" title="Delete permanently">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                @else
+                                    <button class="btn btn-sm btn-outline-danger" disabled
+                                        title="This scion variety has dependent records ({{ implode(', ', $scionVariety->deletionBlockers()) }}) and cannot be deleted.">
+                                        <i class="bi bi-trash"></i>
                                     </button>
                                 @endif
                             </td>
@@ -189,11 +161,7 @@
                         <tr>
                             <td colspan="5" class="text-center text-muted py-5">
                                 <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                                @if ($status === 'archived')
-                                    No archived scion varieties. Archived scion varieties appear here and can be restored.
-                                @else
-                                    No scion varieties found for the current filters.
-                                @endif
+                                No scion varieties found for the current filters.
                             </td>
                         </tr>
                     @endforelse
@@ -284,27 +252,27 @@
     </div>
 </div>
 
-<!-- Archive Scion Variety Modal -->
-<div class="modal fade" id="archiveScionVarietyModal" tabindex="-1" aria-hidden="true">
+<!-- Delete Scion Variety Modal -->
+<div class="modal fade" id="deleteScionVarietyModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-warning">
-                <h5 class="modal-title">Archive Scion Variety</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Delete Scion Variety</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="archiveScionVarietyForm" method="POST" action="{{ route('operational.scion-varieties.archive', ['scion_variety' => '__ID__']) }}" data-action-template="{{ route('operational.scion-varieties.archive', ['scion_variety' => '__ID__']) }}">
+            <form id="deleteScionVarietyForm" method="POST" action="{{ route('operational.scion-varieties.destroy', ['scion_variety' => '__ID__']) }}" data-action-template="{{ route('operational.scion-varieties.destroy', ['scion_variety' => '__ID__']) }}">
                 @csrf
+                @method('DELETE')
                 <div class="modal-body">
-                    <p class="mb-2">Archive <strong id="archiveScionVarietyName">&mdash;</strong>?</p>
+                    <p class="mb-2">Permanently delete <strong id="deleteScionVarietyName">&mdash;</strong>?</p>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>Archiving hides the scion variety from the active directory and from the
-                        new-batch selector, but batches and stock-out lines that already use it keep their history. You can restore it
-                        anytime from the Archived tab.
+                        <i class="bi bi-exclamation-triangle me-1"></i>This cannot be undone. A scion variety already used by a
+                        batch, stock receipt or stock-out line cannot be deleted, so its records are preserved.
                     </p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning">Archive Scion Variety</button>
+                    <button type="submit" class="btn btn-danger">Delete Scion Variety</button>
                 </div>
             </form>
         </div>
@@ -347,7 +315,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         const addModalEl = document.getElementById('addScionVarietyModal');
         const editModalEl = document.getElementById('editScionVarietyModal');
-        const archiveModalEl = document.getElementById('archiveScionVarietyModal');
+        const deleteModalEl = document.getElementById('deleteScionVarietyModal');
         const detailsModalEl = document.getElementById('scionVarietyDetailsModal');
 
         @if (old('edit_scion_variety_id'))
@@ -382,15 +350,15 @@
             });
         }
 
-        if (archiveModalEl) {
-            archiveModalEl.addEventListener('show.bs.modal', function (event) {
+        if (deleteModalEl) {
+            deleteModalEl.addEventListener('show.bs.modal', function (event) {
                 const button = event.relatedTarget;
                 if (!button) {
                     return;
                 }
 
-                applyAction(document.getElementById('archiveScionVarietyForm'), button.getAttribute('data-scion-variety-id'));
-                setText('archiveScionVarietyName', button.getAttribute('data-scion-variety-name'));
+                applyAction(document.getElementById('deleteScionVarietyForm'), button.getAttribute('data-scion-variety-id'));
+                setText('deleteScionVarietyName', button.getAttribute('data-scion-variety-name'));
             });
         }
 

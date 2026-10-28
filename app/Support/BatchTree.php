@@ -15,7 +15,10 @@ use App\Models\Batch;
  *
  * Rules:
  *  - roots are ordered by `grafted_date` (nulls first) then `batch_code`;
- *  - children are ordered by `batch_code`;
+ *    pass `$descending` to reverse that (newest first — the Inventory listing
+ *    uses it so a newly added batch lands on top);
+ *  - children are ordered by `batch_code` (the descendant rows always stay
+ *    nested under their parent, whatever the root direction);
  *  - a batch whose parent is present in the collection is nested under it;
  *  - a batch whose parent is **not** in the collection (filtered out) is shown
  *    at depth 0 and flagged `parent_missing` so the view can render a
@@ -30,7 +33,7 @@ final class BatchTree
      * @param  iterable<int,Batch>  $batches
      * @return list<array{batch:Batch,depth:int,parent_code:?string,parent_missing:bool,ancestors:list<int>}>
      */
-    public static function flatten(iterable $batches): array
+    public static function flatten(iterable $batches, bool $descending = false): array
     {
         $byId = [];
 
@@ -81,7 +84,11 @@ final class BatchTree
             }
         }
 
-        usort($roots, self::compareRoots(...));
+        if ($descending) {
+            usort($roots, fn (Batch $a, Batch $b): int => -self::compareRoots($a, $b));
+        } else {
+            usort($roots, self::compareRoots(...));
+        }
 
         $nodes = [];
         $seen = [];
@@ -148,13 +155,13 @@ final class BatchTree
      * root node first followed by its descendants in order.
      *
      * @param  iterable<int,Batch>  $batches
-     * @return list<array{root:Batch,root_node:array<string,mixed>,rows:list<array<string,mixed>>}>
+     * @return list<array{root:Batch,root_node:array<string,mixed>,rows:list<array<string,mixed>}>
      */
-    public static function groups(iterable $batches): array
+    public static function groups(iterable $batches, bool $descending = false): array
     {
         $groups = [];
 
-        foreach (self::flatten($batches) as $node) {
+        foreach (self::flatten($batches, $descending) as $node) {
             if ($node['depth'] === 0 || $groups === []) {
                 $groups[] = [
                     'root' => $node['batch'],

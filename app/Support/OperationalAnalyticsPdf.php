@@ -8,10 +8,10 @@ use FPDF;
  * Printable "Operational Analytics" report (FPDF, portrait).
  *
  * Covers the panelist-required operational dashboard (PRD §12): the KPI cards
- * (Total Active Inventory, Total Archived Inventory, Crude Mortality Rate,
- * Regraft Deficit) and
+ * (Total Grafted, Total Active Inventory, Total Archived Inventory,
+ * Crude Mortality Rate) and
  * the tabular values behind each on-screen chart (mortality trend, inventory by
- * variety, replanting deficit by batch, survival vs mortality). Every value is
+ * variety, survival vs mortality). Every value is
  * passed in by the controller from the centralized AnalyticsMetrics methods
  * (RULE 5/6/12) — nothing is fabricated and no report table is involved
  * (PRD §9, ERD §9.4).
@@ -45,7 +45,6 @@ class OperationalAnalyticsPdf extends FPDF
      * @param  array<int,array{label:string,value:string}>  $kpis
      * @param  array{labels:array<int,string>,values:array<int,int>,total:int}  $mortalityTrend
      * @param  array{labels:array<int,string>,values:array<int,int>}  $inventoryByVariety
-     * @param  array{labels:array<int,string>,values:array<int,int>}  $regraftDeficitByBatch
      * @param  array{surviving:int,mortality:int,totalGrafted:int}  $survivalVsMortality
      */
     public function __construct(
@@ -54,7 +53,6 @@ class OperationalAnalyticsPdf extends FPDF
         private readonly array $kpis,
         private readonly array $mortalityTrend,
         private readonly array $inventoryByVariety,
-        private readonly array $regraftDeficitByBatch,
         private readonly array $survivalVsMortality,
     ) {
         parent::__construct('P', 'mm', 'A4');
@@ -145,13 +143,6 @@ class OperationalAnalyticsPdf extends FPDF
             'Scion Variety',
             $this->zip($this->inventoryByVariety['labels'], $this->inventoryByVariety['values']),
             'Inventory',
-        );
-
-        $this->sectionTable(
-            'Regraft Deficit by Batch',
-            'Batch',
-            $this->zip($this->regraftDeficitByBatch['labels'], $this->regraftDeficitByBatch['values']),
-            'Deficit',
         );
 
         $this->sectionTable('Survival vs Mortality', 'Metric', [

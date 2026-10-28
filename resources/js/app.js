@@ -63,4 +63,38 @@ document.addEventListener('DOMContentLoaded', function () {
             togglePasswordVisibility(toggle);
         }
     });
+
+    document.querySelectorAll('form[data-auto-filter]').forEach(function (form) {
+        const searchInput = form.querySelector('input[name="search"]');
+        let searchTimer = null;
+        let submitting = false;
+
+        const submitForm = function () {
+            if (submitting) {
+                return;
+            }
+
+            submitting = true;
+            form.submit();
+        };
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                window.clearTimeout(searchTimer);
+                searchTimer = window.setTimeout(submitForm, 400);
+            });
+        }
+
+        form.querySelectorAll('select, input[type="date"], input[type="number"]').forEach(function (field) {
+            field.addEventListener('change', submitForm);
+        });
+
+        form.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' && event.target.tagName !== 'TEXTAREA') {
+                event.preventDefault();
+                window.clearTimeout(searchTimer);
+                submitForm();
+            }
+        });
+    });
 });

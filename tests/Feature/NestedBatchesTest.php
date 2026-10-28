@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Batch;
-use App\Models\Inventory;
 use App\Models\MortalityRecord;
 use App\Models\ScionVariety;
 use App\Models\User;
@@ -150,48 +149,30 @@ class NestedBatchesTest extends TestCase
             ->assertSee('family_mortality', false);
     }
 
-    public function test_inventory_page_nests_snapshots_and_shows_the_parent_column(): void
+    public function test_inventory_page_nests_batches_in_tree_order(): void
     {
-        ['root' => $root, 'sub' => $sub, 'grand' => $grand] = $this->family();
-
-        foreach ([$root, $sub, $grand] as $batch) {
-            Inventory::create([
-                'batch_id' => $batch->batch_id,
-                'inventory_date' => '2026-09-01',
-                'total_grafted' => (int) $batch->total_grafted,
-                'regraft' => 0,
-                'mortality' => 0,
-                'last_update' => now(),
-            ]);
-        }
+        ['sub' => $sub, 'grand' => $grand] = $this->family();
 
         $response = $this->actingAs($this->user)
             ->get(route('inventory.index'))
             ->assertOk()
-            ->assertSee('PARENT BATCH')
             ->assertSee('↳')
-            ->assertSee('Sub-batch');
+            ->assertSee('Regrafted');
 
-        $response->assertViewHas('inventories', function ($inventories) {
-            return collect($inventories->items())->map(fn (Inventory $row) => $row->batch->batch_code)->all()
+        $response->assertViewHas('batches', function ($batches) {
+            return collect($batches->items())->map(fn (Batch $batch) => $batch->batch_code)->all()
                 === ['B001', 'B001-R1', 'B001-R1-R1'];
         });
 
         $response->assertViewHas('nodeMeta', function (array $meta) use ($sub, $grand) {
             return $meta[$sub->batch_id]['depth'] === 1
                 && $meta[$sub->batch_id]['parent_code'] === 'B001'
+                && $meta[$sub->batch_id]['ancestors'] === [$sub->parent_batch_id]
+                && $meta[$sub->batch_id]['has_children'] === true
                 && $meta[$grand->batch_id]['depth'] === 2
-                && $meta[$grand->batch_id]['parent_code'] === 'B001-R1';
+                && $meta[$grand->batch_id]['parent_code'] === 'B001-R1'
+                && $meta[$grand->batch_id]['ancestors'] === [$sub->parent_batch_id, $sub->batch_id]
+                && $meta[$grand->batch_id]['has_children'] === false;
         });
-    }
-
-    public function test_record_inventory_select_labels_sub_batches_with_their_parent(): void
-    {
-        ['sub' => $sub] = $this->family();
-
-        $this->actingAs($this->user)
-            ->get(route('inventory.index'))
-            ->assertOk()
-            ->assertSee('↳ B001-R1 (Toledo, parent B001)', false);
     }
 }

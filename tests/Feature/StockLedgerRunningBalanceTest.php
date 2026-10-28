@@ -14,10 +14,11 @@ use Tests\TestCase;
 
 /**
  * The Stock Ledger is a true chronological transaction ledger: every row is a
- * real dated event, Pullout posts one row per Stock Out release (a deliberate
- * reversal of the earlier cumulative-stamp design), and a running
- * "Remaining Available" is tracked per batch and reconciled against the
- * authoritative {@see Batch::survivingQuantity()}.
+ * real dated event and Pullout posts one row per Stock Out release (a deliberate
+ * reversal of the earlier cumulative-stamp design). A running balance is still
+ * computed per batch and reconciled against the authoritative
+ * {@see Batch::survivingQuantity()} as an internal guard — it is no longer
+ * displayed on the page/PDF/CSV since Session EA.
  *
  * Seed (DatabaseSeeder): B001 Batangas 500 → regraft 100 into B001-R1 (Toledo)
  * → regraft 30 into B001-R1-R1 (Criollo); B002 Trinitario 150; B003 Forastero
@@ -59,6 +60,57 @@ class StockLedgerRunningBalanceTest extends TestCase
                 'remaining' => $row['remaining'],
             ])
             ->all();
+    }
+
+    /**
+     * Ascending order (owner requirement, Session DX): the Stock Ledger is
+     * presented from smallest to largest — month cards oldest → newest, each
+     * month's event rows by non-decreasing date, and the nested batch summary
+     * by batch code (a parent always precedes its sub-batches). The PDF and
+     * CSV read the same centralized grid, so this locks all three surfaces.
+     */
+    public function test_ledger_is_rendered_in_ascending_order(): void
+    {
+        $grid = AnalyticsMetrics::stockLedgerGrid();
+
+        // Months: oldest → newest. The seeded ledger spans July → September 2026.
+        $monthKeys = array_column($grid['months'], 'key');
+
+        $sortedKeys = $monthKeys;
+        sort($sortedKeys);
+
+        $this->assertSame($sortedKeys, $monthKeys, 'Month cards are not in ascending order.');
+        $this->assertSame(['2026-07', '2026-08', '2026-09'], $monthKeys);
+
+        // Event rows: non-decreasing dates within each month, and every row is
+        // rendered inside its own month's card.
+        foreach ($grid['months'] as $month) {
+            $dates = array_column($month['rows'], 'date');
+
+            $sortedDates = $dates;
+            sort($sortedDates);
+
+            $this->assertSame($sortedDates, $dates, "{$month['key']} rows are not in ascending date order.");
+            $this->assertNotEmpty($dates);
+
+            foreach ($dates as $date) {
+                $this->assertSame($month['key'], substr($date, 0, 7));
+            }
+        }
+
+        // Batch summary: batch code ascending, sub-batches nested under their parent.
+        $this->assertSame(
+            ['B001', 'B001-R1', 'B001-R1-R1', 'B002', 'B003'],
+            array_column($grid['batchSummary']['rows'], 'batch'),
+        );
+
+        // The rendered page keeps the same ascending order (the month-card
+        // headers appear on-screen in the grid order).
+        $this->actingAs($this->user())
+            ->get(route('analytics.stock-ledger'))
+            ->assertOk()
+            ->assertSeeInOrder(array_column($grid['months'], 'label'))
+            ->assertSeeInOrder(['B001 ', 'B001-R1', 'B001-R1-R1', 'B002 ', 'B003 ']);
     }
 
     /**

@@ -178,4 +178,40 @@ class MortalityRecord extends Model
             ->pluck('total', 'batch_id')
             ->map(fn ($total) => (int) $total);
     }
+
+    /**
+     * Per-batch mortality grouped by the recorded `cause`, keyed by `batch_id`
+     * (set-based counterpart of a per-record cause listing — RULE 6). Avoids an
+     * N+1 of per-batch lookups. The cause is returned exactly as stored —
+     * including the `Others: <description>` specification, so a record-level
+     * breakdown never loses the recorded detail — with a blank cause reported
+     * as `Unspecified` (the blank-case convention of {@see normalizeCause()}).
+     * Each batch's rows are ordered by quantity (descending) then cause.
+     *
+     * @param  iterable<int, int|string>  $batchIds
+     * @return Collection<int, Collection<int, array{cause: string, quantity: int}>>
+     */
+    public static function causeBreakdownByBatch(iterable $batchIds): Collection
+    {
+        $ids = collect($batchIds)->map(fn ($id) => (int) $id)->all();
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return static::query()
+            ->whereIn('batch_id', $ids)
+            ->selectRaw('batch_id, cause, COALESCE(SUM(quantity), 0) as total')
+            ->groupBy('batch_id', 'cause')
+            ->orderByDesc('total')
+            ->orderBy('cause')
+            ->get()
+            ->groupBy('batch_id')
+            ->map(fn (Collection $rows): Collection => $rows
+                ->map(fn (MortalityRecord $row): array => [
+                    'cause' => trim((string) $row->cause) === '' ? 'Unspecified' : (string) $row->cause,
+                    'quantity' => (int) $row->total,
+                ])
+                ->values());
+    }
 }

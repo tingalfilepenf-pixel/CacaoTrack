@@ -16,8 +16,9 @@ use Illuminate\View\View;
  * FR-07 Scion Variety master data.
  *
  * The single retained scion module (ERD §3.9): it replaces the old `Variety`
- * master and the generic `Scions` stock pool. Records archive/restore rather
- * than delete, matching the Archived_At pattern (ERD §9.8).
+ * master and the generic `Scions` stock pool. Active (non-archived) varieties
+ * only — owner-directed: the Archived tab was removed and archive/restore
+ * replaced by a guarded permanent Delete.
  */
 class ScionVarietyController extends Controller
 {
@@ -25,12 +26,10 @@ class ScionVarietyController extends Controller
     {
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
-            'tab' => ['nullable', 'string', 'in:active,archived'],
         ]);
 
-        $status = ($filters['tab'] ?? 'active') === 'archived' ? 'archived' : 'active';
-
-        $base = ScionVariety::query()
+        $visible = ScionVariety::query()
+            ->active()
             ->when($filters['search'] ?? null, function ($query, $search): void {
                 $query->where(function ($subQuery) use ($search): void {
                     $subQuery->where('scion_variety_name', 'like', "%{$search}%")
@@ -38,16 +37,10 @@ class ScionVarietyController extends Controller
                 });
             });
 
-        $archivedCount = (clone $base)->archived()->count();
-
-        $visible = (clone $base)->when(
-            $status === 'archived',
-            fn ($query) => $query->archived(),
-            fn ($query) => $query->active(),
-        );
-
         $scionVarieties = (clone $visible)
-            ->withCount('batches')
+            // `stockOutDetails`/`stockIns` counts feed the row Delete button's
+            // dependency check (ScionVariety::deletionBlockers()).
+            ->withCount(['batches', 'stockOutDetails', 'stockIns'])
             ->orderBy('scion_variety_name')
             ->paginate(10)
             ->withQueryString();
@@ -55,8 +48,6 @@ class ScionVarietyController extends Controller
         return view('operational.scion-varieties.index', [
             'scionVarieties' => $scionVarieties,
             'filters' => $filters,
-            'status' => $status,
-            'archivedCount' => $archivedCount,
             'totalScionVarieties' => (clone $visible)->count(),
             'scionVarietiesWithBatches' => (clone $visible)->has('batches')->count(),
             'totalBatches' => (int) Batch::query()
@@ -84,55 +75,36 @@ class ScionVarietyController extends Controller
     }
 
     /**
-     * Archive a scion variety instead of deleting it (approved ERD revision
-     * §9.8: history is never destroyed).
+     * Permanently delete a scion variety. Guarded by
+     * {@see ScionVariety::deletionBlockers()}: a variety already referenced by
+     * a batch, a stock receipt or a stock-out line is refused so operational
+     * history is never destroyed. Replaces the former archive/restore flow
+     * (owner-directed).
      */
-    public function archive(ScionVariety $scionVariety): RedirectResponse
+    public function destroy(ScionVariety $scionVariety): RedirectResponse
     {
-        if ($scionVariety->isArchived()) {
+        $blockers = $scionVariety->deletionBlockers();
+
+        if ($blockers !== []) {
             return redirect()
                 ->route('operational.scion-varieties')
-                ->with('error', 'This scion variety is already archived.');
+                ->with('error', "Scion variety {$scionVariety->scion_variety_name} cannot be deleted because it has ".implode(', ', $blockers).'. Its history must be preserved.');
         }
 
+        $name = $scionVariety->scion_variety_name;
+
         DB::transaction(function () use ($scionVariety): void {
-            $scionVariety->update(['archived_at' => now()]);
+            $scionVariety->delete();
 
             ActivityLog::record(
                 null,
-                ActivityLog::TYPE_SCION_VARIETY_ARCHIVED,
-                "Archived scion variety: {$scionVariety->scion_variety_name}."
+                ActivityLog::TYPE_SCION_VARIETY_DELETED,
+                "Deleted scion variety: {$scionVariety->scion_variety_name}."
             );
         });
 
         return redirect()
             ->route('operational.scion-varieties')
-            ->with('success', 'Scion variety archived successfully.');
-    }
-
-    /**
-     * Restore a previously archived scion variety to the active directory.
-     */
-    public function restore(ScionVariety $scionVariety): RedirectResponse
-    {
-        if (! $scionVariety->isArchived()) {
-            return redirect()
-                ->route('operational.scion-varieties')
-                ->with('error', 'This scion variety is not archived.');
-        }
-
-        DB::transaction(function () use ($scionVariety): void {
-            $scionVariety->update(['archived_at' => null]);
-
-            ActivityLog::record(
-                null,
-                ActivityLog::TYPE_SCION_VARIETY_RESTORED,
-                "Restored scion variety: {$scionVariety->scion_variety_name}."
-            );
-        });
-
-        return redirect()
-            ->route('operational.scion-varieties', ['tab' => 'archived'])
-            ->with('success', 'Scion variety restored successfully.');
+            ->with('success', "Scion variety \"{$name}\" deleted permanently.");
     }
 }

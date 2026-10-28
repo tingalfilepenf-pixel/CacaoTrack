@@ -58,21 +58,18 @@
 @endif
 
 <div class="card mb-4">
-    <div class="card-header bg-white">
-        <h6 class="mb-0">Filter Ledger</h6>
-    </div>
-    <div class="card-body">
-        <form class="row g-3" method="GET" action="{{ route('analytics.stock-ledger') }}">
+    <div class="card-body py-3">
+        <form class="row g-3 align-items-end" method="GET" action="{{ route('analytics.stock-ledger') }}" id="stockLedgerFilterForm" data-auto-filter>
             <div class="col-md-3">
-                <label class="form-label text-muted small fw-bold">Batch</label>
-                <select name="batch_id" class="form-select">
+                <label for="filterBatch" class="form-label text-muted small fw-bold mb-1">Batch</label>
+                <select id="filterBatch" name="batch_id" class="form-select form-select-sm">
                     <option value="">All Batches</option>
                     @include('analytics.partials.batch-options', ['batches' => $batches, 'selected' => $filters['batch_id'] ?? null])
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label text-muted small fw-bold">Scion Variety</label>
-                <select name="scion_variety_id" class="form-select">
+                <label for="filterScionVariety" class="form-label text-muted small fw-bold mb-1">Scion Variety</label>
+                <select id="filterScionVariety" name="scion_variety_id" class="form-select form-select-sm">
                     <option value="">All Scion Varieties</option>
                     @foreach ($scionVarieties as $scionVariety)
                         <option value="{{ $scionVariety->scion_variety_id }}" @selected(($filters['scion_variety_id'] ?? null) == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
@@ -80,16 +77,17 @@
                 </select>
             </div>
             <div class="col-md-2">
-                <label class="form-label text-muted small fw-bold">Date From</label>
-                <input type="date" name="date_from" class="form-control" value="{{ $filters['date_from'] ?? '' }}">
+                <label for="filterDateFrom" class="form-label text-muted small fw-bold mb-1">Date From</label>
+                <input type="date" id="filterDateFrom" name="date_from" class="form-control form-control-sm" value="{{ $filters['date_from'] ?? '' }}">
             </div>
             <div class="col-md-2">
-                <label class="form-label text-muted small fw-bold">Date To</label>
-                <input type="date" name="date_to" class="form-control" value="{{ $filters['date_to'] ?? '' }}">
+                <label for="filterDateTo" class="form-label text-muted small fw-bold mb-1">Date To</label>
+                <input type="date" id="filterDateTo" name="date_to" class="form-control form-control-sm" value="{{ $filters['date_to'] ?? '' }}">
             </div>
-            <div class="col-md-2 d-flex align-items-end gap-2">
-                <button type="submit" class="btn btn-primary flex-grow-1">Apply</button>
-                <a href="{{ route('analytics.stock-ledger') }}" class="btn btn-outline-secondary">Reset</a>
+            <div class="col-md-2">
+                <a href="{{ route('analytics.stock-ledger') }}" class="btn btn-sm btn-outline-secondary w-100" title="Clear all filters">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Clear Filters
+                </a>
             </div>
         </form>
         @error('date_to')
@@ -98,7 +96,6 @@
         <small class="text-muted d-block mt-2">
             Chronological transaction ledger grouped by month, with dynamic per-Scion-Variety columns. Seedlings = Stock In quantity (seedling-only receipts);
             Grafted = root-batch total grafted; Mortality / Regraft / Pullout each post one dated row per real event; Ready to Plant = each batch's current surviving balance.
-            <span class="fst-italic">Remaining Available is the running balance for each batch after every event (grafted &minus; regraft &minus; mortality &minus; pullout to date); a batch's final Remaining Available equals its surviving balance.</span>
             Filtering by a batch matches that exact batch only; selecting a parent does not include its sub-batches.
         </small>
     </div>
@@ -128,7 +125,6 @@
                                 @foreach ($sections as $sectionLabel)
                                     <th colspan="{{ $varietyCount }}" class="text-center">{{ $sectionLabel }}</th>
                                 @endforeach
-                                <th rowspan="2" class="align-middle text-end">Remaining Available</th>
                             </tr>
                             <tr class="text-center">
                                 @foreach ($sections as $sectionKey => $sectionLabel)
@@ -160,7 +156,6 @@
                                             @endforeach
                                         @endif
                                     @endforeach
-                                    <td class="text-end fw-bold text-success">{{ $row['remaining'] !== null ? number_format($row['remaining']) : '—' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -177,7 +172,6 @@
                                         @endforeach
                                     @endif
                                 @endforeach
-                                <td class="text-end">—</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -201,7 +195,6 @@
                             @foreach ($sections as $sectionLabel)
                                 <th colspan="{{ $varietyCount }}" class="text-center">{{ $sectionLabel }}</th>
                             @endforeach
-                            <th rowspan="2" class="align-middle text-end">Remaining Available</th>
                         </tr>
                         <tr class="text-center">
                             @foreach ($sections as $sectionKey => $sectionLabel)
@@ -228,7 +221,6 @@
                                     @endforeach
                                 @endif
                             @endforeach
-                            <td class="text-end">—</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -240,9 +232,7 @@
 <p class="text-muted small fst-italic">
     Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same
     plants; no cross-column total is implied. Pullout posts one dated row per Stock Out release.
-    Remaining Available is the running balance after each event (grafted &minus; regraft &minus; mortality &minus; pullout to date);
-    a batch's final Remaining Available equals its surviving balance. Ready to Plant is each batch's current surviving figure,
-    shown under its original grafted month.
+    Ready to Plant is each batch's current surviving figure, shown under its original grafted month.
 </p>
 
 <div class="card mb-4">

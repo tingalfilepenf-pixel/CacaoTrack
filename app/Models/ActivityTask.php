@@ -64,12 +64,13 @@ class ActivityTask extends Model
 
     /**
      * Centralized delete rule (RULE 6): a task may only be permanently deleted
-     * when it is archived AND has no completion history. Archived + history-free
-     * tasks are the only ones whose deletion destroys no traceability.
+     * when it has no completion history. The Delete action replaces the former
+     * archive/restore flow (owner-directed); a task with completion history
+     * must be kept so the Task_Complete audit trail is never destroyed.
      */
     public function canBeDeleted(): bool
     {
-        return $this->isArchived() && ! $this->hasCompletions();
+        return ! $this->hasCompletions();
     }
 
     /**

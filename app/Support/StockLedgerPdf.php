@@ -34,9 +34,9 @@ class StockLedgerPdf extends FPDF
 
     private const SEEDLINGS_W = 20.0;
 
-    private const SECTION_W = 34.0;
-
-    private const REM_W = 26.0;
+    // The former 26mm running-balance column was removed (owner-directed,
+    // Session EA), so the five section groups now fill the full table width.
+    private const SECTION_W = 39.2;
 
     private const HEADER_H = 10.6;
 
@@ -223,7 +223,7 @@ class StockLedgerPdf extends FPDF
         $this->MultiCell(
             self::TABLE_WIDTH,
             3.6,
-            $this->txt('Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same plants; no cross-column total is implied. Pullout posts one dated row per Stock Out release. Remaining Available is the running balance after each event (grafted - regraft - mortality - pullout to date); a batch\'s final Remaining Available equals its surviving balance. Ready to Plant is each batch\'s current surviving figure, shown under its original grafted month.'),
+            $this->txt('Sub-batch quantities appear under Regraft, not Grafted. A regraft from a sub-batch is a further movement of the same plants; no cross-column total is implied. Pullout posts one dated row per Stock Out release. Ready to Plant is each batch\'s current surviving figure, shown under its original grafted month.'),
             0,
             'L',
         );
@@ -606,12 +606,6 @@ class StockLedgerPdf extends FPDF
             $this->Cell(self::SECTION_W, self::HEADER_H / 2, $this->txt($label), 1, 0, 'C', true);
         }
 
-        // Running-balance column spans both header rows.
-        [$remSize, $remText] = $this->fitText('Remaining Available', self::REM_W - 1.4, 'B', 7.0);
-        $this->SetFont('Helvetica', 'B', $remSize);
-        $this->SetXY($x + self::DATE_W + self::DESC_W + self::SEEDLINGS_W + (self::SECTION_W * count($this->sections())), $y);
-        $this->Cell(self::REM_W, self::HEADER_H, $this->txt($remText), 1, 0, 'C', true);
-
         // Per-variety header (row 2). Each label is shrunk to fit its column
         // (the columns narrow as more scion varieties are present).
         $this->SetXY($x + self::DATE_W + self::DESC_W + self::SEEDLINGS_W, $y + self::HEADER_H / 2);
@@ -691,18 +685,6 @@ class StockLedgerPdf extends FPDF
             }
         }
 
-        $remaining = $row['remaining'] ?? null;
-        $this->vCenter(
-            $remaining !== null ? number_format((int) $remaining) : '',
-            $sectionX,
-            $y,
-            self::REM_W,
-            $height,
-            'R',
-            self::BRAND,
-            $fill,
-        );
-
         $this->SetXY($x, $y + $height);
     }
 
@@ -750,10 +732,6 @@ class StockLedgerPdf extends FPDF
                 $sectionX += $this->colW;
             }
         }
-
-        // A running balance is not summable across batches — leave the total cell
-        // empty rather than show a meaningless number.
-        $this->vCenter('', $sectionX, $y, self::REM_W, $height, 'R', self::MUTED, true);
 
         $this->SetXY($x, $y + $height);
     }

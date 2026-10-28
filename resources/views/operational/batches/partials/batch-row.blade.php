@@ -1,5 +1,6 @@
 @php
     $used = $batch->hasOperationalRecords();
+    $deletable = $batch->canBeDeleted();
     $latestInventory = $batch->latestInventory;
     $stockOutCount = array_key_exists('stock_out_details_count', $batch->getAttributes())
         ? (int) $batch->stock_out_details_count
@@ -52,10 +53,6 @@
         @if ($parentMissing && $parentCode)
             <span class="text-muted small">(parent: {{ $parentCode }})</span>
         @endif
-
-        @if ($status === 'archived' && $batch->archived_at)
-            <div class="text-muted small fw-normal">Archived {{ $batch->archived_at->format('M j, Y g:i A') }}</div>
-        @endif
     </td>
     <td class="text-muted">{{ $parentCode ?? '—' }}</td>
     <td>{{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}</td>
@@ -84,18 +81,16 @@
             data-used="{{ $used ? '1' : '0' }}" title="Edit">
             <i class="bi bi-pencil"></i>
         </button>
-        @if ($status === 'archived')
-            <form method="POST" action="{{ route('operational.batches.restore', $batch) }}" class="d-inline">
-                @csrf
-                <button type="submit" class="btn btn-sm btn-outline-success" title="Restore">
-                    <i class="bi bi-arrow-counterclockwise"></i>
-                </button>
-            </form>
-        @else
-            <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#archiveBatchModal"
+        @if ($deletable)
+            <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteBatchModal"
                 data-batch-id="{{ $batch->batch_id }}"
-                data-batch-code="{{ $batch->batch_code }}" title="Archive">
-                <i class="bi bi-archive"></i>
+                data-batch-code="{{ $batch->batch_code }}" title="Delete permanently">
+                <i class="bi bi-trash"></i>
+            </button>
+        @else
+            <button class="btn btn-sm btn-outline-danger" disabled
+                title="This batch has dependent records ({{ implode(', ', $batch->deletionBlockers()) }}) and cannot be deleted.">
+                <i class="bi bi-trash"></i>
             </button>
         @endif
     </td>

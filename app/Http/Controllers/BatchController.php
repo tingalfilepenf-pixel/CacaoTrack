@@ -22,7 +22,9 @@ class BatchController extends Controller
      *
      * A batch is the central operational record: one nullable
      * `scion_variety_id`, no variety/pot/monitoring columns, and many monthly
-     * Inventory snapshots.
+     * Inventory snapshots. Active (non-archived) batches only — owner-directed:
+     * the Archived tab was removed and archive/restore replaced by a guarded
+     * permanent Delete.
      */
     public function index(Request $request): View
     {
@@ -30,12 +32,10 @@ class BatchController extends Controller
             'search' => ['nullable', 'string', 'max:255'],
             'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],
             'status' => ['nullable', 'string', 'in:'.implode(',', Batch::STATUSES)],
-            'tab' => ['nullable', 'string', 'in:active,archived'],
         ]);
 
-        $tab = ($filters['tab'] ?? 'active') === 'archived' ? 'archived' : 'active';
-
-        $base = Batch::query()
+        $visible = Batch::query()
+            ->active()
             ->when($filters['search'] ?? null, function ($query, $search): void {
                 $query->where('batch_code', 'like', "%{$search}%");
             })
@@ -46,18 +46,12 @@ class BatchController extends Controller
                 $query->where('status', $status);
             });
 
-        $archivedCount = (clone $base)->archived()->count();
-
-        $visible = (clone $base)->when(
-            $tab === 'archived',
-            fn ($query) => $query->archived(),
-            fn ($query) => $query->active(),
-        );
-
         $batches = (clone $visible)
             ->with(['scionVariety', 'latestInventory', 'parent'])
             ->withCount(['mortalityRecords', 'regraftRecords', 'stockOutDetails'])
-            ->withExists(Batch::OPERATIONAL_RELATIONS)
+            // `inventories`/`activityLogs` are eager-loaded for the row Delete
+            // button's dependency check (Batch::deletionBlockers()).
+            ->withExists([...Batch::OPERATIONAL_RELATIONS, 'inventories', 'activityLogs'])
             ->get();
 
         // One family per page so a parent and its regraft sub-batches are never
@@ -89,9 +83,10 @@ class BatchController extends Controller
         return view('operational.batches.index', [
             'batches' => $batches,
             'filters' => $filters,
-            'status' => $tab,
-            'archivedCount' => $archivedCount,
             'scionVarieties' => $scionVarieties,
+            // Preview only: the Add Batch form shows the code the server will
+            // assign on save (the store action recomputes it).
+            'nextBatchCode' => Batch::nextBatchCode(),
             'totalBatches' => (clone $visible)->count(),
             'activeBatches' => (clone $visible)->where('status', Batch::STATUS_ACTIVE)->count(),
             'inactiveBatches' => (clone $visible)->where('status', Batch::STATUS_INACTIVE)->count(),
@@ -104,11 +99,19 @@ class BatchController extends Controller
         $validated = $request->validated();
 
         DB::transaction(function () use ($validated): void {
-            // Provisional default 1 (pending PRD `OD-3`): a new batch starts
-            // with its full grafted population available.
+            // FR-06: Batch Code and Grafted Date are system-assigned when a
+            // batch is established — the next free root code and today's date
+            // (see Batch::storeRules()). The operator supplies only the batch's
+            // own choices (Scion Variety / Total Grafted / Status).
             $batch = Batch::create([
-                ...$validated,
+                'batch_code' => Batch::nextBatchCode(),
+                'grafted_date' => now()->toDateString(),
+                'scion_variety_id' => $validated['scion_variety_id'] ?? null,
+                'total_grafted' => $validated['total_grafted'],
+                'status' => $validated['status'],
                 'user_id' => Auth::id(),
+                // Provisional default 1 (pending PRD `OD-3`): a new batch
+                // starts with its full grafted population available.
                 'available_count' => $validated['total_grafted'],
                 'created_at' => now(),
             ]);
@@ -155,56 +158,36 @@ class BatchController extends Controller
     }
 
     /**
-     * Archive a batch instead of deleting it (approved ERD revision §9.8:
-     * archive/restore replaces hard deletion so inventory, mortality,
-     * regraft, stock and activity history are never destroyed).
+     * Permanently delete a batch. Guarded by {@see Batch::deletionBlockers()}:
+     * a batch with any dependent operational record (mortality, regraft /
+     * sub-batches, stock-out lines, inventory snapshots or activity history) is
+     * refused so its history is never destroyed. Replaces the former
+     * archive/restore flow (owner-directed).
      */
-    public function archive(Batch $batch): RedirectResponse
+    public function destroy(Batch $batch): RedirectResponse
     {
-        if ($batch->isArchived()) {
+        $blockers = $batch->deletionBlockers();
+
+        if ($blockers !== []) {
             return redirect()
                 ->route('operational.batches')
-                ->with('error', 'This batch is already archived.');
+                ->with('error', "Batch {$batch->batch_code} cannot be deleted because it has ".implode(', ', $blockers).'. Its history must be preserved.');
         }
 
+        $batchCode = $batch->batch_code;
+
         DB::transaction(function () use ($batch): void {
-            $batch->update(['archived_at' => now()]);
+            $batch->delete();
 
             ActivityLog::record(
                 null,
-                ActivityLog::TYPE_BATCH_ARCHIVED,
-                "Archived batch {$batch->batch_code}."
+                ActivityLog::TYPE_BATCH_DELETED,
+                "Deleted batch {$batch->batch_code}."
             );
         });
 
         return redirect()
             ->route('operational.batches')
-            ->with('success', 'Batch archived successfully.');
-    }
-
-    /**
-     * Restore a previously archived batch to the active directory.
-     */
-    public function restore(Batch $batch): RedirectResponse
-    {
-        if (! $batch->isArchived()) {
-            return redirect()
-                ->route('operational.batches')
-                ->with('error', 'This batch is not archived.');
-        }
-
-        DB::transaction(function () use ($batch): void {
-            $batch->update(['archived_at' => null]);
-
-            ActivityLog::record(
-                null,
-                ActivityLog::TYPE_BATCH_RESTORED,
-                "Restored batch {$batch->batch_code}."
-            );
-        });
-
-        return redirect()
-            ->route('operational.batches', ['tab' => 'archived'])
-            ->with('success', 'Batch restored successfully.');
+            ->with('success', "Batch {$batchCode} deleted permanently.");
     }
 }

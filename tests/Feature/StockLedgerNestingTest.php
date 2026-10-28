@@ -174,13 +174,19 @@ class StockLedgerNestingTest extends TestCase
             ->assertSee('Batch summary (nested)')
             ->assertSee('Sub-batch quantities appear under Regraft, not Grafted')
             ->assertSee('Pullout posts one dated row per Stock Out release', false)
-            ->assertSee('Remaining Available is the running balance', false)
             ->assertSee("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", false)
             ->assertSee('B001-R1-R1')
-            ->assertSee('↳');
+            ->assertSee('↳')
+            ->assertDontSee('Remaining Available');
     }
 
-    public function test_ledger_csv_contains_the_nested_summary(): void
+    /**
+     * The CSV export mirrors the company's manual ledger: one block per month
+     * (month title, grouped section header row, per-Scion-Variety sub-header row,
+     * the real dated events, then the month TOTAL) followed by the Grand Total and
+     * the nested batch summary. The running-balance column is not exported.
+     */
+    public function test_ledger_csv_uses_the_monthly_block_layout_and_contains_the_nested_summary(): void
     {
         $response = $this->actingAs($this->user())->get(route('analytics.stock-ledger.export.csv'));
 
@@ -189,13 +195,34 @@ class StockLedgerNestingTest extends TestCase
 
         $csv = $response->getContent();
 
+        // Header block + monthly blocks (the seeded ledger spans July → September).
+        // fputcsv encloses fields containing spaces, so the month title line reads
+        // `"July 2026"` — match it with optional quotes.
+        $this->assertStringContainsString('Cacao Tree Stock Ledger', $csv);
+        $this->assertMatchesRegularExpression('/\n"?July 2026"?\n/', $csv);
+        $this->assertMatchesRegularExpression('/\n"?August 2026"?\n/', $csv);
+        $this->assertMatchesRegularExpression('/\n"?September 2026"?\n/', $csv);
+
+        // Grouped section header row + per-Scion-Variety sub-header row.
+        $this->assertStringContainsString('Date,Description,Seedlings,Grafted,', $csv);
+        $this->assertStringContainsString('Mortality,', $csv);
+        $this->assertStringContainsString('"Ready to Plant"', $csv);
+        $this->assertMatchesRegularExpression('/\n,,,Batangas,/', $csv);
+
+        // Month totals and the grand total (dates are ISO for traceability).
+        $this->assertStringContainsString('TOTAL — July 2026', $csv);
+        $this->assertStringContainsString('GRAND TOTAL', $csv);
+
+        // The Remaining Available column is gone from the export.
+        $this->assertStringNotContainsString('Remaining Available', $csv);
+
+        // The nested batch summary is kept (PRD §9.3).
         $this->assertStringContainsString('Batch summary (nested)', $csv);
         $this->assertStringContainsString('Batch or sub-batch', $csv);
         $this->assertStringContainsString('Total Grafted', $csv);
         $this->assertStringContainsString('B001-R1-R1', $csv);
         $this->assertStringContainsString('Sub-batch quantities appear under Regraft, not Grafted', $csv);
         $this->assertStringContainsString('Pullout posts one dated row per Stock Out release', $csv);
-        $this->assertStringContainsString('Remaining Available is the running balance', $csv);
         $this->assertStringContainsString("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $csv);
     }
 
@@ -213,7 +240,7 @@ class StockLedgerNestingTest extends TestCase
         // across multiple FPDF lines, so only per-line fragments are contiguous.
         $this->assertStringContainsString('Batch summary \(nested\)', $content);
         $this->assertStringContainsString('B001-R1-R1', $content);
-        $this->assertStringContainsString('Remaining Available', $content);
+        $this->assertStringNotContainsString('Remaining Available', $content);
         $this->assertStringContainsString('Sub-batch quantities appear under Regraft, not Grafted', $content);
         $this->assertStringContainsString("Total counts each plant once; a regrafted plant's quantity is not added again under its new sub-batch.", $content);
     }

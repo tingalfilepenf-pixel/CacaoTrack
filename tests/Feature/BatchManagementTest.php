@@ -127,36 +127,59 @@ class BatchManagementTest extends TestCase
         $this->actingAs($user)
             ->post(route('operational.batches.manage.store'), [])
             ->assertSessionHasErrors([
-                'batch_code', 'total_grafted', 'grafted_date', 'status',
+                'total_grafted', 'status',
             ], null, 'batch');
 
         $this->assertSame(0, Batch::count());
     }
 
-    public function test_batch_creation_rejects_a_duplicate_batch_code(): void
+    public function test_batch_creation_assigns_the_next_sequential_batch_code(): void
     {
         $user = User::factory()->create();
         $variety = $this->variety();
-        $this->createBatch($user, $variety, 'DUP-001');
+        $this->createBatch($user, $variety, 'B001');
+        $this->createBatch($user, $variety, 'B003');
 
         $this->actingAs($user)
-            ->post(route('operational.batches.manage.store'), $this->payload($variety, ['batch_code' => 'DUP-001']))
-            ->assertSessionHasErrors(['batch_code'], null, 'batch');
+            ->post(route('operational.batches.manage.store'), $this->payload($variety))
+            ->assertRedirect(route('operational.batches'))
+            ->assertSessionHas('success');
 
-        $this->assertSame(1, Batch::count());
+        // B002 is skipped: the code continues past the highest established
+        // root batch, and a deleted/archived code is never reused.
+        $this->assertDatabaseHas('batches', ['batch_code' => 'B004']);
+        $this->assertSame(3, Batch::count());
     }
 
-    public function test_batch_creation_rejects_a_future_grafted_date(): void
+    public function test_next_batch_code_continues_past_root_codes_and_ignores_sub_batches(): void
     {
         $user = User::factory()->create();
+        $variety = $this->variety();
+        $this->createBatch($user, $variety, 'B001');
+        $this->createBatch($user, $variety, 'B001-R1');
+        $this->createBatch($user, $variety, 'B001-R1-R1');
+        $this->createBatch($user, $variety, 'CUSTOM-1');
+
+        $this->assertSame('B002', Batch::nextBatchCode());
+    }
+
+    public function test_batch_creation_ignores_a_submitted_batch_code_and_grafted_date(): void
+    {
+        $user = User::factory()->create();
+        $variety = $this->variety();
 
         $this->actingAs($user)
-            ->post(route('operational.batches.manage.store'), $this->payload(null, [
+            ->post(route('operational.batches.manage.store'), $this->payload($variety, [
+                'batch_code' => 'CUSTOM-001',
                 'grafted_date' => now()->addDay()->format('Y-m-d'),
             ]))
-            ->assertSessionHasErrors(['grafted_date'], null, 'batch');
+            ->assertRedirect(route('operational.batches'))
+            ->assertSessionHas('success');
 
-        $this->assertSame(0, Batch::count());
+        $batch = Batch::firstOrFail();
+        $this->assertSame('B001', $batch->batch_code);
+        $this->assertSame(now()->toDateString(), $batch->grafted_date->format('Y-m-d'));
+        $this->assertDatabaseMissing('batches', ['batch_code' => 'CUSTOM-001']);
     }
 
     public function test_batch_creation_rejects_an_invalid_status(): void
@@ -268,7 +291,25 @@ class BatchManagementTest extends TestCase
         $this->assertSame(Batch::STATUS_INACTIVE, $batch->status);
     }
 
-    public function test_batch_with_operational_records_can_still_be_archived_and_restored(): void
+    public function test_batch_without_operational_records_can_be_deleted(): void
+    {
+        $user = User::factory()->create();
+        $variety = $this->variety();
+        $batch = $this->createBatch($user, $variety);
+
+        $this->actingAs($user)
+            ->delete(route('operational.batches.destroy', $batch))
+            ->assertRedirect(route('operational.batches'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('batches', ['batch_id' => $batch->batch_id]);
+        $this->assertDatabaseHas('activity_logs', [
+            'activity_type' => ActivityLog::TYPE_BATCH_DELETED,
+            'user_id' => $user->id,
+        ]);
+    }
+
+    public function test_batch_with_operational_records_cannot_be_deleted(): void
     {
         $user = User::factory()->create();
         $variety = $this->variety();
@@ -283,16 +324,16 @@ class BatchManagementTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('operational.batches.archive', $batch))
+            ->delete(route('operational.batches.destroy', $batch))
             ->assertRedirect(route('operational.batches'))
-            ->assertSessionHas('success');
+            ->assertSessionHas('error');
 
-        $this->assertNotNull($batch->fresh()->archived_at);
+        $this->assertDatabaseHas('batches', ['batch_id' => $batch->batch_id]);
         $this->assertDatabaseHas('mortality_records', ['batch_id' => $batch->batch_id]);
-        $this->assertDatabaseHas('activity_logs', ['activity_type' => ActivityLog::TYPE_BATCH_ARCHIVED]);
+        $this->assertSame(0, ActivityLog::where('activity_type', ActivityLog::TYPE_BATCH_DELETED)->count());
     }
 
-    public function test_archived_batch_is_hidden_from_the_active_listing_and_can_be_restored(): void
+    public function test_archived_batch_is_hidden_from_the_active_listing(): void
     {
         $user = User::factory()->create();
         $variety = $this->variety();
@@ -302,20 +343,8 @@ class BatchManagementTest extends TestCase
         $this->actingAs($user)
             ->get(route('operational.batches'))
             ->assertOk()
-            ->assertDontSee('B001');
-
-        $this->actingAs($user)
-            ->get(route('operational.batches', ['tab' => 'archived']))
-            ->assertOk()
-            ->assertSee('B001');
-
-        $this->actingAs($user)
-            ->post(route('operational.batches.restore', $batch))
-            ->assertRedirect(route('operational.batches', ['tab' => 'archived']))
-            ->assertSessionHas('success');
-
-        $this->assertNull($batch->fresh()->archived_at);
-        $this->assertDatabaseHas('activity_logs', ['activity_type' => ActivityLog::TYPE_BATCH_RESTORED]);
+            ->assertDontSee('B001')
+            ->assertDontSee('Archived');
     }
 
     public function test_batches_page_filters_by_search(): void

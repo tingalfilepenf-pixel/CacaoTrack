@@ -4,11 +4,13 @@ namespace App\Models;
 
 use App\Actions\RegraftBatch;
 use App\Models\Concerns\Archivable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -54,6 +56,35 @@ class Batch extends Model
     public const STATUS_ACTIVE = 'active';
 
     public const STATUS_INACTIVE = 'inactive';
+
+    /**
+     * The company's 21-day production cycle (PRD §2.6, ERD §3.8/§5). The cycle
+     * is not stored; its end is derived as `Grafted_Date + 21 days` (OD-7).
+     */
+    public const CYCLE_DAYS = 21;
+
+    /**
+     * Derived lifecycle statuses shown on the Inventory listing (owner-directed
+     * display mapping; OD-7). They do NOT change the stored `status` column,
+     * whose enumeration stays `active` / `inactive`.
+     */
+    public const LIFECYCLE_GROWING = 'growing';
+
+    public const LIFECYCLE_READY = 'ready';
+
+    public const LIFECYCLE_COMPLETED = 'completed';
+
+    public const LIFECYCLE_CANCELLED = 'cancelled';
+
+    /**
+     * @var list<string>
+     */
+    public const LIFECYCLE_STATUSES = [
+        self::LIFECYCLE_GROWING,
+        self::LIFECYCLE_READY,
+        self::LIFECYCLE_COMPLETED,
+        self::LIFECYCLE_CANCELLED,
+    ];
 
     /**
      * Relations that make a batch's counts immutable (RULE 6: one definition
@@ -124,6 +155,85 @@ class Batch extends Model
     public function isSubBatch(): bool
     {
         return $this->parent_batch_id !== null;
+    }
+
+    /**
+     * The date this batch reaches the end of its 21-day production cycle
+     * (`grafted_date + 21 days`, OD-7: the cycle is derived, never stored).
+     */
+    public function cycleReadyDate(): ?Carbon
+    {
+        return $this->grafted_date?->copy()->addDays(self::CYCLE_DAYS);
+    }
+
+    /**
+     * Derived lifecycle status for the Inventory listing (owner-directed
+     * display mapping; the stored `status` column is left untouched):
+     *
+     *  - `cancelled`  : invalidated record — stored `inactive` or archived.
+     *  - `completed`  : no remaining available quantity (fully stocked out).
+     *  - `ready`      : the 21-day cycle has been reached.
+     *  - `growing`    : still inside the 21-day cycle.
+     */
+    public function lifecycleStatus(): string
+    {
+        if ($this->status === self::STATUS_INACTIVE || $this->isArchived()) {
+            return self::LIFECYCLE_CANCELLED;
+        }
+
+        if ((int) $this->available_count <= 0) {
+            return self::LIFECYCLE_COMPLETED;
+        }
+
+        $readyDate = $this->cycleReadyDate();
+
+        return $readyDate !== null && ! $readyDate->isFuture()
+            ? self::LIFECYCLE_READY
+            : self::LIFECYCLE_GROWING;
+    }
+
+    /**
+     * UI labels for the derived lifecycle statuses (RULE 6: one source for the
+     * listing badge and the status filter).
+     *
+     * @return array<string, string>
+     */
+    public static function lifecycleLabels(): array
+    {
+        return [
+            self::LIFECYCLE_GROWING => 'Growing',
+            self::LIFECYCLE_READY => 'Ready',
+            self::LIFECYCLE_COMPLETED => 'Completed',
+            self::LIFECYCLE_CANCELLED => 'Cancelled/Void',
+        ];
+    }
+
+    /**
+     * Query equivalent of {@see lifecycleStatus()} (same precedence) so the
+     * Inventory status filter returns exactly the rows whose badge shows the
+     * selected status.
+     */
+    public function scopeWhereLifecycleStatus(Builder $query, string $status): Builder
+    {
+        $readyCutoff = now()->startOfDay()->subDays(self::CYCLE_DAYS)->toDateString();
+
+        return match ($status) {
+            self::LIFECYCLE_CANCELLED => $query->where(fn (Builder $query) => $query
+                ->where('status', self::STATUS_INACTIVE)
+                ->orWhereNotNull('archived_at')),
+            self::LIFECYCLE_COMPLETED => $query->where('status', self::STATUS_ACTIVE)
+                ->whereNull('archived_at')
+                ->where('available_count', '<=', 0),
+            self::LIFECYCLE_READY => $query->where('status', self::STATUS_ACTIVE)
+                ->whereNull('archived_at')
+                ->where('available_count', '>', 0)
+                ->whereDate('grafted_date', '<=', $readyCutoff),
+            self::LIFECYCLE_GROWING => $query->where('status', self::STATUS_ACTIVE)
+                ->whereNull('archived_at')
+                ->where('available_count', '>', 0)
+                ->whereDate('grafted_date', '>', $readyCutoff),
+            default => $query,
+        };
     }
 
     public function mortalityRecords(): HasMany
@@ -369,16 +479,46 @@ class Batch extends Model
     }
 
     /**
+     * The next free root batch code (FR-06): `B` + the next sequential
+     * 3-digit number (`B001`, `B002`, …). Regraft sub-batch codes
+     * (`B001-R1`) and any other non-`B<digits>` codes are ignored, so the
+     * sequence always continues past the highest established root batch.
+     *
+     * Called inside the create transaction; the `batch_code` unique index
+     * remains the final guard against a duplicate.
+     */
+    public static function nextBatchCode(): string
+    {
+        $highest = self::query()
+            ->where('batch_code', 'like', 'B%')
+            ->pluck('batch_code')
+            ->reduce(function (int $carry, string $code): int {
+                return preg_match('/^B(\d+)$/', $code, $matches)
+                    ? max($carry, (int) $matches[1])
+                    : $carry;
+            }, 0);
+
+        return 'B'.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
      * Regraft deficit for this batch.
      *
      * Regraft Deficit = effective mortality - total regrafted (floor 0).
      * This is the single definition shared by the listing and validation
      * (RULE 6). The formula is unchanged from Phase 7A; `totalRegrafted()` now
      * reads the cached `batches.regraft` counter (provisional, `OD-12`).
+     *
+     * The optional `$mortalityQuantity` lets a caller that has already summed
+     * the batch's mortality (e.g. an eager-loaded `withSum` alias) reuse it
+     * instead of issuing a second query, while still going through this one
+     * definition — the same pattern as {@see survivingQuantity()}.
      */
-    public function regraftDeficit(): int
+    public function regraftDeficit(?int $mortalityQuantity = null): int
     {
-        return max(0, $this->effectiveMortalityQuantity() - $this->totalRegrafted());
+        $mortality = $mortalityQuantity ?? $this->effectiveMortalityQuantity();
+
+        return max(0, $mortality - $this->totalRegrafted());
     }
 
     /**
@@ -441,10 +581,77 @@ class Batch extends Model
     }
 
     /**
-     * Centralized validation rules for Batch master data (RULE 6, FR-16).
-     * `available_count` is never submitted: it is the live server-side balance.
-     * `scion_variety_id` is nullable (a batch may exist before a variety is
-     * assigned — ERD §3.8).
+     * Why this batch cannot be hard-deleted (empty = deletable). Every
+     * dependent record is restrictOnDelete, so a batch with any operational
+     * history — mortality, regraft (as sub-batch creation or as parent of
+     * sub-batches), stock-out lines, inventory snapshots or activity history —
+     * must be kept so no traceability is destroyed.
+     *
+     * @return list<string>
+     */
+    public function deletionBlockers(): array
+    {
+        $checks = [
+            'mortalityRecords' => 'mortality records',
+            'regraftRecords' => 'regraft records',
+            'subBatches' => 'regraft sub-batches',
+            'stockOutDetails' => 'stock-out lines',
+            'inventories' => 'inventory snapshots',
+            'activityLogs' => 'activity history',
+        ];
+
+        $blockers = [];
+
+        foreach ($checks as $relation => $label) {
+            $attribute = Str::snake($relation).'_exists';
+
+            $exists = array_key_exists($attribute, $this->attributes)
+                ? (bool) $this->attributes[$attribute]
+                : $this->{$relation}()->exists();
+
+            if ($exists) {
+                $blockers[] = $label;
+            }
+        }
+
+        return $blockers;
+    }
+
+    /**
+     * Centralized delete rule (RULE 6): a batch may only be deleted when it
+     * has no dependent operational records.
+     */
+    public function canBeDeleted(): bool
+    {
+        return $this->deletionBlockers() === [];
+    }
+
+    /**
+     * Validation rules for ESTABLISHING a new batch (RULE 6, FR-06).
+     *
+     * `Batch_Code` and `Grafted_Date` are system-assigned when a batch is
+     * established — the next free code ({@see nextBatchCode()}) and today's
+     * date — so they are deliberately not accepted from the client. Only the
+     * operator's own choices are validated. `available_count` is never
+     * submitted: it is the live server-side balance. `scion_variety_id` is
+     * nullable (a batch may exist before a variety is assigned — ERD §3.8).
+     *
+     * @return array<string, array<int, mixed>>
+     */
+    public static function storeRules(): array
+    {
+        return [
+            'scion_variety_id' => ['nullable', 'integer', ScionVariety::activeExistsRule('scion_variety_id')],
+            'total_grafted' => ['required', 'integer', 'min:1'],
+            'status' => ['required', 'string', Rule::in(self::STATUSES)],
+        ];
+    }
+
+    /**
+     * Centralized validation rules for editing an existing batch (RULE 6,
+     * FR-16). `available_count` is never submitted: it is the live server-side
+     * balance. `scion_variety_id` is nullable (a batch may exist before a
+     * variety is assigned — ERD §3.8).
      *
      * @return array<string, array<int, mixed>>
      */

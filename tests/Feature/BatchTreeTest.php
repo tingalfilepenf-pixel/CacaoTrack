@@ -74,6 +74,23 @@ class BatchTreeTest extends TestCase
         $this->assertSame($b002->batch_id, $nodes[3]['batch']->batch_id);
     }
 
+    public function test_it_can_order_roots_newest_first_without_breaking_nesting(): void
+    {
+        $b001 = $this->batch('B001', null, '2026-07-15');
+        $this->batch('B001-R1', $b001, '2026-09-05', 'Toledo');
+        $this->batch('B002', null, '2026-08-01', 'Trinitario');
+        // Same grafted date as B001: the root with the higher code wins the tie.
+        $this->batch('B003', null, '2026-07-15', 'Forastero');
+
+        $nodes = BatchTree::flatten(Batch::query()->with('parent')->get(), descending: true);
+
+        $this->assertSame(
+            ['B002', 'B003', 'B001', 'B001-R1'],
+            array_map(fn (array $node) => $node['batch']->batch_code, $nodes),
+        );
+        $this->assertSame([0, 0, 0, 1], array_map(fn (array $node) => $node['depth'], $nodes));
+    }
+
     public function test_children_are_ordered_by_batch_code(): void
     {
         $root = $this->batch('B001');

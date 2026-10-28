@@ -6,6 +6,7 @@ use App\Models\Concerns\Archivable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 /**
  * Revised ERD entity `Scion_Variety` (ERD §3.9).
@@ -46,6 +47,56 @@ class ScionVariety extends Model
     public function stockOutDetails(): HasMany
     {
         return $this->hasMany(StockOutDetail::class, 'scion_variety_id', 'scion_variety_id');
+    }
+
+    /**
+     * Stock In receipts that recorded this scion variety (a scion-inclusive
+     * Stock_In row carries `scion_variety_id`, ERD §3.7).
+     */
+    public function stockIns(): HasMany
+    {
+        return $this->hasMany(StockIn::class, 'scion_variety_id', 'scion_variety_id');
+    }
+
+    /**
+     * Why this scion variety cannot be hard-deleted (empty = deletable).
+     * References are restrictOnDelete, so a variety already used by a batch,
+     * stock receipt or stock-out line is kept so operational history survives.
+     *
+     * @return list<string>
+     */
+    public function deletionBlockers(): array
+    {
+        $checks = [
+            'batches' => 'batch assignments',
+            'stockOutDetails' => 'stock-out lines',
+            'stockIns' => 'stock-in receipts',
+        ];
+
+        $blockers = [];
+
+        foreach ($checks as $relation => $label) {
+            $attribute = Str::snake($relation).'_exists';
+
+            $exists = array_key_exists($attribute, $this->attributes)
+                ? (bool) $this->attributes[$attribute]
+                : $this->{$relation}()->exists();
+
+            if ($exists) {
+                $blockers[] = $label;
+            }
+        }
+
+        return $blockers;
+    }
+
+    /**
+     * Centralized delete rule (RULE 6): a scion variety may only be deleted
+     * when nothing references it.
+     */
+    public function canBeDeleted(): bool
+    {
+        return $this->deletionBlockers() === [];
     }
 
     /**

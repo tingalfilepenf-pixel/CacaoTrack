@@ -43,12 +43,27 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
+                            <p class="text-muted text-uppercase small fw-bold mb-1">Total Grafted</p>
+                            <h2 class="mb-0 text-success">{{ number_format($totalGrafted) }}</h2>
+                            <span class="text-muted small">Live population (Grafted &minus; Regraft)</span>
+                            <br><span class="text-muted small">Each plant counted once, all batches</span>
+                        </div>
+                        <i class="bi bi-tree stat-card-icon text-success"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mt-3 mt-md-0">
+            <div class="card stat-card bg-white h-100 border-start border-primary border-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
                             <p class="text-muted text-uppercase small fw-bold mb-1">Total Active Inventory</p>
-                            <h2 class="mb-0 text-success">{{ number_format($totalActiveInventory) }}</h2>
+                            <h2 class="mb-0 text-primary">{{ number_format($totalActiveInventory) }}</h2>
                             <span class="text-muted small">Active trees (archived batches excluded)</span>
                             <br><span class="text-muted small">Archived: {{ number_format($totalArchivedInventory) }}</span>
                         </div>
-                        <i class="bi bi-tree-fill stat-card-icon text-success"></i>
+                        <i class="bi bi-tree-fill stat-card-icon text-primary"></i>
                     </div>
                 </div>
             </div>
@@ -63,20 +78,6 @@
                             <span class="text-muted small">Effective mortality ÷ total grafted</span>
                         </div>
                         <i class="bi bi-heartbreak-fill stat-card-icon text-danger"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4 mt-3 mt-md-0">
-            <div class="card stat-card bg-white h-100 border-start border-warning border-4">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <p class="text-muted text-uppercase small fw-bold mb-1">Regraft Deficit</p>
-                            <h2 class="mb-0 text-warning">{{ number_format($totalRegraftDeficit) }}</h2>
-                            <span class="text-muted small">Trees pending regraft</span>
-                        </div>
-                        <i class="bi bi-exclamation-triangle-fill stat-card-icon text-warning"></i>
                     </div>
                 </div>
             </div>
@@ -117,21 +118,7 @@
 
     <!-- Charts Row 2 -->
     <div class="row mb-4">
-        <div class="col-lg-6">
-            <div class="card h-100">
-                <div class="card-header bg-white">
-                    <h6 class="mb-0 fw-bold text-primary">Regraft Deficit by Batch</h6>
-                </div>
-                <div class="card-body">
-                    @if (count($regraftDeficitByBatch['labels']) > 0 && array_sum($regraftDeficitByBatch['values']) > 0)
-                        <div id="regraftDeficitChart" style="height: 300px; width: 100%;"></div>
-                    @else
-                        <p class="text-muted text-center my-5">No data available for the selected period.</p>
-                    @endif
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-6 mt-3 mt-lg-0">
+        <div class="col-lg-12">
             <div class="card h-100">
                 <div class="card-header bg-white">
                     <h6 class="mb-0 fw-bold text-primary">Survival vs Mortality</h6>
@@ -199,7 +186,7 @@
                 <div class="modal-body">
                     <p class="text-muted small">
                         The printable PDF contains the current KPI cards and the tabular values behind each chart
-                        (Mortality Trend, Inventory by Scion Variety, Regraft Deficit by Batch, Survival vs Mortality).
+                        (Mortality Trend, Inventory by Scion Variety, Survival vs Mortality).
                     </p>
                     <p class="text-muted small mb-0">
                         <i class="bi bi-info-circle me-1"></i>All values are read live from the database (all time).
@@ -260,21 +247,6 @@ document.addEventListener('DOMContentLoaded', function () {
             type: 'bar',
             data: @json($inventoryByScionVariety['values']),
             itemStyle: { color: '#0d6efd' }
-        }]
-    });
-    @endif
-
-    @if (count($regraftDeficitByBatch['labels']) > 0 && array_sum($regraftDeficitByBatch['values']) > 0)
-    render('regraftDeficitChart', {
-        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: @json($regraftDeficitByBatch['labels']) },
-        yAxis: { type: 'value', name: 'Trees' },
-        series: [{
-            name: 'Regraft Deficit',
-            type: 'bar',
-            data: @json($regraftDeficitByBatch['values']),
-            itemStyle: { color: '#ffc107' }
         }]
     });
     @endif

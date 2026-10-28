@@ -103,6 +103,23 @@ class AnalyticsMetrics
         return (int) Batch::query()->archived()->sum('available_count');
     }
 
+    /**
+     * Total Grafted (the dashboard KPI, PRD §11 Total Grafted / ERD §3.8): the
+     * cross-batch grafted population with each physical plant counted exactly
+     * once, `SUM(total_grafted - regraft)`. Raw `SUM(total_grafted)` is a
+     * cumulative log, so it double-counts every regrafted plant (once in the
+     * source batch, again in its sub-batch, and again if that sub-batch is
+     * itself regrafted) — see PRD §11. This is the same basis as the Inventory
+     * page's "Total Grafted" card and {@see self::survivalVsMortality()}.
+     *
+     * ALL batches are included (active and archived): `total_grafted` is a
+     * cumulative log that does not shrink when a batch is archived.
+     */
+    public static function totalGrafted(): int
+    {
+        return (int) Batch::query()->sum(DB::raw('total_grafted - regraft'));
+    }
+
     public static function totalRegraftDeficit(): int
     {
         return (int) Batch::query()
@@ -570,8 +587,10 @@ class AnalyticsMetrics
      * per release, matching the client's spreadsheet) — plus the seedling Stock
      * In receipts.
      *
-     * A running "Remaining Available" is tracked per batch in true chronological
-     * order and shown on every row (blank for the variety-agnostic seedlings):
+     * A running balance is still tracked per batch in true chronological order and
+     * reconciled against the live surviving quantity as an internal integrity
+     * guard, but it is no longer rendered on the page, PDF or CSV (owner-directed,
+     * Session EA — the client's own ledger has no such column):
      *
      *   remaining(as of event N) = total_grafted_at_establishment
      *       - regraft_out_to_date - effective_mortality_to_date - stock_out_to_date
