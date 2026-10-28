@@ -33,7 +33,6 @@ class ActivityLog extends Model
         'record_corrected' => 'Record Corrected',
         'stock_in_recorded' => 'Stock In Recorded',
         'stock_out_recorded' => 'Stock Out Recorded',
-        'stock_reversal_recorded' => 'Stock Reversal Recorded',
         'report_generated' => 'Report Generated',
         'profile_updated' => 'Profile Updated',
         'user_created' => 'User Created',
@@ -42,20 +41,16 @@ class ActivityLog extends Model
         'batch_created' => 'Batch Created',
         'batch_updated' => 'Batch Updated',
         'batch_deleted' => 'Batch Deleted',
-        'role_created' => 'Role Created',
-        'role_updated' => 'Role Updated',
-        'role_deleted' => 'Role Deleted',
         'supplier_archived' => 'Supplier Archived',
         'supplier_restored' => 'Supplier Restored',
         'client_archived' => 'Client Archived',
         'client_restored' => 'Client Restored',
-        'variety_archived' => 'Variety Archived',
         'variety_restored' => 'Variety Restored',
-        'scion_archived' => 'Scion Archived',
         'scion_restored' => 'Scion Restored',
         'scion_stock_received' => 'Scions Received',
         'scion_variety_archived' => 'Scion Variety Archived',
         'scion_variety_restored' => 'Scion Variety Restored',
+        'scion_variety_deleted' => 'Scion Variety Deleted',
         'pot_type_archived' => 'Pot Type Archived',
         'pot_type_restored' => 'Pot Type Restored',
         'batch_archived' => 'Batch Archived',
@@ -84,8 +79,6 @@ class ActivityLog extends Model
 
     public const TYPE_STOCK_OUT_RECORDED = 'stock_out_recorded';
 
-    public const TYPE_STOCK_REVERSAL_RECORDED = 'stock_reversal_recorded';
-
     public const TYPE_REPORT_GENERATED = 'report_generated';
 
     public const TYPE_PROFILE_UPDATED = 'profile_updated';
@@ -102,12 +95,6 @@ class ActivityLog extends Model
 
     public const TYPE_BATCH_DELETED = 'batch_deleted';
 
-    public const TYPE_ROLE_CREATED = 'role_created';
-
-    public const TYPE_ROLE_UPDATED = 'role_updated';
-
-    public const TYPE_ROLE_DELETED = 'role_deleted';
-
     public const TYPE_SUPPLIER_ARCHIVED = 'supplier_archived';
 
     public const TYPE_SUPPLIER_RESTORED = 'supplier_restored';
@@ -116,11 +103,7 @@ class ActivityLog extends Model
 
     public const TYPE_CLIENT_RESTORED = 'client_restored';
 
-    public const TYPE_VARIETY_ARCHIVED = 'variety_archived';
-
     public const TYPE_VARIETY_RESTORED = 'variety_restored';
-
-    public const TYPE_SCION_ARCHIVED = 'scion_archived';
 
     public const TYPE_SCION_RESTORED = 'scion_restored';
 
@@ -129,6 +112,8 @@ class ActivityLog extends Model
     public const TYPE_SCION_VARIETY_ARCHIVED = 'scion_variety_archived';
 
     public const TYPE_SCION_VARIETY_RESTORED = 'scion_variety_restored';
+
+    public const TYPE_SCION_VARIETY_DELETED = 'scion_variety_deleted';
 
     public const TYPE_POT_TYPE_ARCHIVED = 'pot_type_archived';
 
@@ -158,7 +143,6 @@ class ActivityLog extends Model
         'record_corrected' => 'bg-warning text-dark',
         'stock_in_recorded' => 'bg-info text-dark',
         'stock_out_recorded' => 'bg-secondary',
-        'stock_reversal_recorded' => 'bg-dark',
         'report_generated' => 'bg-primary',
         'profile_updated' => 'bg-light text-dark border',
         'user_created' => 'bg-success',
@@ -167,20 +151,16 @@ class ActivityLog extends Model
         'batch_created' => 'bg-success',
         'batch_updated' => 'bg-primary',
         'batch_deleted' => 'bg-danger',
-        'role_created' => 'bg-success',
-        'role_updated' => 'bg-primary',
-        'role_deleted' => 'bg-danger',
         'supplier_archived' => 'bg-secondary',
         'supplier_restored' => 'bg-success',
         'client_archived' => 'bg-secondary',
         'client_restored' => 'bg-success',
-        'variety_archived' => 'bg-secondary',
         'variety_restored' => 'bg-success',
-        'scion_archived' => 'bg-secondary',
         'scion_restored' => 'bg-success',
         'scion_stock_received' => 'bg-info text-dark',
         'scion_variety_archived' => 'bg-secondary',
         'scion_variety_restored' => 'bg-success',
+        'scion_variety_deleted' => 'bg-danger',
         'pot_type_archived' => 'bg-secondary',
         'pot_type_restored' => 'bg-success',
         'batch_archived' => 'bg-secondary',
