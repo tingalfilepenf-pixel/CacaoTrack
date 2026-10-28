@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Role;
 use App\Models\StockIn;
 use App\Models\Supplier;
 use App\Models\User;
@@ -28,7 +29,7 @@ class SupplierTest extends TestCase
 
     public function test_authenticated_user_can_view_the_suppliers_page(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $this->createSupplier('Real Supplier Co');
 
         $this->actingAs($user)
@@ -41,7 +42,7 @@ class SupplierTest extends TestCase
 
     public function test_supplier_can_be_created(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $this->actingAs($user)
             ->post(route('inventory.suppliers.manage.store'), [
@@ -61,7 +62,7 @@ class SupplierTest extends TestCase
 
     public function test_duplicate_supplier_names_are_allowed(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $this->actingAs($user)->post(route('inventory.suppliers.manage.store'), [
             'supplier_name' => 'Duplicate Name',
@@ -80,7 +81,7 @@ class SupplierTest extends TestCase
 
     public function test_supplier_creation_validates_required_fields(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $this->actingAs($user)
             ->post(route('inventory.suppliers.manage.store'), [])
@@ -91,7 +92,7 @@ class SupplierTest extends TestCase
 
     public function test_supplier_creation_rejects_over_length_values(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $this->actingAs($user)
             ->post(route('inventory.suppliers.manage.store'), [
@@ -106,7 +107,7 @@ class SupplierTest extends TestCase
 
     public function test_supplier_can_be_updated(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $supplier = $this->createSupplier('Old Name');
 
         $this->actingAs($user)
@@ -128,7 +129,7 @@ class SupplierTest extends TestCase
 
     public function test_supplier_update_validates_required_fields(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $supplier = $this->createSupplier('Keep Me');
 
         $this->actingAs($user)
@@ -143,7 +144,7 @@ class SupplierTest extends TestCase
 
     public function test_supplier_can_be_archived(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $supplier = $this->createSupplier('Archive Me');
 
         $this->actingAs($user)
@@ -160,7 +161,7 @@ class SupplierTest extends TestCase
 
     public function test_supplier_with_stock_ins_can_still_be_archived(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $supplier = $this->createSupplier('Protected Supplier');
 
         StockIn::create([
@@ -182,7 +183,7 @@ class SupplierTest extends TestCase
 
     public function test_archived_supplier_is_hidden_from_the_active_listing_and_can_be_restored(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $supplier = $this->createSupplier('Hidden Supplier');
         $supplier->update(['archived_at' => now()]);
 
@@ -210,7 +211,7 @@ class SupplierTest extends TestCase
 
     public function test_archiving_an_already_archived_supplier_is_rejected(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $supplier = $this->createSupplier('Already Archived');
         $supplier->update(['archived_at' => now()]);
 
@@ -222,7 +223,7 @@ class SupplierTest extends TestCase
 
     public function test_suppliers_page_filters_by_search(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $this->createSupplier('Alpha Supply');
         $this->createSupplier('Beta Supply');
 
@@ -235,7 +236,7 @@ class SupplierTest extends TestCase
 
     public function test_suppliers_page_shows_empty_state(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $this->actingAs($user)
             ->get(route('inventory.suppliers'))

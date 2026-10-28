@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\MortalityRecord;
+use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\User;
 use App\Support\AnalyticsMetrics;
@@ -30,7 +31,7 @@ class HistoricalNestingTest extends TestCase
     {
         parent::setUp();
 
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->role(Role::MANAGER)->create();
 
         $batangas = ScionVariety::create(['scion_variety_name' => 'Batangas']);
         $toledo = ScionVariety::create(['scion_variety_name' => 'Toledo']);

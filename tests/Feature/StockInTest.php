@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Batch;
+use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\Supplier;
@@ -51,6 +52,22 @@ class StockInTest extends TestCase
             ->assertSee('Stock In')
             ->assertSee('Receiving History')
             ->assertSee('Total Quantity Received');
+    }
+
+    public function test_stock_in_filters_apply_automatically_without_an_apply_button(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-in'))
+            ->assertOk()
+            ->assertSee('id="stockInFilterForm"', false)
+            ->assertSee('data-auto-filter', false)
+            ->assertSee('id="filterSearch"', false)
+            ->assertSee('id="filterSupplier"', false)
+            ->assertSee('Clear Filters')
+            ->assertDontSee('bi-funnel')
+            ->assertDontSee('Apply Filters');
     }
 
     public function test_stock_in_creates_a_record_without_touching_inventory(): void
@@ -418,7 +435,7 @@ class StockInTest extends TestCase
 
     public function test_supplier_can_be_created_inline(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $this->actingAs($user)
             ->post(route('inventory.suppliers.store'), [

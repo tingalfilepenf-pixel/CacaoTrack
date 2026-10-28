@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
+use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\User;
 use App\Support\AnalyticsMetrics;
@@ -51,40 +52,39 @@ class DashboardTest extends TestCase
 
     public function test_authenticated_user_can_view_the_dashboard(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $response = $this->actingAs($user)->get(route('dashboard'));
 
         $response->assertOk();
+        $response->assertSee('Total Grafted');
         $response->assertSee('Total Active Inventory');
         $response->assertSee('Crude Mortality Rate');
-        $response->assertSee('Regraft Deficit');
-        $response->assertSee('Archived:');
-        $response->assertViewHas('totalArchivedInventory', AnalyticsMetrics::totalArchivedInventory());
+        // The unconfirmed Regraft Deficit KPI was removed (owner-directed).
+        $response->assertDontSee('Regraft Deficit');
         $response->assertSee('Recent Activities');
     }
 
     public function test_dashboard_kpis_come_from_the_centralized_formulas(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $this->makePopulation($user);
 
         $response = $this->actingAs($user)->get(route('dashboard'));
 
         $response->assertOk();
+        $response->assertViewHas('totalGrafted', AnalyticsMetrics::totalGrafted());
         $response->assertViewHas('totalActiveInventory', AnalyticsMetrics::totalActiveInventory());
         $response->assertViewHas('crudeMortalityRate', AnalyticsMetrics::crudeMortalityRate());
-        $response->assertViewHas('totalRegraftDeficit', AnalyticsMetrics::totalRegraftDeficit());
 
-        // Real rendered values: 180 active, 20/200 = 10.00%, deficit 20 - 0 = 20.
-        $response->assertSee('180');
+        // Real rendered values: 200 grafted (live population), 20/200 = 10.00%.
+        $response->assertSee('200');
         $response->assertSee('10.00%');
-        $response->assertSee('20');
     }
 
     public function test_dashboard_charts_render_with_real_data(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $this->makePopulation($user);
 
         $response = $this->actingAs($user)->get(route('dashboard'));
@@ -101,7 +101,7 @@ class DashboardTest extends TestCase
 
     public function test_dashboard_shows_empty_states_and_no_fabricated_charts_when_there_is_no_data(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $response = $this->actingAs($user)->get(route('dashboard'));
 
@@ -111,14 +111,13 @@ class DashboardTest extends TestCase
         $response->assertDontSee('mortalityTrendChart');
         $response->assertDontSee('survivalChart');
         $response->assertDontSee('inventoryVarietyChart');
+        $response->assertViewHas('totalGrafted', 0);
         $response->assertViewHas('totalActiveInventory', 0);
-        $response->assertViewHas('totalArchivedInventory', 0);
-        $response->assertViewHas('totalRegraftDeficit', 0);
     }
 
     public function test_dashboard_does_not_render_the_old_mock_values(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $response = $this->actingAs($user)->get(route('dashboard'));
 
@@ -131,7 +130,7 @@ class DashboardTest extends TestCase
 
     public function test_dashboard_recent_activities_use_the_real_audit_trail_and_are_limited_to_five(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
         $batch = $this->makePopulation($user);
 
         for ($i = 1; $i <= 7; $i++) {

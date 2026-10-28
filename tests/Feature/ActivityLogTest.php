@@ -43,7 +43,7 @@ class ActivityLogTest extends TestCase
 
     public function test_authenticated_user_can_view_the_activity_history_page(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
 
         $this->actingAs($user)
             ->get(route('activity.index'))
@@ -54,7 +54,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_history_shows_real_records(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $batch = $this->createBatch($user);
 
         ActivityLog::record(
@@ -74,7 +74,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_history_can_be_filtered_by_type(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
 
         ActivityLog::record(null, ActivityLog::TYPE_TASK_COMPLETED, 'Completed task: Inspect seedlings.', $user->id);
         ActivityLog::record(null, ActivityLog::TYPE_REPORT_GENERATED, 'Generated inventory report.', $user->id);
@@ -88,7 +88,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_history_can_be_filtered_by_user(): void
     {
-        $admin = User::factory()->create(['name' => 'Admin User']);
+        $admin = User::factory()->admin()->create(['name' => 'Admin User']);
         $other = User::factory()->create(['name' => 'Staff User']);
 
         ActivityLog::record(null, ActivityLog::TYPE_TASK_COMPLETED, 'Completed task: Admin action.', $admin->id);
@@ -108,7 +108,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_history_can_be_filtered_by_batch(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $b1 = $this->createBatch($user, 100, 'B001');
         $b2 = $this->createBatch($user, 100, 'B002');
 
@@ -124,7 +124,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_history_can_be_filtered_by_date_range(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
 
         ActivityLog::record(null, ActivityLog::TYPE_TASK_COMPLETED, 'Recent activity.', $user->id, '2026-09-10');
         ActivityLog::record(null, ActivityLog::TYPE_TASK_COMPLETED, 'Old activity.', $user->id, '2026-08-01');
@@ -138,7 +138,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_history_search_matches_description(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
 
         ActivityLog::record(null, ActivityLog::TYPE_TASK_COMPLETED, 'Completed task: Inspect grafts.', $user->id);
         ActivityLog::record(null, ActivityLog::TYPE_REPORT_GENERATED, 'Generated gap report.', $user->id);
@@ -152,7 +152,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_history_rejects_invalid_filters(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
 
         $this->actingAs($user)
             ->get(route('activity.index', ['user_id' => 999]))
@@ -173,7 +173,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_history_shows_empty_state(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
 
         $this->actingAs($user)
             ->get(route('activity.index'))
@@ -183,7 +183,7 @@ class ActivityLogTest extends TestCase
 
     public function test_record_creates_an_activity_log_with_correct_fields(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $batch = $this->createBatch($user);
 
         $log = ActivityLog::record(
@@ -215,7 +215,7 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_log_exposes_user_and_batch_relations(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $batch = $this->createBatch($user);
 
         $log = ActivityLog::record($batch->batch_id, ActivityLog::TYPE_REGRAFT_RECORDED, 'Recorded regraft.', $user->id);
@@ -226,7 +226,7 @@ class ActivityLogTest extends TestCase
 
     public function test_recording_mortality_writes_an_activity_log(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $batch = $this->createBatch($user);
 
         $this->actingAs($user)->post(route('operational.mortality.records.store'), [
@@ -246,7 +246,7 @@ class ActivityLogTest extends TestCase
 
     public function test_recording_stock_in_writes_an_unbound_activity_log(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
         $supplier = Supplier::create([
             'supplier_name' => 'Davao Cacao Growers',
             'contact_number' => '0917-111-2233',
@@ -271,7 +271,7 @@ class ActivityLogTest extends TestCase
 
     public function test_generating_a_report_writes_an_activity_log(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->admin()->create();
 
         $this->actingAs($user)->post(route('analytics.reports.store'), [
             'analysis_type' => 'gap_report',
@@ -282,5 +282,37 @@ class ActivityLogTest extends TestCase
             'batch_id' => null,
             'activity_type' => ActivityLog::TYPE_REPORT_GENERATED,
         ]);
+    }
+
+    public function test_retired_legacy_activity_types_are_not_in_the_catalog(): void
+    {
+        foreach ([
+            'role_created',
+            'role_updated',
+            'role_deleted',
+            'stock_reversal_recorded',
+            'variety_archived',
+            'scion_archived',
+        ] as $type) {
+            $this->assertArrayNotHasKey($type, ActivityLog::TYPES);
+        }
+    }
+
+    public function test_historical_rows_with_retired_types_are_still_readable(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'batch_id' => null,
+            'activity_type' => 'role_created',
+            'description' => 'Historic role created entry.',
+            'activity_date' => now(),
+        ]);
+
+        $this->actingAs($admin)->get(route('activity.index'))
+            ->assertOk()
+            ->assertSee('Historic role created entry.')
+            ->assertSee('Role Created');
     }
 }

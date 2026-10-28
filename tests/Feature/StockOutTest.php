@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Batch;
 use App\Models\Client;
 use App\Models\MortalityRecord;
+use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\StockOut;
 use App\Models\StockOutDetail;
@@ -75,6 +76,22 @@ class StockOutTest extends TestCase
             ->assertSee('Stock Out')
             ->assertSee('Release History')
             ->assertSee('Total Quantity Released');
+    }
+
+    public function test_stock_out_filters_apply_automatically_without_an_apply_button(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-out'))
+            ->assertOk()
+            ->assertSee('id="stockOutFilterForm"', false)
+            ->assertSee('data-auto-filter', false)
+            ->assertSee('id="filterSearch"', false)
+            ->assertSee('id="filterClient"', false)
+            ->assertSee('Clear Filters')
+            ->assertDontSee('bi-funnel')
+            ->assertDontSee('Apply Filters');
     }
 
     public function test_stock_out_unit_dropdown_offers_only_pots(): void
@@ -424,7 +441,7 @@ class StockOutTest extends TestCase
 
     public function test_client_can_be_created_inline(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->role(Role::MANAGER)->create();
 
         $this->actingAs($user)
             ->post(route('inventory.clients.store'), [

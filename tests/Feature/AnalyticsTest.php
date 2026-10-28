@@ -6,6 +6,7 @@ use App\Models\Analytic;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
 use App\Models\RegraftRecord;
+use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\User;
 use App\Support\AnalyticsMetrics;
@@ -49,7 +50,7 @@ class AnalyticsTest extends TestCase
     {
         parent::setUp();
 
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->role(Role::MANAGER)->create();
         $this->criollo = ScionVariety::create(['scion_variety_name' => 'Criollo']);
         $this->trinitario = ScionVariety::create(['scion_variety_name' => 'Trinitario']);
 
@@ -130,9 +131,12 @@ class AnalyticsTest extends TestCase
             ->get(route('analytics.index'))
             ->assertOk()
             ->assertSee('Operational Analytics')
+            ->assertSee('Total Grafted')
+            ->assertViewHas('totalGrafted', 285)
             ->assertSee('285')    // total active inventory (185 + 100)
             ->assertSee('12.28')  // crude mortality rate = 35 / (200-15 + 100) = 35/285
-            ->assertSee('20');    // total regraft deficit (B001 10 + B002 10)
+            // The unconfirmed Regraft Deficit KPI/chart were removed (owner-directed).
+            ->assertDontSee('Regraft Deficit');
     }
 
     public function test_operational_analytics_page_exposes_print_and_csv_actions(): void
@@ -156,12 +160,13 @@ class AnalyticsTest extends TestCase
 
         $this->assertStringStartsWith('%PDF', $content);
         $this->assertStringContainsString('Operational Analytics', $content);
+        $this->assertStringContainsString('Total Grafted', $content);
         $this->assertStringContainsString('Total Active Inventory', $content);
         $this->assertStringContainsString('Total Archived Inventory', $content);
         $this->assertStringContainsString('285', $content);
         $this->assertStringContainsString('Crude Mortality Rate', $content);
         $this->assertStringContainsString('12.28%', $content);
-        $this->assertStringContainsString('Regraft Deficit', $content);
+        $this->assertStringNotContainsString('Regraft Deficit', $content);
         $this->assertStringContainsString('Mortality Trend', $content);
         $this->assertStringContainsString('Inventory by Scion Variety', $content);
         $this->assertStringContainsString('Criollo', $content);
@@ -182,15 +187,15 @@ class AnalyticsTest extends TestCase
 
         $this->assertStringContainsString('Operational Analytics', $csv);
         $this->assertStringContainsString('Key Performance Indicators', $csv);
+        $this->assertStringContainsString('"Total Grafted",285', $csv);
         $this->assertStringContainsString('Total Archived Inventory', $csv);
         $this->assertStringContainsString('Crude Mortality Rate', $csv);
         $this->assertStringContainsString('12.28%', $csv);
         $this->assertStringContainsString('Mortality Trend (Last 6 Months)', $csv);
         $this->assertStringContainsString('Inventory by Scion Variety', $csv);
-        $this->assertStringContainsString('Regraft Deficit by Batch', $csv);
+        $this->assertStringNotContainsString('Regraft Deficit', $csv);
         $this->assertStringContainsString('Survival vs Mortality', $csv);
         $this->assertStringContainsString('Criollo', $csv);
-        $this->assertStringContainsString('B001', $csv);
         $this->assertStringContainsString('285', $csv);
     }
 
@@ -223,6 +228,20 @@ class AnalyticsTest extends TestCase
             ->assertSee('B002')
             ->assertSee('Criollo')
             ->assertSee('Trinitario');
+    }
+
+    public function test_stock_ledger_filters_apply_automatically_without_an_apply_button(): void
+    {
+        $this->actingAs($this->user)
+            ->get(route('analytics.stock-ledger'))
+            ->assertOk()
+            ->assertSee('id="stockLedgerFilterForm"', false)
+            ->assertSee('data-auto-filter', false)
+            ->assertSee('id="filterBatch"', false)
+            ->assertSee('id="filterScionVariety"', false)
+            ->assertSee('Clear Filters')
+            ->assertDontSee('bi-funnel')
+            ->assertDontSee('>Apply<', false);
     }
 
     public function test_stock_ledger_filters_by_batch(): void

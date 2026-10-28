@@ -62,17 +62,13 @@ class UserManagementTest extends TestCase
         $this->post(route('users.manage.store'), $this->userPayload())->assertRedirect(route('login'));
     }
 
-    public function test_non_admin_can_view_but_sees_read_only_notice(): void
+    public function test_non_admin_cannot_view_user_management(): void
     {
         $staff = User::factory()->create();
 
         $this->actingAs($staff)
             ->get(route('users.index'))
-            ->assertOk()
-            ->assertSee('User Directory')
-            ->assertSee($staff->email)
-            ->assertSee('read-only for your role')
-            ->assertDontSee('Add User');
+            ->assertForbidden();
     }
 
     public function test_non_admin_store_is_forbidden(): void
