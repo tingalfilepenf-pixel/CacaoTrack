@@ -279,22 +279,26 @@ class RolePermissionAccessTest extends TestCase
             ->assertOk()
             ->assertSee('Not listed? Ask a Manager to add it.')
             ->assertDontSee('New Supplier')
+            ->assertDontSee('+ Add Supplier')
             ->assertDontSee('id="supplierModal"', false);
 
         $this->actingAs($staff)->get(route('inventory.stock-out'))
             ->assertOk()
             ->assertSee('Not listed? Ask a Manager to add it.')
             ->assertDontSee('New Client')
+            ->assertDontSee('+ Add Client')
             ->assertDontSee('id="clientModal"', false);
 
         $this->actingAs($both)->get(route('inventory.stock-in'))
             ->assertOk()
             ->assertSee('New Supplier')
+            ->assertSee('+ Add Supplier')
             ->assertSee('id="supplierModal"', false);
 
         $this->actingAs($both)->get(route('inventory.stock-out'))
             ->assertOk()
             ->assertSee('New Client')
+            ->assertSee('+ Add Client')
             ->assertSee('id="clientModal"', false);
     }
 

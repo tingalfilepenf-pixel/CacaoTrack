@@ -279,7 +279,12 @@
                 <div class="modal-body">
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
-                            <label class="form-label text-muted small fw-bold" for="stockOutClient">Client <span class="text-danger">*</span></label>
+                            <div class="d-flex align-items-center justify-content-between">
+                                <label class="form-label text-muted small fw-bold" for="stockOutClient">Client <span class="text-danger">*</span></label>
+                                @if (auth()->user()->hasPermission('manage_inventory'))
+                                    <button type="button" class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#clientModal">+ Add Client</button>
+                                @endif
+                            </div>
                             <select class="form-select @error('client_id', 'stockout') is-invalid @enderror" id="stockOutClient" name="client_id" required>
                                 <option value="" disabled @selected(old('client_id') === null)>Select Client</option>
                                 @foreach ($clients as $client)

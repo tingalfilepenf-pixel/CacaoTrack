@@ -286,7 +286,12 @@
 
                     <!-- Shared receiving fields (apply to both seedlings and scion) -->
                     <div class="mb-3">
-                        <label class="form-label text-muted small fw-bold" for="stockInSupplier">Supplier <span class="text-danger">*</span></label>
+                        <div class="d-flex align-items-center justify-content-between">
+                            <label class="form-label text-muted small fw-bold" for="stockInSupplier">Supplier <span class="text-danger">*</span></label>
+                            @if (auth()->user()->hasPermission('manage_inventory'))
+                                <button type="button" class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#supplierModal">+ Add Supplier</button>
+                            @endif
+                        </div>
                         <select class="form-select @error('supplier_id', 'stockin') is-invalid @enderror" id="stockInSupplier" name="supplier_id" required>
                             <option value="" disabled @selected(old('supplier_id') === null)>Select Supplier</option>
                             @foreach ($suppliers as $supplier)
