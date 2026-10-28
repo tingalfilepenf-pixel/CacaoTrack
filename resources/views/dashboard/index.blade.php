@@ -5,23 +5,61 @@
 
 @section('content')
 <div class="container-fluid px-0">
+    @if (count($quickActions) > 0)
+        <!-- Permission-based Quick Actions -->
+        <div class="card mb-4">
+            <div class="card-header bg-white py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Quick Actions</h6>
+            </div>
+            <div class="card-body d-flex flex-wrap gap-2">
+                @foreach ($quickActions as $action)
+                    <a href="{{ route($action['route']) }}" class="btn btn-sm {{ $action['class'] }}">
+                        <i class="bi {{ $action['icon'] }} me-1"></i>{{ $action['label'] }}
+                    </a>
+                @endforeach
+            </div>
+        </div>
+    @endif
+
+    @if ($canViewAnalytics)
     <!-- KPI Cards Row -->
     <div class="row mb-4">
-        <!-- Total Active Inventory -->
+        <!-- Total Grafted -->
         <div class="col-xl-4 col-md-6 mb-4 mb-xl-0">
             <div class="card stat-card h-100 py-2 border-start border-4 border-success">
                 <div class="card-body">
                     <div class="row align-items-center">
                         <div class="col me-2">
                             <div class="small fw-bold text-success text-uppercase mb-1">
-                                Total Active Inventory
+                                Total Grafted
                             </div>
-                            <div class="h3 mb-0 fw-bold text-dark">{{ number_format($totalActiveInventory) }}</div>
-                            <div class="text-muted small mt-1">Active trees (archived batches excluded)</div>
-                            <div class="text-muted small">Archived: {{ number_format($totalArchivedInventory) }}</div>
+                            <div class="h3 mb-0 fw-bold text-dark">{{ number_format($totalGrafted) }}</div>
+                            <div class="text-muted small mt-1">Live population (Grafted &minus; Regraft)</div>
+                            <div class="text-muted small">Each plant counted once, all batches</div>
                         </div>
                         <div class="col-auto">
                             <i class="bi bi-tree text-success fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Total Active Inventory -->
+        <div class="col-xl-4 col-md-6 mb-4 mb-xl-0">
+            <div class="card stat-card h-100 py-2 border-start border-4 border-primary">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col me-2">
+                            <div class="small fw-bold text-primary text-uppercase mb-1">
+                                Total Active Inventory
+                            </div>
+                            <div class="h3 mb-0 fw-bold text-dark">{{ number_format($totalActiveInventory) }}</div>
+                            <div class="text-muted small mt-1">Plants currently available</div>
+                            <div class="text-muted small">Active batches only (archived excluded)</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-tree-fill text-primary fs-1 opacity-50"></i>
                         </div>
                     </div>
                 </div>
@@ -48,25 +86,6 @@
             </div>
         </div>
 
-        <!-- Replanting Deficit -->
-        <div class="col-xl-4 col-md-12">
-            <div class="card stat-card h-100 py-2 border-start border-4 border-warning">
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col me-2">
-                            <div class="small fw-bold text-warning text-uppercase mb-1">
-                                Regraft Deficit
-                            </div>
-                            <div class="h3 mb-0 fw-bold text-dark">{{ number_format($totalRegraftDeficit) }}</div>
-                            <div class="text-muted small mt-1">Trees pending regraft</div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="bi bi-exclamation-triangle text-warning fs-1 opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Charts Row 1 -->
@@ -105,8 +124,12 @@
         </div>
     </div>
 
+    @endif
+
     <!-- Charts Row 2 -->
+    @if ($canViewAnalytics || $canViewActivity)
     <div class="row mb-4">
+        @if ($canViewAnalytics)
         <!-- Inventory by Scion Variety -->
         <div class="col-xl-6 mb-4 mb-xl-0">
             <div class="card h-100">
@@ -122,7 +145,9 @@
                 </div>
             </div>
         </div>
+        @endif
 
+        @if ($canViewActivity)
         <!-- Recent Activities -->
         <div class="col-xl-6">
             <div class="card h-100">
@@ -154,7 +179,9 @@
                 </div>
             </div>
         </div>
+        @endif
     </div>
+    @endif
 </div>
 @endsection
 

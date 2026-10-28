@@ -9,9 +9,14 @@
     $canRecordOperations = $currentUser?->hasPermission('record_operations') ?? false;
     $canManageInventory = $currentUser?->hasPermission('manage_inventory') ?? false;
     $canManageStock = $currentUser?->hasPermission('manage_stock') ?? false;
+    $canManageChecklist = $currentUser?->hasPermission('manage_checklist') ?? false;
+    $canCompleteChecklist = $currentUser?->hasPermission('complete_checklist') ?? false;
     $canViewAnalytics = $currentUser?->hasPermission('view_analytics') ?? false;
     $canViewActivity = $currentUser?->hasPermission('view_activity') ?? false;
     $canManageUsers = $currentUser?->hasPermission('manage_users') ?? false;
+
+    $canOpenChecklist = $canManageChecklist || $canCompleteChecklist;
+    $canViewInventory = $canRecordOperations || $canManageInventory || $canManageStock;
 
     $managementOpen = request()->routeIs([
         'inventory.suppliers',
@@ -39,24 +44,12 @@
         </a>
 
         <!-- Operational -->
-        @if ($canRecordOperations || $canManageInventory)
+        @if ($canOpenChecklist || $canManageInventory)
             <h6 class="nav-title">Operational</h6>
-            @if ($canRecordOperations)
+            @if ($canOpenChecklist)
                 <a href="{{ route('operational.checklist') }}" class="nav-link {{ request()->routeIs('operational.checklist') ? 'active' : '' }}">
                     <i class="bi bi-check-square"></i>
                     <span>Daily Checklist</span>
-                </a>
-                <a href="{{ route('operational.mortality') }}" class="nav-link {{ request()->routeIs('operational.mortality') ? 'active' : '' }}">
-                    <i class="bi bi-heart-pulse"></i>
-                    <span>Mortality Tracking</span>
-                </a>
-                <a href="{{ route('operational.regraft') }}" class="nav-link {{ request()->routeIs('operational.regraft') ? 'active' : '' }}">
-                    <i class="bi bi-arrow-repeat"></i>
-                    <span>Regraft</span>
-                </a>
-                <a href="{{ route('operational.batches') }}" class="nav-link {{ request()->routeIs('operational.batches') ? 'active' : '' }}">
-                    <i class="bi bi-boxes"></i>
-                    <span>Batches</span>
                 </a>
             @endif
             @if ($canManageInventory)
@@ -68,7 +61,7 @@
         @endif
 
         <!-- Inventory -->
-        @if ($canManageInventory || $canManageStock)
+        @if ($canViewInventory)
             <h6 class="nav-title">Inventory</h6>
             <a href="{{ route('inventory.index') }}" class="nav-link {{ request()->routeIs('inventory.index') ? 'active' : '' }}">
                 <i class="bi bi-box-seam"></i>
@@ -155,6 +148,9 @@
             <i class="bi bi-person-circle"></i>
             <span>Profile</span>
         </a>
+        <div class="px-3 pb-2 text-muted small">
+            <i class="bi bi-person-badge me-1"></i>{{ $currentUser?->roleLabel() ?? 'Signed in' }}
+        </div>
         <form method="POST" action="{{ route('logout') }}">
             @csrf
             <button type="submit" class="nav-link text-danger border-0 bg-transparent w-100 text-start">

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ActivityLog;
 use App\Models\ActivityTask;
 use App\Models\TaskComplete;
+use App\Support\ChecklistHistory;
 use App\Support\ChecklistPdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,31 +19,28 @@ use Symfony\Component\HttpFoundation\Response;
 class DailyChecklistController extends Controller
 {
     /**
-     * Checklist listing. Active tasks are shown by default; `?status=archived`
-     * lists archived tasks (which can be restored or, when history-free,
-     * deleted). Archive/restore keeps the Task_Complete history intact
-     * (ERD §2.4/§9.6); a guarded permanent delete is only offered for archived
-     * tasks that have no completion history.
+     * Checklist listing. Active tasks only (owner-directed: the Archived tab
+     * was removed and archive/restore replaced by a guarded permanent Delete).
+     * A task with completion history can never be deleted so the Task_Complete
+     * audit trail is preserved (ERD §2.4/§9.6).
+     *
+     * The same page carries the read-only History tab (FR-03/FR-13): past
+     * records are derived from the real `task_completes` rows through the
+     * centralized {@see ChecklistHistory} support class — no new table, no
+     * schema change, and nothing about a past record can be edited here.
      */
     public function index(Request $request): View
     {
         $date = now()->toDateString();
 
-        $status = $request->query('status') === 'archived' ? 'archived' : 'active';
-
         $priorityOrder = array_flip(ActivityTask::PRIORITIES);
 
-        $tasks = match ($status) {
-            'archived' => ActivityTask::withCount('completions')
-                ->whereNotNull('archived_at')
-                ->orderByDesc('archived_at')
-                ->get(),
-            default => ActivityTask::active()
-                ->orderBy('task_id')
-                ->get()
-                ->sortBy(fn (ActivityTask $task) => $priorityOrder[$task->priority] ?? PHP_INT_MAX)
-                ->values(),
-        };
+        $tasks = ActivityTask::active()
+            ->withCount('completions')
+            ->orderBy('task_id')
+            ->get()
+            ->sortBy(fn (ActivityTask $task) => $priorityOrder[$task->priority] ?? PHP_INT_MAX)
+            ->values();
 
         $completions = TaskComplete::with(['user', 'verifier'])
             ->whereDate('completion_date', $date)
@@ -52,14 +50,43 @@ class DailyChecklistController extends Controller
         $completedCount = $tasks->filter(fn (ActivityTask $task) => $completions->has($task->task_id))->count();
         $pendingCount = $tasks->count() - $completedCount;
 
+        $historyFilters = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'status' => ['nullable', Rule::in(ChecklistHistory::FILTER_STATUSES)],
+            'history_date' => ['nullable', 'date'],
+            'tab' => ['nullable', Rule::in(['today', 'history'])],
+        ]);
+
+        // Pagination links keep the active filters and tab but drop the
+        // selected record, so every page starts from its own newest record.
+        $historyRecords = ChecklistHistory::records($historyFilters)
+            ->appends(collect($request->query())->except(['history_date', 'page'])->all());
+
+        $selectedDate = $historyFilters['history_date'] ?? null;
+
+        if ($selectedDate === null && $historyRecords->isNotEmpty()) {
+            $selectedDate = $historyRecords->first()['date']->toDateString();
+        }
+
+        $historyRecord = $selectedDate !== null ? ChecklistHistory::record($selectedDate) : null;
+
+        $activeTab = ($historyFilters['tab'] ?? null) === 'history' || ($historyFilters['history_date'] ?? null) !== null
+            ? 'history'
+            : 'today';
+
         return view('operational.checklist.index', [
             'tasks' => $tasks,
             'completions' => $completions,
             'date' => $date,
-            'status' => $status,
             'completedCount' => $completedCount,
             'pendingCount' => $pendingCount,
-            'archivedCount' => ActivityTask::whereNotNull('archived_at')->count(),
+            'historyFilters' => $historyFilters,
+            'historyRecords' => $historyRecords,
+            'historyRecord' => $historyRecord,
+            'selectedDate' => $selectedDate,
+            'activeTab' => $activeTab,
         ]);
     }
 
@@ -82,78 +109,20 @@ class DailyChecklistController extends Controller
     }
 
     /**
-     * Archive a task instead of deleting it (archive/restore replaces hard
-     * delete so completion history is never destroyed).
-     */
-    public function archiveTask(ActivityTask $task): RedirectResponse
-    {
-        if ($task->isArchived()) {
-            return redirect()
-                ->route('operational.checklist')
-                ->with('error', 'This task is already archived.');
-        }
-
-        DB::transaction(function () use ($task): void {
-            $task->update(['archived_at' => now()]);
-
-            ActivityLog::record(
-                null,
-                ActivityLog::TYPE_TASK_ARCHIVED,
-                "Archived task: {$task->task_name}.",
-            );
-        });
-
-        return redirect()
-            ->route('operational.checklist')
-            ->with('success', 'Task archived successfully.');
-    }
-
-    /**
-     * Restore a previously archived task to the active checklist.
-     */
-    public function restoreTask(ActivityTask $task): RedirectResponse
-    {
-        if (! $task->isArchived()) {
-            return redirect()
-                ->route('operational.checklist')
-                ->with('error', 'This task is not archived.');
-        }
-
-        DB::transaction(function () use ($task): void {
-            $task->update(['archived_at' => null]);
-
-            ActivityLog::record(
-                null,
-                ActivityLog::TYPE_TASK_RESTORED,
-                "Restored task: {$task->task_name}.",
-            );
-        });
-
-        return redirect()
-            ->route('operational.checklist', ['status' => 'archived'])
-            ->with('success', 'Task restored successfully.');
-    }
-
-    /**
-     * Permanently delete an archived task — allowed only when the task has no
-     * completion history, so the Task_Complete audit trail is never destroyed
-     * (ERD §2.4/§9.6). Active tasks must be archived first, and a task with any
-     * completion is refused (the `task_completes.task_id` FK is restrictOnDelete).
+     * Permanently delete a task — allowed only when the task has no completion
+     * history, so the Task_Complete audit trail is never destroyed (ERD
+     * §2.4/§9.6). A task with any completion is refused (the
+     * `task_completes.task_id` FK is restrictOnDelete). Replaces the former
+     * archive/restore flow (owner-directed).
      */
     public function destroyTask(ActivityTask $task): RedirectResponse
     {
         $this->requireTaskDeleteAuthority();
 
-        if (! $task->isArchived()) {
-            return redirect()
-                ->route('operational.checklist', ['status' => 'archived'])
-                ->with('error', 'Only archived tasks can be deleted. Archive the task first.');
-        }
-
         if ($task->hasCompletions()) {
             return redirect()
-                ->route('operational.checklist', ['status' => 'archived'])
-                ->with('error', 'This task has completion history and cannot be deleted. Keep it archived instead.');
+                ->route('operational.checklist')
+                ->with('error', 'This task has completion history and cannot be deleted. Its records must be preserved.');
         }
 
         $taskName = $task->task_name;
@@ -169,7 +138,7 @@ class DailyChecklistController extends Controller
         });
 
         return redirect()
-            ->route('operational.checklist', ['status' => 'archived'])
+            ->route('operational.checklist')
             ->with('success', "Task \"{$taskName}\" deleted permanently.");
     }
 
@@ -178,7 +147,7 @@ class DailyChecklistController extends Controller
         if ($task->isArchived()) {
             return redirect()
                 ->route('operational.checklist')
-                ->with('error', 'Archived tasks cannot be completed. Restore the task first.');
+                ->with('error', 'Archived tasks cannot be completed.');
         }
 
         $validated = $request->validate([
@@ -198,12 +167,15 @@ class DailyChecklistController extends Controller
         }
 
         DB::transaction(function () use ($task, $validated, $date): void {
+            // Completion and verification are separate authorities: the Staff
+            // member records the completion, and a Manager verifies it later
+            // through verifyCompletion(). Self-verification is not recorded.
             TaskComplete::create([
                 'task_id' => $task->task_id,
                 'user_id' => Auth::id(),
-                'verified_by_id' => Auth::id(),
+                'verified_by_id' => null,
                 'completion_date' => $date,
-                'verified_at' => now(),
+                'verified_at' => null,
                 'remark' => $validated['remark'] ?? null,
             ]);
 
@@ -222,6 +194,31 @@ class DailyChecklistController extends Controller
     }
 
     /**
+     * Record a Manager's verification of a Staff completion using the existing
+     * Task_Complete fields (`verified_by_id`, `verified_at`). Only holders of
+     * `manage_checklist` can reach this route; Staff can never verify or change
+     * a verification record. Verification happens after completion and cannot
+     * be overwritten from the UI.
+     */
+    public function verifyCompletion(TaskComplete $completion): RedirectResponse
+    {
+        if ($completion->verified_at !== null) {
+            return redirect()
+                ->route('operational.checklist')
+                ->with('error', 'This task has already been verified.');
+        }
+
+        $completion->update([
+            'verified_by_id' => Auth::id(),
+            'verified_at' => now(),
+        ]);
+
+        return redirect()
+            ->route('operational.checklist')
+            ->with('success', 'Task verification recorded.');
+    }
+
+    /**
      * Printable Daily Activity Checklist (FPDF) built from real saved data
      * (Activity_Task + Task_Complete). Optionally filtered to a past date.
      */
@@ -234,26 +231,10 @@ class DailyChecklistController extends Controller
         $date = $validated['date'] ?? now()->toDateString();
         $dateCarbon = Carbon::parse($date);
 
-        $completions = TaskComplete::with(['user', 'verifier'])
-            ->whereDate('completion_date', $date)
-            ->get()
-            ->keyBy('task_id');
-
-        $priorityOrder = array_flip(ActivityTask::PRIORITIES);
-
-        // Tasks shown for the selected day: tasks that are active now plus any
-        // archived task that was completed that day (so history is not lost).
-        $tasks = ActivityTask::where(function ($query) use ($completions): void {
-            $query->whereNull('archived_at');
-
-            if ($completions->isNotEmpty()) {
-                $query->orWhereIn('task_id', $completions->keys()->all());
-            }
-        })
-            ->orderBy('task_id')
-            ->get()
-            ->sortBy(fn (ActivityTask $task) => $priorityOrder[$task->priority] ?? PHP_INT_MAX)
-            ->values();
+        // One shared definition of a day's checklist (RULE 6): the History tab
+        // and this printable PDF read the exact same task list and completions.
+        $completions = ChecklistHistory::completionsForDate($date);
+        $tasks = ChecklistHistory::tasksForDate($date, $completions);
 
         $rows = $tasks->map(function (ActivityTask $task) use ($completions): array {
             $completion = $completions->get($task->task_id);

@@ -50,6 +50,8 @@ Route::prefix('operational')->middleware('auth')->group(function () {
         // Delete replaces the former archive/restore flow (owner-directed); it
         // is guarded server-side — a task with completion history is never deleted.
         Route::delete('/checklist/tasks/{task}', [DailyChecklistController::class, 'destroyTask'])->name('operational.checklist.tasks.destroy');
+        // Managers record verification on a Staff completion; Staff cannot.
+        Route::post('/checklist/completions/{completion}/verify', [DailyChecklistController::class, 'verifyCompletion'])->name('operational.checklist.completions.verify');
     });
 
     // Mortality, Regraft and Batches remain `record_operations` functions.
