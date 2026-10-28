@@ -1,9 +1,146 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session EE — **role permissions + Daily Checklist workflow + user-friendly UI implemented**)
+> ### ▶ Continue here (latest: Session EH — **working-tree suite GREEN 428/2217; live `db_capstone` unchanged; awaiting approval to commit and grant checklist permissions**)
+> - **▶ Session EH (DONE — automated test execution only from the preserved working tree; 2026-10-28):**
+>   **Automated testing only — no code/test edits, no staging/commits, no permission or live-data changes.
+>   Only this handoff was edited.**
+>   **(1) Test-DB safety re-verified immediately before running:** `.env.testing` absent;
+>   `bootstrap/cache/config.php` absent; `phpunit.xml:26-28` forces `DB_CONNECTION=mysql`,
+>   `DB_DATABASE=db_capstone_test`, `DB_URL=''` with `force="true"`; `tests/TestCase.php:16-34` guard
+>   present. The effective test database was positively verified as `db_capstone_test` before the run.
+>   **(2) Live `db_capstone` read-only baseline captured before testing (no writes):**
+>   `SELECT DATABASE()` → `db_capstone`; `users` **1**, `batches` **5**, `activity_logs` **13**;
+>   user 1 `Admin User` / `Administrator` with
+>   `["manage_users","manage_inventory","manage_stock","record_operations","view_analytics","generate_reports","view_activity"]`.
+>   Files: `...\Temp\opencode\live_db_baseline_before_20261028_152403.txt` and
+>   `...\Temp\opencode\live_db_baseline_after_20261028_152501.txt`; SHA-256 for both
+>   **`5064A3FA19DAA6467B2DA125CBA8CD7AC1EFEEE7B73917BF92D61FDA58996E5D`**.
+>   **(3) Full suite run against `db_capstone_test`:** command
+>   `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
+>   (re-confirmed with `vendor\bin\phpunit`); **exit 0**, **428 passed / 2217 assertions**, ~36s,
+>   **0 failed, 0 skipped, 0 incomplete, 0 risky** — exact match to the expected **428/2217** baseline.
+>   Tests ran the **working tree, not HEAD**; no failure or regression was found.
+>   **(4) Live DB unchanged after the suite:** re-ran the same read-only SELECTs; **before == after**
+>   (identical SHA-256, `DIFF=NONE`): `db_capstone`, users 1, batches 5, activity_logs 13, same 7-key
+>   Administrator. No live database write occurred.
+>   **(5) Working tree preserved:** **29 modified, 0 staged, 0 untracked**; no
+>   checkout/reset/revert/stash/stage/commit; no code/test edits (only this handoff). HEAD remains
+>   `c84158c` and is still inconsistent with the working tree.
+>   **▶ Next session — only after owner approval:** (1) approve the commit strategy (recommended
+>   **one code checkpoint of the 28 non-doc files + one docs commit**; do not use the EF five-way split);
+>   (2) approve the live Administrator permission update (add `manage_checklist` + `complete_checklist`;
+>   §5a SQL remains **NOT EXECUTED**). **Do not test HEAD, run live SQL/reseeds, change permissions, or
+>   stage/commit until approved.**
+> - **▶ Session EG (DONE — read-only follow-up audit of the Git inconsistency, commit split, test safety and Administrator permission path; 2026-10-28):**
+>   **Read-only only — no files edited except this handoff, no tests/artisan/SQL/migrations/seeders/permission
+>   changes, no staging or commits. Working tree preserved exactly.**
+>   **(1) Git:** HEAD `c84158c`; branch `master`, ahead 7 of `origin/master`; **29 modified** (21 code/assets,
+>   7 tests, 1 doc), **0 staged, 0 untracked, no stashes**.
+>   **(2) HEAD inconsistency confirmed and widened.** `routes/web.php` is **unmodified** and already final
+>   (`:75`, `:99` = `destroy`), but HEAD controllers still expose only `archive()`/`restore()`; HEAD views
+>   `operational/batches/index.blade.php`, `operational/batches/partials/batch-row.blade.php` and
+>   `operational/scion-varieties/index.blade.php` call the removed archive/restore routes; HEAD
+>   `BatchManagementTest` **and** `SeededFamilyKpiTest:61` call the removed archive route; HEAD
+>   `ScionVarietyManagementTest` already expects `destroy`; HEAD `ActivityTask::canBeDeleted()` still requires
+>   `archived_at`, while the committed checklist view/controller/`DailyChecklistTest` expect active,
+>   history-free tasks to be deletable.
+>   **(3) Exact uncommitted DV hunks needed for consistency:** `BatchController` (`destroy()`, active-only
+>   index, `withExists([... 'inventories','activityLogs'])`), `ScionVarietyController` (`destroy()`,
+>   active-only index, dependency counts), `Batch` (`deletionBlockers()`, `canBeDeleted()`), `ScionVariety`
+>   (`stockIns()`, `deletionBlockers()`, `canBeDeleted()`), `ActivityTask` (`canBeDeleted()`), the three views
+>   above, `BatchManagementTest` (delete tests), and `SeededFamilyKpiTest` (replace the dead archive POST with
+>   a direct `archived_at` update). Already correct at HEAD: routes, `ActivityLog` delete types,
+>   `DailyChecklistController`, `ScionVarietyManagementTest`, `DailyChecklistTest`.
+>   **(4) Commit split — EF's five commits are NOT safely separable.** Mixed hunks: `BatchController@index`
+>   removes `$status`/`$archivedCount` and adds `Batch::nextBatchCode()` in one hunk; `Batch::deletionBlockers()`
+>   shares a hunk with `storeRules()`; the `SeededFamilyKpiTest` hunk mixes the DV route fix with the DP
+>   inventory-card test; commits 2/3/4 overlap in `InventoryController`, `inventory/index.blade.php`,
+>   `InventoryTest`, `NestedBatchesTest`, `SeededFamilyKpiTest`, `js/app.js` and `css/app.css`.
+>   Tests run the **working tree, not the index**, so a partial commit cannot be validated without a temp
+>   worktree. **Recommended: one code-checkpoint commit of all 28 non-doc files + one docs commit**; if
+>   granularity is required, at most two code commits (DV first, then the rest) using `git add -e` and a
+>   temporary worktree to test each state. Do **not** test HEAD.
+>   **(5) Test safety re-confirmed:** `.env.testing` absent; `bootstrap/cache/config.php` absent;
+>   `phpunit.xml:26-28` forces `mysql` / `db_capstone_test` / empty `DB_URL` with `force="true"`;
+>   `tests/TestCase.php:16-34` aborts `RefreshDatabase` tests on any other DB; 31 Feature classes use
+>   `RefreshDatabase`; 428 `test_` methods, 0 skipped/incomplete. Live `.env` points at `db_capstone` but is
+>   overridden by PHPUnit. **No test/artisan command was run in EG**; the expected baseline remains
+>   **428 passed / 2217 assertions** and was **verified in EH (exit 0, exact match)**. Command used:
+>   `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`.
+>   **(6) Administrator permission path confirmed:** the live Administrator can safely self-grant the two keys
+>   through **User Management → Edit own account → Access Restrictions → Manage and verify Daily Checklist
+>   tasks + Mark assigned Daily Checklist tasks as completed → Save**. Self-edit is allowed (only an own-role
+>   change is blocked, `UserController:126-130`); `normalizePermissions()` re-adds `manage_users`;
+>   last-administrator protection is unaffected; the save writes `user_updated` to Activity History. The live
+>   Administrator also lacks `correct_records` (an Administrator-template apply would tick all 10). **§5a SQL
+>   remains NOT EXECUTED; no permission was changed.**
+>   **(7) Minor finding:** `ScionVarietyController@index` uses `withCount()`, but
+>   `ScionVariety::deletionBlockers()` looks for `*_exists` attributes, so its delete-button check falls back
+>   to per-row queries (N+1; functional). `BatchController` correctly uses `withExists()`.
+>   **▶ Next session — only after owner approval:** (1) run the full suite from the working tree on
+>   `db_capstone_test`; (2) approve the commit strategy (recommended single checkpoint; do not use the EF
+>   five-way split); (3) approve the live Administrator permission update. **Do not test HEAD, do not run
+>   live SQL/reseeds, do not stage/commit until approved.**
+> - **▶ Session EF (DONE — Sections 1–4 read-only testing/verification inspection; 2026-10-28):**
+>   **Read-only only — no tests, SQL, migrations, seeders, permission changes, source/test edits, staging
+>   or commits were made. Only this handoff was updated.**
+>   **(1) Git:** HEAD `c84158c` (full `c84158c56bb5599a0ab1e9ff74a45ee11bbd5bad`) matches the expected
+>   checkpoint; branch `master`; 29 modified files (21 code/assets, 7 tests, 1 doc), **0 staged, 0
+>   untracked**; working tree preserved.
+>   **(2) CRITICAL — clean HEAD is internally inconsistent.** HEAD `routes/web.php:75,99` already defines
+>   `operational.batches.destroy` / `operational.scion-varieties.destroy`, but HEAD
+>   `BatchController`/`ScionVarietyController` still only expose `archive()`/`restore()`, the HEAD views
+>   still render Archived tabs, and HEAD `BatchManagementTest` still calls the removed archive routes.
+>   **The reported 428/2217 baseline belongs to the working tree, not to HEAD.** The DV guarded-delete
+>   hunks must be committed first (or the working tree kept intact) before testing.
+>   **(3) Uncommitted groups (file boundaries cross sessions; `git add -p` needed):**
+>   **A — DV guarded delete:** `ActivityTask`, `Batch` (delete hunks), `ScionVariety`,
+>   `BatchController`/`ScionVarietyController` (destroy hunks), batches + scion-varieties views,
+>   `BatchManagementTest` (delete hunks). **B — DJ–DU + EB inventory:** `InventoryController`,
+>   `BatchController` (store/update), `StoreBatchRequest`, `Batch` (lifecycle/next code/regraft),
+>   `MortalityRecord`, `BatchTree`, inventory view, `css/app.css` (also DW tabs), `js/app.js` (DS
+>   auto-filter), `InventoryTest`, `BatchTreeTest`, `NestedBatchesTest`. **C — DY–EA + EC analytics:**
+>   `AnalyticsController`, `AnalyticsMetrics`, `OperationalAnalyticsPdf`, `StockLedgerPdf`, analytics
+>   index + stock-ledger views, `SeededFamilyKpiTest`, `StockLedgerNestingTest`,
+>   `StockLedgerRunningBalanceTest`. **D — docs:** this file. Only `session.handoff.md` overlaps the EE
+>   commits; no uncommitted code/test file was touched by EE.
+>   **(4) Proposed commit split (NOT EXECUTED):** (1) `fix(operational): finish guarded deletes for
+>   batches and scion varieties`; (2) `feat(inventory): rebuild the batch listing with lifecycle status
+>   and actions`; (3) `feat(inventory): collapse regraft sub-batches on the inventory listing`;
+>   (4) `feat(analytics): remove regraft deficit and align stock ledger exports`; (5) `docs(handoff):
+>   record sessions DI-EE and the current working tree`. Hunk-level staging; never `--no-verify`.
+>   **(5) Test DB safety — PASS:** `.env.testing` is absent; `phpunit.xml:26-28` forces
+>   `DB_CONNECTION=mysql`, `DB_DATABASE=db_capstone_test`, `DB_URL=''` with `force="true"`;
+>   `bootstrap/cache/config.php` is absent; `tests/TestCase.php:16-34` aborts `RefreshDatabase` tests
+>   unless the DB is exactly `db_capstone_test`; 31 Feature classes use `RefreshDatabase`; no
+>   `DatabaseMigrations`/`DatabaseTransactions`/truncation; manual deletes are HTTP calls. Test command
+>   remains `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`. Plain
+>   `php artisan test` does not clear a config cache — verify it is still absent or clear it first.
+>   **(6) Live DB baseline — NOT CAPTURED (no SQL run):** server reachable
+>   (`mysqladmin ... ping` → `mysqld is alive`, exit 0); `pdo_mysql` loaded; `.env` points at
+>   `db_capstone` (credentials redacted). Prepared read-only SELECTs: counts for `users`, `batches`,
+>   `activity_logs` + `SELECT id, permissions FROM users ORDER BY id`; capture before/after to
+>   `...\Temp\opencode\live_db_baseline_{before,after}_<ts>.txt` and compare SHA-256. Until captured, the
+>   Section 9 comparison is **BLOCKED** and the live DB must not be claimed untouched.
+>   **(7) Authorization — no Administrator bypass:** `EnsurePermission` only calls
+>   `User::hasPermission()` on stored JSON keys; `normalizePermissions()` re-adds only `manage_users` for
+>   Administrator. The documented live 7-key Administrator lacks `manage_checklist`,
+>   `complete_checklist` and `correct_records`: **all seven checklist routes and `/corrections/*` return
+>   403**. Resolution: tick the keys on `/users` (self-edit is allowed; only own-role change is blocked)
+>   or run §5a SQL — **§5a remains NOT EXECUTED**. Manager/Staff split is implemented and tested; caveats:
+>   same-user complete→verify is not blocked when an account holds both keys, there is no per-user task
+>   assignment (all active tasks), task Delete additionally requires the Manager/Administrator role, and
+>   `Role::ADMIN_ONLY_PERMISSIONS` is declarative only.
+>   **(8) Static test inventory (not run):** 33 test files (32 Feature + 1 Unit, plus the `TestCase` base)
+>   and 428 `test_` methods; no `markTestSkipped`/`markTestIncomplete`; the only trivial assertion is
+>   `tests/Unit/ExampleTest.php` (`assertTrue(true)`). Baseline remains unverified until reproduced.
+>   **▶ Next session — only after the owner's explicit `continue`:** run Section 5 tests from the working
+>   tree after proving the connected DB is `db_capstone_test`; capture the live before/after baseline;
+>   then Section 6 authorization/functional testing. **Do not edit source/tests without approval, do not
+>   commit until the split above is approved, and do not run live SQL/permission changes/reseeds.**
 > - **▶ Session EE (DONE — role permissions, checklist verification, friendly errors, dashboard/sidebar, tests, docs; 2026-10-28):**
->   **Implemented the approved role-permission and user-friendly UI scope in six commits; no migration, schema change or
->   `db_capstone` write.**
+>   **Implemented the approved role-permission and user-friendly UI scope in six phase commits plus one follow-up fix;
+>   no migration, schema change or `db_capstone` write.**
 >   **(1) Permission catalog (commit `22a0770`):** `Role::PERMISSIONS` now has **10** keys (adds
 >   `manage_checklist` + `complete_checklist`; keeps all existing keys) with plain-language labels and
 >   `Role::PERMISSION_DESCRIPTIONS`. `Role::DEFAULT_PERMISSIONS_BY_ROLE` is the single provisional
@@ -35,12 +172,25 @@
 >   `tests/TestCase.php` guard refuses `RefreshDatabase` unless the DB is exactly `db_capstone_test`;
 >   new `RolePermissionAccessTest` covers defaults, the three-role matrix, Monthly Inventory view vs
 >   record, inline creation gating, checklist completion/verification, templates/descriptions, sidebar,
->   Dashboard and friendly 403/404. **Full MySQL suite: 428 passed / 2213 assertions** (was 408/2001).
->   **(6) Docs (this commit):** `docs/CacaoTrack_PRD.md` FR-02.1 (permission table, confirmed
+>   Dashboard and friendly 403/404. **Full MySQL suite: 428 passed / 2217 assertions** (was 408/2001).
+>   **(6) Docs (commit `47b4cc2`):** `docs/CacaoTrack_PRD.md` FR-02.1 (permission table, confirmed
 >   Manager/Staff checklist split, Monthly Inventory view-vs-record, provisional markers for Staff
 >   Batches/Monthly Inventory and Manager Analytics/Activity History),
 >   `docs/CacaoTrack_PRD_REVISED.md` byte-identical, `AGENTS.md`, this handoff.
+>   **(7) Follow-up (commit `c84158c`):** the stock forms gained the literal inline **+ Add Supplier /
+>   + Add Client** link (alongside the page-level "New Supplier/New Client" button), shown only with
+>   `manage_inventory`; Staff still see "Not listed? Ask a Manager to add it." The access test was
+>   extended, so the final suite is **428 passed / 2217 assertions**.
 >   **PRD SHA-256 (both copies): `6851FBA6829950413EABBE2C7091BAF45356A0B394F673A6CAA8A8B07ACE7D32`.**
+>   **▶ Start here next session (vibecoding):** head is **`c84158c`**; the suite is green; live
+>   `db_capstone` is untouched. To smoke-test the new checklist flow on the live app, the owner must
+>   first give the live Administrator `manage_checklist` + `complete_checklist` (approve the §5a SQL
+>   or tick them in User Management) — there is **no administrator bypass**, so the 7-key live
+>   Administrator will otherwise get 403 on the checklist. Then try: Staff completes a task → Manager
+>   verifies it; Staff cannot add/edit/delete/verify; Manager cannot complete or open Stock In/Out;
+>   Monthly Inventory opens for `manage_stock`/`manage_inventory` but the snapshot POST is 403; check
+>   the `/users` templates + descriptions, the sidebar role label, Dashboard Quick Actions and the
+>   403/404 pages. **Do not reseed/truncate or run the §5a SQL without approval.**
 >   **Live SQL proposal (NOT EXECUTED — awaiting approval):** add `manage_checklist` to Manager accounts
 >   and `manage_checklist` + `complete_checklist` to Administrator accounts with `JSON_ARRAY_APPEND`
 >   guarded by `JSON_CONTAINS`; the exact statements are recorded below in the live-DB section. **No live
@@ -881,7 +1031,8 @@
 >     the `↳` indent. The same control and behaviour now live on `/operational/batches`.
 >   - **(0c) Code/test baseline (code-side only):** full MySQL suite
 >     `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->     → **428 passed / 2213 assertions** (Session EE; was 408/2001 at EB, 407/1994 at EA, 407/1984 at DZ,
+>     → **428 passed / 2217 assertions** (Session EE final, after the `c84158c` inline-link follow-up;
+>     was 408/2001 at EB, 407/1994 at EA, 407/1984 at DZ,
 >     407/1977 at DY, 407/1986 at DX, 406/1960 at DW, 400/1900 at DV, 401/1913 at DU, 399/1909 at DT,
 >     398/1898 at DS, 395/1873 at DR, 394/1867 at DQ, 392/1855 at DP, 385/1797 at DN, 384/1789 at DM,
 >     379/1744 at DL, 376/1724 at DK, 373/1707 at DJ, 369/1686 at DI). Pint + `php -l` + `view:cache`
@@ -890,9 +1041,10 @@
 >     `db_capstone_test`.
 >   - **(0d) Repo / GitHub (updated Session EE).** Remote `origin` =
 >     **https://github.com/tingalfilepenf-pixel/CacaoTrack** (public, branch `master`); `gh` CLI installed.
->     **Session EE added six commits on top of `49351ce`:** `22a0770` (permission catalog + routes),
+>     **Session EE added seven commits on top of `49351ce`:** `22a0770` (permission catalog + routes),
 >     `05f785d` (stock forms + User Management), `cd3912c` (checklist UI + errors + sidebar + Dashboard),
->     `3a522e3` (ActivityLog cleanup), `6f68b92` (tests) and the docs commit for this handoff/PRD/AGENTS.
+>     `3a522e3` (ActivityLog cleanup), `6f68b92` (tests), `47b4cc2` (docs/PRD/handoff) and `c84158c`
+>     (permission-gated inline **+ Add Supplier/Client** links). Head is **`c84158c`**.
 >     The older cumulative **DI…ED** changes in files not touched by Session EE are still uncommitted;
 >     the list below records them:
 >     Session DW — new `app/Support/ChecklistHistory.php` (record/detail/status derivation + shared day
@@ -2338,7 +2490,35 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ Current quick start (latest: Session EE, 2026-10-28 — role permissions + Daily Checklist workflow + friendly UI):**
+- **▶ Current quick start (latest: Session EH, 2026-10-28 — full suite green from the working tree; live `db_capstone` unchanged; await approval to commit and grant permissions):**
+  HEAD `c84158c`; 29 modified, 0 staged/untracked, no stash; working tree preserved. Full MySQL suite run
+  from the working tree on `db_capstone_test`: **428 passed / 2217 assertions**, exit **0**, ~36s,
+  **0 failed / 0 skipped / 0 incomplete / 0 risky** — exact expected baseline. Live `db_capstone` read-only
+  before/after baseline is **identical** (DB `db_capstone`; users **1**, batches **5**, activity_logs **13**;
+  same 7-key Administrator; SHA-256 **`5064A3FA19DAA6467B2DA125CBA8CD7AC1EFEEE7B73917BF92D61FDA58996E5D`**).
+  Tests ran the **working tree, not HEAD**; HEAD remains inconsistent. **Next: approve (1) the commit strategy
+  (recommended one code checkpoint of the 28 non-doc files + one docs commit; do not use EF's five-way split)
+  and (2) the live Administrator permission update (`manage_checklist` + `complete_checklist`; §5a SQL is
+  NOT EXECUTED). Do not test HEAD, run live SQL/reseeds, change permissions, or stage/commit until approved.**
+- **▶ Previous quick start (Session EG, 2026-10-28 — read-only audit; superseded by EH: suite verified 428/2217, live DB unchanged):**
+  HEAD `c84158c`; 29 modified, 0 staged/untracked, no stash; working tree preserved. HEAD is inconsistent
+  (final `destroy` routes but archive/restore controllers/views/tests; `SeededFamilyKpiTest:61` also posts to
+  the dead archive route; `ActivityTask::canBeDeleted()` still requires archived). Exact DV fix list, the
+  recommendation to replace EF's five-commit split with **one code checkpoint + one docs commit**, test-DB
+  confirmation (forced `mysql`/`db_capstone_test`, guard, no config cache; expected 428/2217, now verified in
+  EH), and the self-service Administrator permission steps are in the EG banner above. **No test/SQL/
+  permission/staging/commit was done in EG. Next: approve (1) commit strategy, (2) live permission update.**
+- **▶ Previous quick start (Session EF, 2026-10-28 — read-only testing/verification inspection complete; await owner's `continue`):**
+  Sections 1–4 are complete. HEAD `c84158c` matches but is internally inconsistent (routes reference
+  `destroy` while HEAD controllers still have `archive`/`restore`; the 428/2217 baseline is the working
+  tree). 29 files are modified and preserved. Test DB path is `mysql`/`db_capstone_test` via forced
+  `phpunit.xml` + TestCase guard; no config cache. Live DB is reachable but **no SQL was run** — capture
+  the before/after `users`/`batches`/`activity_logs` counts + `id, permissions` baseline on approval.
+  The documented live Administrator has only 7 keys, so **all checklist routes are 403** until
+  `manage_checklist` + `complete_checklist` are granted; §5a SQL is **NOT EXECUTED**. Proposed commit
+  split is in the top banner (DV delete fix first). Next: on `continue`, verify DB, run the full suite,
+  then authorization/functional tests; no edits/commits/live SQL without approval.
+- **▶ Previous quick start (Session EE, 2026-10-28 — role permissions + Daily Checklist workflow + friendly UI):**
   **(1)** The permission catalog now has 10 keys (adds `manage_checklist` + `complete_checklist`) with
   descriptions; defaults live in `Role::DEFAULT_PERMISSIONS_BY_ROLE` (provisional). **(2)** Staff can
   complete checklist tasks but not manage/verify; Managers manage and verify but cannot complete;
@@ -2349,7 +2529,7 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
   is `manage_users`-only and has role templates, descriptions and Apply role defaults. **(5)** Friendly
   403/404 pages, permission-driven sidebar and Dashboard Quick Actions (analytics/activity hidden without
   the matching permission). **(6)** Tests: `phpunit.xml` forces `db_capstone_test` and a TestCase guard
-  blocks any other DB; full suite **428 passed / 2213 assertions**. **Live SQL is proposed only — NOT
+  blocks any other DB; full suite **428 passed / 2217 assertions**. **Live SQL is proposed only — NOT
   EXECUTED** (see §5a). Existing stored permissions were not changed.
 - **▶ Previous quick start (Session EC, 2026-10-20 — Analytics KPI colors swapped + Operational sidebar links hidden):**
   **(1)** `/analytics` KPI cards now read **Total Grafted = green** (`border-success`/`text-success`)
