@@ -27,33 +27,51 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-// Operational Routes — Batches, Mortality, Regraft and the checklist all
-// require the `record_operations` access restriction (PRD §5).
-Route::prefix('operational')->middleware(['auth', 'permission:record_operations'])->group(function () {
-    Route::get('/checklist', [DailyChecklistController::class, 'index'])->name('operational.checklist');
-    Route::get('/checklist/export', [DailyChecklistController::class, 'exportPdf'])->name('operational.checklist.export');
-    Route::post('/checklist/tasks', [DailyChecklistController::class, 'storeTask'])->name('operational.checklist.tasks.store');
-    Route::put('/checklist/tasks/{task}', [DailyChecklistController::class, 'updateTask'])->name('operational.checklist.tasks.update');
-    Route::post('/checklist/tasks/{task}/complete', [DailyChecklistController::class, 'completeTask'])->name('operational.checklist.tasks.complete');
-    Route::post('/checklist/tasks/{task}/archive', [DailyChecklistController::class, 'archiveTask'])->name('operational.checklist.tasks.archive');
-    Route::post('/checklist/tasks/{task}/restore', [DailyChecklistController::class, 'restoreTask'])->name('operational.checklist.tasks.restore');
-    Route::delete('/checklist/tasks/{task}', [DailyChecklistController::class, 'destroyTask'])->name('operational.checklist.tasks.destroy');
+// Operational Routes.
+//
+// The Daily Checklist has two distinct authorities (confirmed workflow):
+//   * managing/verifying task definitions  -> `manage_checklist`
+//   * marking an assigned task complete    -> `complete_checklist`
+// Staff hold the completion authority; Managers hold the management authority.
+// Both may open the page and print it.
+Route::prefix('operational')->middleware('auth')->group(function () {
+    Route::middleware('permission:manage_checklist,complete_checklist')->group(function () {
+        Route::get('/checklist', [DailyChecklistController::class, 'index'])->name('operational.checklist');
+        Route::get('/checklist/export', [DailyChecklistController::class, 'exportPdf'])->name('operational.checklist.export');
+    });
 
-    // Mortality is record-only: the adjustment route was removed with the
-    // Mortality_Adjustments entity (revised ERD §6).
-    Route::get('/mortality', [MortalityController::class, 'index'])->name('operational.mortality');
-    Route::post('/mortality/records', [MortalityController::class, 'store'])->name('operational.mortality.records.store');
+    Route::middleware('permission:complete_checklist')->group(function () {
+        Route::post('/checklist/tasks/{task}/complete', [DailyChecklistController::class, 'completeTask'])->name('operational.checklist.tasks.complete');
+    });
 
-    Route::get('/regraft', [RegraftController::class, 'index'])->name('operational.regraft');
-    Route::post('/regraft/records', [RegraftController::class, 'store'])->name('operational.regraft.records.store');
+    Route::middleware('permission:manage_checklist')->group(function () {
+        Route::post('/checklist/tasks', [DailyChecklistController::class, 'storeTask'])->name('operational.checklist.tasks.store');
+        Route::put('/checklist/tasks/{task}', [DailyChecklistController::class, 'updateTask'])->name('operational.checklist.tasks.update');
+        // Delete replaces the former archive/restore flow (owner-directed); it
+        // is guarded server-side — a task with completion history is never deleted.
+        Route::delete('/checklist/tasks/{task}', [DailyChecklistController::class, 'destroyTask'])->name('operational.checklist.tasks.destroy');
+    });
 
-    // Batches moved from `/inventory/batches` to `/operational/batches` (P3
-    // decision f): a batch is the central operational record (PRD §5).
-    Route::get('/batches', [BatchController::class, 'index'])->name('operational.batches');
-    Route::post('/batches/manage', [BatchController::class, 'store'])->name('operational.batches.manage.store');
-    Route::put('/batches/{batch}', [BatchController::class, 'update'])->name('operational.batches.update');
-    Route::post('/batches/{batch}/archive', [BatchController::class, 'archive'])->name('operational.batches.archive');
-    Route::post('/batches/{batch}/restore', [BatchController::class, 'restore'])->name('operational.batches.restore');
+    // Mortality, Regraft and Batches remain `record_operations` functions.
+    Route::middleware('permission:record_operations')->group(function () {
+        // Mortality is record-only: the adjustment route was removed with the
+        // Mortality_Adjustments entity (revised ERD §6).
+        Route::get('/mortality', [MortalityController::class, 'index'])->name('operational.mortality');
+        Route::post('/mortality/records', [MortalityController::class, 'store'])->name('operational.mortality.records.store');
+
+        Route::get('/regraft', [RegraftController::class, 'index'])->name('operational.regraft');
+        Route::post('/regraft/records', [RegraftController::class, 'store'])->name('operational.regraft.records.store');
+
+        // Batches moved from `/inventory/batches` to `/operational/batches` (P3
+        // decision f): a batch is the central operational record (PRD §5).
+        Route::get('/batches', [BatchController::class, 'index'])->name('operational.batches');
+        Route::post('/batches/manage', [BatchController::class, 'store'])->name('operational.batches.manage.store');
+        Route::put('/batches/{batch}', [BatchController::class, 'update'])->name('operational.batches.update');
+        // Delete replaces the former archive/restore flow (owner-directed); it
+        // is guarded server-side — a batch with dependent operational records
+        // is never deleted.
+        Route::delete('/batches/{batch}', [BatchController::class, 'destroy'])->name('operational.batches.destroy');
+    });
 });
 
 // Record corrections (OD-5): fix a mistaken mortality, regraft, stock-out or
@@ -74,14 +92,17 @@ Route::prefix('operational')->middleware(['auth', 'permission:manage_inventory']
     Route::get('/scion-varieties', [ScionVarietyController::class, 'index'])->name('operational.scion-varieties');
     Route::post('/scion-varieties/manage', [ScionVarietyController::class, 'store'])->name('operational.scion-varieties.manage.store');
     Route::put('/scion-varieties/{scion_variety}', [ScionVarietyController::class, 'update'])->name('operational.scion-varieties.update');
-    Route::post('/scion-varieties/{scion_variety}/archive', [ScionVarietyController::class, 'archive'])->name('operational.scion-varieties.archive');
-    Route::post('/scion-varieties/{scion_variety}/restore', [ScionVarietyController::class, 'restore'])->name('operational.scion-varieties.restore');
+    // Delete replaces the former archive/restore flow (owner-directed); it is
+    // guarded server-side — a variety referenced by any record is never deleted.
+    Route::delete('/scion-varieties/{scion_variety}', [ScionVarietyController::class, 'destroy'])->name('operational.scion-varieties.destroy');
 });
 
 // Inventory Routes
 Route::prefix('inventory')->group(function () {
-    // Inventory view: available to stock handlers and master-data managers.
-    Route::middleware(['auth', 'permission:manage_inventory,manage_stock'])
+    // Inventory view: operational recorders, master-data managers and stock
+    // handlers may read the page. Recording a snapshot is a separate authority
+    // (below) — view access never implies write access.
+    Route::middleware(['auth', 'permission:record_operations,manage_inventory,manage_stock'])
         ->get('/', [InventoryController::class, 'index'])
         ->name('inventory.index');
 
@@ -89,15 +110,21 @@ Route::prefix('inventory')->group(function () {
     Route::middleware(['auth', 'permission:manage_stock'])->group(function () {
         Route::get('/stock-in', [StockInController::class, 'index'])->name('inventory.stock-in');
         Route::post('/stock-in', [StockInController::class, 'store'])->name('inventory.stock-in.store');
-        Route::post('/suppliers', [StockInController::class, 'storeSupplier'])->name('inventory.suppliers.store');
 
         Route::get('/stock-out', [StockOutController::class, 'index'])->name('inventory.stock-out');
         Route::post('/stock-out', [StockOutController::class, 'store'])->name('inventory.stock-out.store');
+    });
+
+    // Inline Supplier/Client creation from the stock forms is master-data
+    // maintenance, so it needs `manage_inventory` (not `manage_stock`).
+    Route::middleware(['auth', 'permission:manage_inventory'])->group(function () {
+        Route::post('/suppliers', [StockInController::class, 'storeSupplier'])->name('inventory.suppliers.store');
         Route::post('/clients', [StockOutController::class, 'storeClient'])->name('inventory.clients.store');
     });
 
-    // "Record Monthly Inventory" (FR-08) writes a stored monthly snapshot.
-    Route::middleware(['auth', 'permission:manage_inventory'])
+    // "Record Monthly Inventory" (FR-08) writes a stored monthly snapshot and
+    // requires `record_operations` only.
+    Route::middleware(['auth', 'permission:record_operations'])
         ->post('/snapshots', [InventoryController::class, 'store'])
         ->name('inventory.snapshots.store');
 
@@ -159,11 +186,9 @@ Route::prefix('analytics')->middleware('auth')->group(function () {
 
 // Account Routes
 Route::middleware('auth')->group(function () {
-    // Users listing is readable by any authenticated user; mutations require
-    // the `manage_users` access restriction (FR-02).
-    Route::get('/users', [UserController::class, 'index'])->name('users.index');
-
+    // User Management (listing and mutations) requires `manage_users` (FR-02).
     Route::middleware('permission:manage_users')->group(function () {
+        Route::get('/users', [UserController::class, 'index'])->name('users.index');
         Route::post('/users/manage', [UserController::class, 'store'])->name('users.manage.store');
         Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');

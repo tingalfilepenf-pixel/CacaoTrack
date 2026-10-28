@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Role;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -34,6 +35,21 @@ class EnsurePermission
             }
         }
 
-        abort(403, 'You do not have permission to access this area.');
+        // Hand the 403 page a safe, catalog-derived label only. Raw exception
+        // messages, SQL errors and stack traces must never reach the user
+        // (FR-02 / PRD §15).
+        $labels = collect($permissions)
+            ->map(fn (string $permission) => Role::PERMISSIONS[$permission] ?? null)
+            ->filter()
+            ->values();
+
+        if ($request->hasSession()) {
+            $request->session()->flash(
+                'required_permission',
+                $labels->isNotEmpty() ? $labels->implode(' or ') : 'the required access'
+            );
+        }
+
+        abort(403, 'This area is not available for your role.');
     }
 }
