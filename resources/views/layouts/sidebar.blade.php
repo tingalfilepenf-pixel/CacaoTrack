@@ -149,7 +149,7 @@
             <span>Profile</span>
         </a>
         <div class="px-3 pb-2 text-muted small">
-            <i class="bi bi-person-badge me-1"></i>{{ $currentUser?->roleLabel() ?? 'Signed in' }}
+            <i class="bi bi-person-badge me-1"></i>Signed in as {{ $currentUser?->roleLabel() ?? 'Guest' }}
         </div>
         <form method="POST" action="{{ route('logout') }}">
             @csrf

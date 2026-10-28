@@ -8,6 +8,206 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## ROLE PERMISSIONS, DAILY CHECKLIST SPLIT, FRIENDLY UI (2026-10-28, Session EE)
+- **Catalog:** `App\Models\Role::PERMISSIONS` now holds **10** keys — `manage_users`, `manage_inventory`,
+  `manage_stock`, `record_operations`, `manage_checklist`, `complete_checklist`, `correct_records`,
+  `view_analytics`, `generate_reports`, `view_activity`. Every key has a plain-language label and a
+  one-line description in `Role::PERMISSION_DESCRIPTIONS`. `manage_checklist` and
+  `complete_checklist` were added; no existing key was removed or renamed.
+- **Defaults:** `Role::DEFAULT_PERMISSIONS_BY_ROLE` is the single location for the role templates
+  (docblock `provisional — pending panel confirmation`). Administrator = all 10; Manager =
+  `manage_inventory`, `manage_checklist`, `view_analytics`, `generate_reports`, `view_activity`;
+  Staff = `record_operations`, `manage_stock`, `complete_checklist`. `Role::templateRoleNames()` adds
+  a **Blank** template for User Management. Applying a template changes the form only; saving is a
+  separate action, and stored permissions are never rewritten automatically. Custom role names remain
+  free text (no roles table).
+- **Daily Checklist (confirmed workflow):** `GET /operational/checklist` + its PDF require
+  `manage_checklist` **or** `complete_checklist`; task create/update/delete and the new
+  `operational.checklist.completions.verify` route require `manage_checklist`; marking a task
+  completed requires `complete_checklist`. Completion stores the Staff member with
+  `verified_by_id` / `verified_at` **null**; a Manager records verification later via the existing
+  `task_completes` fields. Self-verification is gone. Staff cannot manage or verify; Managers cannot
+  complete unless `complete_checklist` is separately granted.
+- **Monthly Inventory:** viewing `/inventory` allows `record_operations`, `manage_inventory` or
+  `manage_stock`; `POST /inventory/snapshots` (`inventory.snapshots.store`) requires
+  `record_operations` only. Inline Supplier/Client creation (`inventory.suppliers.store`,
+  `inventory.clients.store`) moved from `manage_stock` to `manage_inventory`; the stock forms show
+  **+ Add Supplier/Client** and the creation modals only for `manage_inventory` holders, otherwise
+  "Not listed? Ask a Manager to add it.".
+- **User Management:** `GET /users` is now `manage_users`-only (previously readable by every
+  authenticated user). The page renders the centralized labels + descriptions, a "What each role can
+  do" table, Administrator/Manager/Staff/Blank templates and an **Apply role defaults** button (form
+  only; saving remains separate).
+- **Errors / navigation:** friendly `resources/views/errors/403.blade.php` (role + required access in
+  plain language + Back to Dashboard + "Ask an Administrator if you need access.") and
+  `404.blade.php`; `EnsurePermission` flashes only a catalog-derived safe label and never exposes raw
+  exception text. The sidebar is permission-driven (hides empty section headings, shows the signed-in
+  role near Profile); the Dashboard adds permission-gated Quick Actions and hides analytics cards,
+  charts and Recent Activities without `view_analytics` / `view_activity`.
+- **Activity History:** the unused legacy types `role_created`, `role_updated`, `role_deleted`,
+  `stock_reversal_recorded`, `variety_archived`, `scion_archived` were removed from
+  `ActivityLog::TYPES`, `TYPE_*` and the badge map. Historical rows with those types remain readable
+  via the headline/badge fallback; no rows were deleted.
+- **Test safety:** `phpunit.xml` now forces MySQL `db_capstone_test` for `DB_CONNECTION` /
+  `DB_DATABASE`, and `tests/TestCase.php` refuses to run a `RefreshDatabase` test unless the database
+  is exactly `db_capstone_test` (guard runs before the trait can migrate). **Verified:** full MySQL
+  suite **428 passed / 2213 assertions**; Pint, `php -l` and `view:cache` clean.
+- **No migration, schema or live-data change.** `db_capstone` was not written. The proposed live SQL
+  to add the new checklist keys to existing Manager/Administrator accounts is recorded in
+  `session.handoff.md` and marked **NOT EXECUTED — awaiting approval**.
+
+## SIDEBAR — Operational links hidden; routes and pages retained (2026-10-20, Session EC)
+- **Owner-directed:** the **Mortality Tracking**, **Regraft** and **Batches** links were removed from
+  the Operational sidebar group in `resources/views/layouts/sidebar.blade.php`. Only
+  **Daily Checklist** (inside the `record_operations` gate) and **Scion Variety**
+  (`manage_inventory`) remain under Operational. **The functions remain**: routes
+  `operational.mortality`, `operational.regraft`, `operational.batches` (+ their store/update/delete
+  routes), controllers, views, permissions and data are untouched and still reachable directly and
+  via Inventory→Record actions / Batches links elsewhere.
+- **PRD divergence recorded:** `docs/CacaoTrack_PRD_UPDATED.md` §5 and
+  `docs/CacaoTrack_ERD_UPDATED.md` §7 list these three under Operational. The `_UPDATED` files were
+  read only — **not edited** — and this is an owner-directed UI change, not a PRD/ERD amendment.
+- **No migration, schema, route, permission-key, controller, calculation or live-data change.**
+  Dashboard/Analytics/etc. still link to these pages (e.g. Record Mortality/Regraft actions on
+  Inventory rows). Verified: `view:cache` clean; existing tests assert the routes/pages, not the
+  sidebar links, so the suite is unaffected.
+
+## INVENTORY SUB-BATCH TOGGLE — collapsible regraft sub-batches, same as Batches (2026-10-19, Session EB)
+- **Owner-directed:** `/inventory` now has the same chevron **Toggle sub-batches** control as
+  `/operational/batches`. A parent row collapses/expands its whole nested regraft subtree; nested rows
+  keep the existing `↳` indentation when they have no children. Validated against the client-approved
+  v1.0 baseline (`docs/CacaoTrack_PRD_UPDATED.md` §9.3 nested/grouped parent + sub-batch views, FR-08;
+  `docs/CacaoTrack_ERD_UPDATED.md` §3.8 `Parent_Batch_ID`; the `_UPDATED` files were read only — **not
+  edited**; no PRD/ERD change).
+- **One markup pattern (RULE 6):** `InventoryController@index` extends `nodeMeta` with `ancestors`
+  (from `BatchTree::flatten()`) and `has_children` (derived from the flattened tree, no extra queries).
+  The view renders a `collapse show child-of-{ancestorId}` class per nested row and the chevron targets
+  `.child-of-{batch_id}`, exactly like `operational.batches.partials.batch-row`.
+- **No migration, schema, route, permission-key, calculation or live-data change.** **Verified:** full
+  MySQL suite **408 passed / 2001 assertions** on `db_capstone_test` (was 407/1994 at EA; +1 test, +7
+  locks); `vendor\bin\pint --test` + `php artisan view:cache` clean. **Files:**
+  `app/Http/Controllers/InventoryController.php`, `resources/views/inventory/index.blade.php`,
+  `tests/Feature/{InventoryTest,NestedBatchesTest}.php`, `AGENTS.md`, `session.handoff.md`. Working
+  tree remains **uncommitted** (stacks on DI…EA; head `49351ce`).
+
+## STOCK LEDGER — "Remaining Available" column removed; CSV export mirrors the client ledger (2026-10-12, Session EA)
+- **Owner-directed:** the **Remaining Available** column was **removed** from `/analytics/stock-ledger`
+  (page, printable PDF and CSV export), and the **CSV export now reproduces the client's manual ledger
+  layout** shown in the owner's example (one block per month). Validated against the client-approved
+  v1.0 baseline (`docs/CacaoTrack_PRD_UPDATED.md` §9.2/§9.3 lists no running-balance column; the
+  owner's client ledger has none) — the `_UPDATED` files were read only and **not edited**; no PRD/ERD
+  change. §9.3's nested parent/sub-batch requirement is kept (the nested Batch summary stays).
+- **Removed everywhere (RULE 6 one definition):** the view header/cells/totals and the filter-help +
+  footnote sentences; the PDF's 26mm column (the five section groups widened **34 → 39.2mm** to fill
+  the page), its header/event/totals cells and footnote; the CSV header + trailing value + footnote
+  sentence. The **running balance is still computed per batch** in
+  `AnalyticsMetrics::stockLedgerGrid()` and **reconciled** against `Batch::survivingQuantity()` as an
+  internal integrity guard (`assertLedgerRunningBalanceReconciles()`); only its display was removed
+  (docblock updated). Tests lock the removal (`assertDontSee` / `assertStringNotContainsString`).
+- **CSV layout (client-ledger example):** per month — the month-title row, a **grouped section header
+  row** (Grafted / Mortality / Regraft / Ready to Plant / Pullout) with a **per-Scion-Variety
+  sub-header row**, every real dated event, then the month **TOTAL**; afterwards the **GRAND TOTAL**,
+  the shared footnote and the nested **Batch summary**. New centralized helpers
+  `ledgerCsvSectionHeaders()` / `ledgerCsvVarietyHeaders()`; `ledgerCsvLine()` no longer takes the
+  month label nor emits the running balance. Values still come only from the same centralized grid
+  (RULE 5/6).
+- **No migration, schema, route, permission-key or live-data change.** **Verified:** full MySQL suite
+  **407 passed / 1994 assertions** on `db_capstone_test` (was 407/1984 at DZ; +10 locks);
+  `vendor\bin\pint --test` + `php artisan view:cache` clean; read-only live render on `db_capstone`
+  (direct controller calls, no HTTP/no DB write): page **72,631 B**, PDF **32,605 B**, CSV **2,067 B**,
+  none containing "Remaining Available". **Files:**
+  `app/Http/Controllers/AnalyticsController.php`, `app/Support/StockLedgerPdf.php`,
+  `app/Support/AnalyticsMetrics.php` (docblock), `resources/views/analytics/stock-ledger.blade.php`,
+  `tests/Feature/{StockLedgerNestingTest,StockLedgerRunningBalanceTest}.php`, `AGENTS.md`,
+  `session.handoff.md`. Working tree remains **uncommitted** (stacks on DI…DZ; head `49351ce`).
+
+## KPI CARDS ADDED — Dashboard Total Active Inventory + Analytics Total Grafted (2026-10-12, Session DZ)
+- **Owner-directed:** the **Total Active Inventory** flash card was added to `/` (Dashboard) and the
+  **Total Grafted** flash card to `/analytics`. Both are live, read-only projections through the
+  centralized `AnalyticsMetrics` definitions — **never hardcoded** (RULE 5/6; PRD §16):
+  Dashboard `AnalyticsMetrics::totalActiveInventory()` (live **813**), Analytics
+  `AnalyticsMetrics::totalGrafted()` (live **853**). Validated against the client-approved v1.0
+  baseline (`docs/CacaoTrack_PRD_UPDATED.md` §10 Dashboard "Current Inventory", §9.1 inventory/batch
+  info, §11 "same definitions across Dashboard … Analytics"); the `_UPDATED` files were read only —
+  **not edited**.
+- **Dashboard `/`:** `DashboardController` passes `totalActiveInventory`; the KPI row is now 3 cards —
+  Total Grafted, **Total Active Inventory** (`border-primary`, "Plants currently available", mirroring
+  the `/inventory` card), Crude Mortality Rate — each `col-xl-4 col-md-6`.
+- **Analytics `/analytics`:** `AnalyticsController::operationalData()` passes `totalGrafted`; the KPI
+  row is now 3 cards — **Total Grafted** (new), Total Active Inventory, Crude Mortality Rate — each
+  `col-md-4`. The Operational Analytics **PDF KPI strip and CSV KPI section gained "Total Grafted"**
+  so page/PDF/CSV stay one definition (RULE 6; Session DY precedent); the PDF renders 4 KPI boxes and
+  every label fits its cell (measured ≤ 30.5mm in the 38.25mm label cell).
+- **No migration, schema, route, permission-key or live-data change.** **Verified:** full MySQL suite
+  **407 passed / 1984 assertions** on `db_capstone_test` (was 407/1977 at DY; +7 locks);
+  `vendor\bin\pint` + `php artisan view:cache` clean; read-only live render on `db_capstone` through
+  both controllers (no HTTP, no DB write): Dashboard **Total Active Inventory 813**, Analytics
+  **Total Grafted 853** / Active **813**. **Files:**
+  `app/Http/Controllers/{DashboardController,AnalyticsController}.php`,
+  `app/Support/OperationalAnalyticsPdf.php`, `resources/views/dashboard/index.blade.php`,
+  `resources/views/analytics/index.blade.php`, `tests/Feature/{DashboardTest,AnalyticsTest}.php`,
+  `AGENTS.md`, `session.handoff.md`. Working tree remains **uncommitted** (stacks on DI…DY; head
+  `49351ce`).
+
+## REGRAFT DEFICIT REMOVED from Inventory / Dashboard / Analytics (2026-10-12, Session DY)
+- **Owner-directed:** the **Regraft Deficit** UI was removed from `/inventory`, `/` (Dashboard) and
+  `/analytics`. The client-approved v1.0 baseline (`docs/CacaoTrack_PRD_UPDATED.md` §2.7/FR-08,
+  §9.1/§10; `docs/CacaoTrack_ERD_UPDATED.md` §3.8/§3.12) **never defines a Deficit** — the figure
+  was the working `max(0, mortality − regraft)` calculation introduced in Sessions DK/DL/DP and
+  flagged not yet client-confirmed (OD-10). The `_UPDATED` files were read only and **not edited**;
+  no PRD/ERD file changed.
+- **Removed:** `/inventory` — the **DEFICIT column**, the **Regraft Deficit summary card**, the row
+  **More → Record Deficit** action, the read-only **Deficit Breakdown modal**, the **Deficit line in
+  the View modal**, and the now-dead `data-deficit` payload/JS; the More dropdown is hidden when a
+  row has no record actions (archived rows / users without `record_operations`). `/` — the
+  **Regraft Deficit KPI card** (the two remaining cards now span `col-xl-6`). `/analytics` — the
+  **Regraft Deficit KPI card** and the **Regraft Deficit by Batch chart**, plus their sections in
+  the Operational Analytics **CSV/PDF exports** (page/PDF/CSV stay one definition, RULE 6).
+- **Kept (not in scope):** the `/operational/regraft` page keeps its Regraft Deficit cards/column,
+  and the centralized `Batch::regraftDeficit()` / `AnalyticsMetrics::totalRegraftDeficit()` /
+  `regraftDeficitByBatch()` remain (still used by that page and the report snapshots). No
+  migration, schema, route or permission change; `db_capstone` was **not** touched
+  (`cacao:health` PASSED, 5 batches, all 5 rules).
+- **Verified:** full MySQL suite **407 passed / 1977 assertions** on `db_capstone_test`; Pint +
+  `view:cache` clean; tests lock the removal (`InventoryTest`, `DashboardTest`, `AnalyticsTest`
+  incl. `assertDontSee` guards). **Files:** `resources/views/inventory/index.blade.php`,
+  `resources/views/dashboard/index.blade.php`, `resources/views/analytics/index.blade.php`,
+  `app/Http/Controllers/{InventoryController,DashboardController,AnalyticsController}.php`,
+  `app/Support/OperationalAnalyticsPdf.php`,
+  `tests/Feature/{InventoryTest,DashboardTest,AnalyticsTest,SeededFamilyKpiTest}.php`,
+  `session.handoff.md`, `AGENTS.md`. Working tree remains **uncommitted** (stacks on DI…DX; head
+  `49351ce`).
+
+## ARCHIVED TABS REMOVED — Archive → guarded Delete on Checklist / Batches / Scion Variety (2026-10-12, Session DV)
+- **Owner-directed:** the **Archived tabs were removed** from `/operational/checklist`, `/operational/batches`
+  and `/operational/scion-varieties`, and the row **Archive** action was replaced by **Delete**, which
+  permanently removes the record (the owner reported archived rows lingering in the DB). The former
+  archive/restore routes and controller methods were deleted. **No migration and no schema change** —
+  the ERD's nullable `Archived_At` columns (Activity_Task §3.4, Batch §3.8, Scion_Variety §3.9) remain in
+  the schema; the `_UPDATED` client baseline was read only and **not edited**. Per **OD-5** (removal
+  policy) a record with dependents is **not** removable, so Delete is **guarded server-side**, never a
+  cascade.
+- **Centralized guards (RULE 6):** `ActivityTask::canBeDeleted()` = no completion history (role gate
+  unchanged: Manager/Administrator via `Role::CHECKLIST_DELETE_ROLES`); `Batch::deletionBlockers()` /
+  `canBeDeleted()` = no mortality, regraft records, sub-batches, stock-out lines, inventory snapshots or
+  activity history; `ScionVariety::deletionBlockers()` / `canBeDeleted()` = no batch assignments,
+  stock-out lines or stock-in receipts. Each delete runs in a DB transaction and writes `Activity_Log`
+  (`task_deleted`, `batch_deleted`, new `scion_variety_deleted`); refused deletes return a clear error and
+  the row's Delete button is disabled with the blocker list in its tooltip.
+- **Routes:** removed the 6 archive/restore routes; added `DELETE /operational/batches/{batch}`
+  (`operational.batches.destroy`) and `DELETE /operational/scion-varieties/{scion_variety}`
+  (`operational.scion-varieties.destroy`); checklist `destroy` retained. Listings are active-only; legacy
+  archived rows stay hidden in the DB.
+- **Approved live `db_capstone` cleanup (one-time, fresh backup first, left untouched outside the repo):**
+  `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_scion_delete_20261012_175232.sql`
+  (**34,928 B**). The **3 archived, unreferenced scion varieties** (Trinitario, Toledo, Forastero) were
+  deleted via the new guarded app path as user 1 (3 `scion_variety_deleted` rows, activity_id 11–13).
+  Live after: `scion_varieties` **2** (Batangas, Toledo), archived **0**; batches **5** unchanged;
+  `cacao:health` **PASSED** (5 batches, all 5 rules). No other live data touched.
+- **Verified:** full MySQL suite **400 passed / 1900 assertions** on `db_capstone_test`; Pint +
+  `view:cache` clean; tests never point at `db_capstone`. **Scope note:** Supplier and Client keep their
+  existing Archived tabs and archive/restore actions (owner chose the 3 pages only).
+
 ## OPERATIONAL DATA CLEARED — live `db_capstone` emptied for manual flow-testing (2026-10-01, Session DD)
 - **One explicitly project-owner-approved destructive action** (connection `mysql` / database
   `db_capstone`): the operational/transaction tables were truncated so the owner can hand-enter every
@@ -768,16 +968,22 @@ mapping below records the P1–P3 schema transition (now complete). (For full hi
   `users.role_id`** (approved denormalization — revised ERD `Users`). Do not reintroduce them.
 - The permission catalog is `App\Models\Role::PERMISSIONS` (single source of truth — RULE 6): the
   keys are `manage_users`, `manage_inventory`, `manage_stock`, `record_operations`,
-  `view_analytics`, `generate_reports`, `view_activity`. Do not invent permission keys.
-  `App\Models\Role` is a **code-only catalog helper** (no Eloquent model, no table).
+  `manage_checklist`, `complete_checklist`, `correct_records`, `view_analytics`,
+  `generate_reports`, `view_activity`. `Role::PERMISSION_DESCRIPTIONS` holds the one-line
+  descriptions. Do not invent permission keys. `App\Models\Role` is a **code-only catalog helper**
+  (no Eloquent model, no table).
 - `Administrator` is the protected role: it always holds `manage_users` (re-applied server-side on
   save), and the last administrator account cannot be demoted or deleted; every user must keep ≥1
-  permission.
+  permission. There is **no implicit administrator bypass** — access is always checked against the
+  stored permission keys.
 - Enforcement is **server-side** via `App\Http\Middleware\EnsurePermission` (alias `permission`) on
   the route groups, and the sidebar renders links per permission. Never rely on hiding UI alone.
-- New accounts default to `Role::defaultPermissionsFor()` (Administrator = all 7; every other role =
-  all except `manage_users`); existing users kept the permissions they held at merge time. An admin
-  can set permissions per user on the User form.
+- New accounts default to `Role::defaultPermissionsFor()`, which reads the single
+  `Role::DEFAULT_PERMISSIONS_BY_ROLE` map (provisional pending panel confirmation): Administrator =
+  all 10; Manager = `manage_inventory`, `manage_checklist`, `view_analytics`, `generate_reports`,
+  `view_activity`; Staff = `record_operations`, `manage_stock`, `complete_checklist`. Existing users
+  kept the permissions they held at merge time — nothing is backfilled automatically. An admin can
+  set any permissions per user on the User form, and custom role names are allowed.
 
 ## Toast notifications (no table — do not "fix" back)
 - There is **no `Notifications` entity** and no `users.settings` column. User feedback is a

@@ -285,6 +285,51 @@ The system shall:
 
 Authorization must be enforced server-side.
 
+#### FR-02.1 Role and permission model
+
+Roles and permissions are stored per user: `Users.Role` is a display label and
+`Users.Permissions` is a JSON list of catalog keys. There is no separate roles
+table. The catalog below is the single source of truth, and the built-in role
+templates are generated from it — the form never duplicates the defaults.
+Administrator is a protected role, but access is still checked per permission
+(no implicit bypass).
+
+| Permission key | Plain-language label | What it allows | Staff | Manager | Administrator |
+|---|---|---|---|---|---|
+| `manage_users` | Manage Users and Roles | Add, edit and remove user accounts and their access. | — | — | ✓ |
+| `manage_inventory` | Maintain Scion Variety, Client and Supplier lists | Keep the Scion Variety, Client and Supplier lists up to date. | — | ✓ | ✓ |
+| `manage_stock` | Record Stock In and Stock Out | Record seedlings and scions received and released. | ✓ | — | ✓ |
+| `record_operations` | Record Mortality, Regraft, Batches and Monthly Inventory | Record mortality, regraft sub-batches, batches and monthly inventory snapshots. | ✓ | — | ✓ |
+| `manage_checklist` | Manage and verify Daily Checklist tasks | Create, edit, delete and verify Daily Checklist tasks. | — | ✓ | ✓ |
+| `complete_checklist` | Mark assigned Daily Checklist tasks as completed | Mark the Daily Checklist tasks assigned to you as completed. | ✓ | — | ✓ |
+| `correct_records` | Correct Mistakes (Edit Recorded Entries) | Fix a recorded entry and keep the before/after audit trail. | — | — | ✓ |
+| `view_analytics` | View Analytics | Open the analytics pages, charts and exports. | — | ✓ | ✓ |
+| `generate_reports` | Generate Reports | Save a report snapshot with the Generate Report action. | — | ✓ | ✓ |
+| `view_activity` | View Activity History | Read the Activity History audit trail. | — | ✓ | ✓ |
+
+**Provisional defaults:** the Staff `record_operations` grant for **Batches**
+is `[PROPOSED — pending panel confirmation]`; the Staff `record_operations`
+grant for **Monthly Inventory recording** is `[PROPOSED — pending panel
+confirmation]`; the Manager `view_analytics` grant for **Analytics** is
+`[PROPOSED — pending panel confirmation]`; the Manager `view_activity` grant for
+**Activity History** is `[PROPOSED — pending panel confirmation]`. Applying a
+role template changes the form only; an Administrator must still save, and
+existing stored permissions are never overwritten automatically.
+
+**Daily Checklist workflow (confirmed):** completing a task and managing or
+verifying the checklist are separate authorities. `complete_checklist` lets a
+Staff member mark an assigned task as completed; the stored completion records
+the Staff member and leaves `verified_by_id` / `verified_at` empty.
+`manage_checklist` lets a Manager create, edit and delete task definitions and
+record verification later; Staff cannot manage tasks or change verification
+records. The Manager/Staff split is enforced on every route and HTTP method,
+not only in the interface.
+
+**Monthly Inventory (confirmed):** viewing `/inventory` requires any of
+`record_operations`, `manage_inventory` or `manage_stock`. Recording a monthly
+snapshot is stricter and requires `record_operations`; view permission never
+implies record permission.
+
 ---
 
 ### FR-03 Daily Checklist

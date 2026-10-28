@@ -1,6 +1,652 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session DH — **Users + Profile show/hide password toggles; sidebar dead-space fixed + accordion (only one expandable section open); no schema/route/data change**)
+> ### ▶ Continue here (latest: Session EE — **role permissions + Daily Checklist workflow + user-friendly UI implemented**)
+> - **▶ Session EE (DONE — role permissions, checklist verification, friendly errors, dashboard/sidebar, tests, docs; 2026-10-28):**
+>   **Implemented the approved role-permission and user-friendly UI scope in six commits; no migration, schema change or
+>   `db_capstone` write.**
+>   **(1) Permission catalog (commit `22a0770`):** `Role::PERMISSIONS` now has **10** keys (adds
+>   `manage_checklist` + `complete_checklist`; keeps all existing keys) with plain-language labels and
+>   `Role::PERMISSION_DESCRIPTIONS`. `Role::DEFAULT_PERMISSIONS_BY_ROLE` is the single provisional
+>   template map (docblock `provisional — pending panel confirmation`): Administrator = all 10; Manager =
+>   `manage_inventory`, `manage_checklist`, `view_analytics`, `generate_reports`, `view_activity`;
+>   Staff = `record_operations`, `manage_stock`, `complete_checklist`. **No automatic backfill.**
+>   `EnsurePermission` flashes only a catalog-derived safe label. Route split: checklist view = either
+>   checklist key; task management + verify = `manage_checklist`; complete = `complete_checklist`;
+>   Inventory view = `record_operations|manage_inventory|manage_stock`; snapshot record =
+>   `record_operations`; inline Supplier/Client creation = `manage_inventory`; `/users` = `manage_users`.
+>   **(2) Stock forms + User Management (commit `05f785d`):** stock forms show **+ Add Supplier/Client**
+>   (and their modals) only with `manage_inventory`, otherwise "Not listed? Ask a Manager to add it.";
+>   the Vendor/Client POST routes enforce `manage_inventory`. User Management gained the centralized
+>   label/description list, a "What each role can do" table, Administrator/Manager/Staff/Blank
+>   templates, an **Apply role defaults** button (form-only; saving stays separate) and the exact help
+>   text "To create a new role, type a new role name and tick what it can do. Roles are saved per user."
+>   **(3) Checklist + friendly UI (commit `cd3912c`):** Manager/Staff split implemented — Staff complete
+>   tasks (`verified_by_id` / `verified_at` left **null**), Managers create/edit/delete tasks and record
+>   verification through the new `operational.checklist.completions.verify` route; Staff are blocked
+>   server-side from management/verification. Friendly standalone `errors/403` (role + required access in
+>   plain language + Back to Dashboard + "Ask an Administrator if you need access.") and `errors/404`;
+>   permission-driven sidebar (hides empty headings, shows the signed-in role near Profile); Dashboard
+>   Quick Actions plus analytics/activity hidden without the matching permission.
+>   **(4) ActivityLog cleanup (commit `3a522e3`):** removed the six proven-unused legacy types
+>   (`role_created`, `role_updated`, `role_deleted`, `stock_reversal_recorded`, `variety_archived`,
+>   `scion_archived`) from `TYPES` / `TYPE_*` / badges; historical rows still render through the
+>   headline/badge fallback. No rows deleted.
+>   **(5) Tests (commit `6f68b92`):** `phpunit.xml` now forces MySQL `db_capstone_test`; a new
+>   `tests/TestCase.php` guard refuses `RefreshDatabase` unless the DB is exactly `db_capstone_test`;
+>   new `RolePermissionAccessTest` covers defaults, the three-role matrix, Monthly Inventory view vs
+>   record, inline creation gating, checklist completion/verification, templates/descriptions, sidebar,
+>   Dashboard and friendly 403/404. **Full MySQL suite: 428 passed / 2213 assertions** (was 408/2001).
+>   **(6) Docs (this commit):** `docs/CacaoTrack_PRD.md` FR-02.1 (permission table, confirmed
+>   Manager/Staff checklist split, Monthly Inventory view-vs-record, provisional markers for Staff
+>   Batches/Monthly Inventory and Manager Analytics/Activity History),
+>   `docs/CacaoTrack_PRD_REVISED.md` byte-identical, `AGENTS.md`, this handoff.
+>   **PRD SHA-256 (both copies): `6851FBA6829950413EABBE2C7091BAF45356A0B394F673A6CAA8A8B07ACE7D32`.**
+>   **Live SQL proposal (NOT EXECUTED — awaiting approval):** add `manage_checklist` to Manager accounts
+>   and `manage_checklist` + `complete_checklist` to Administrator accounts with `JSON_ARRAY_APPEND`
+>   guarded by `JSON_CONTAINS`; the exact statements are recorded below in the live-DB section. **No live
+>   user permission was changed.**
+> - **▶ Session ED (DONE — Phase 0 read-only inspection of role-based permissions + user-friendly screens; 2026-10-28):**
+>   **Read-only audit only — no code, migration, route, permission, test or `db_capstone` change; only this
+>   handoff was updated.** Inspected `AGENTS.md` + this handoff, `App\Models\Role`, `User`, `EnsurePermission`,
+>   `routes/web.php`, `UserController`, `DailyChecklistController`, the checklist models/support/views/tests,
+>   Stock In/Out controllers + views, the sidebar/Dashboard/Users views, PHPUnit/env config, the activity-log
+>   catalog, the PRD/ERD/Design docs and the Git state. **Key findings (evidence in the Phase-0 report; no
+>   separate report file was created):**
+>   (1) **Permissions are per-user JSON, not role-derived.** `users.role` is a free-text label (no roles
+>   table/CRUD); `Role::defaultPermissionsFor()` is used only by the seeder/factory, so the User form does
+>   **not** auto-apply role defaults. `manage_users` can be delegated to any role; “only administrators”
+>   messages are inaccurate. (2) **Administrator has no bypass** — `EnsurePermission` only calls
+>   `hasPermission()`; the UI forces only `manage_users`, so an Administrator can lose `correct_records` /
+>   `view_analytics` / etc. No backfill exists for the later-added `correct_records` (commit `180b998`), so an
+>   older live Administrator may lack it (not verified against `db_capstone` in this read-only phase).
+>   (3) **Daily Checklist verification is self-verification:** `completeTask()` sets
+>   `user_id == verified_by_id == Auth::id()` and `verified_at = now()`; there is no verify route, so a
+>   Manager cannot verify another user’s completion. Any `record_operations` user can add/edit tasks; only
+>   delete is Manager/Admin-gated. (4) **Stock In/Out inline Supplier/Client creation** routes
+>   (`inventory.suppliers.store` / `inventory.clients.store`) are under `manage_stock`, not
+>   `manage_inventory`; neither writes an `Activity_Log` row. (5) `/` (Dashboard) and `/users` are `auth`-only:
+>   the Dashboard shows analytics KPIs/charts and its “View Analytics” / “View All” links are not gated;
+>   `/users` is readable by every authenticated user. (6) Analytics PDF/CSV exports are under
+>   `view_analytics`; only the POST “Generate Report” snapshot uses `generate_reports`, but its button still
+>   renders for view-only users (403). (7) No `resources/views/errors/` — Laravel’s default error pages are
+>   used. (8) **Test safety is fragile:** `.env.testing` is absent, `phpunit.xml` still sets SQLite
+>   `:memory:` (`pdo_sqlite` is disabled here), `composer test` does not set MySQL, and `RefreshDatabase` is
+>   used by 30+ feature tests; only the documented
+>   `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'` override is safe. (9) Legacy activity
+>   types (`role_*`, `stock_reversal_recorded`, `variety_archived`, `scion_archived`, etc.) remain only in
+>   `ActivityLog::TYPES` / badges (no writer/test) but still appear in the Activity History filter.
+>   (10) `AGENTS.md` is stale on the catalog (lists 7 keys; code has 8 incl. `correct_records`) — not edited
+>   this session.
+>   **No migration, schema, route, permission-key, controller, calculation, test or `db_capstone` write.**
+>   **Verified:** `php artisan route:list --except-vendor` → **67 routes**; **no tests were run** (read-only
+>   phase; baseline remains **408 passed / 2001 assertions** at EB). **Files inspected:** the list above;
+>   **only `session.handoff.md` changed in this session.** Working tree remains **uncommitted** (stacks on
+>   DI…ED; head `49351ce`; 44 modified + 2 untracked before this handoff edit).
+> - **▶ Session EC (DONE — Analytics Total Grafted = green, Total Active Inventory = blue; Mortality Tracking/Regraft/Batches sidebar links removed; 2026-10-20):**
+>   Owner-directed UI pass (validated against `docs/CacaoTrack_PRD_UPDATED.md` §14 "existing frontend
+>   should be refined", §5/§9.1, and `AGENTS.md`; the `_UPDATED` files were read only — **not edited**).
+>   **(1) `/analytics` KPI cards:** **Total Grafted** now renders **green** (`border-success` /
+>   `text-success` on the value + tree icon) and **Total Active Inventory** now **blue**
+>   (`border-primary` / `text-primary` on the value + tree-fill icon) — the two roles were swapped;
+>   Crude Mortality Rate stays red. Values/labels/sub-labels are unchanged, both still read the
+>   centralized `AnalyticsMetrics` projections (RULE 5/6), and the PDF/CSV exports were not touched.
+>   **(2) Sidebar:** removed the **Mortality Tracking**, **Regraft** and **Batches** links from the
+>   Operational group of `resources/views/layouts/sidebar.blade.php`; **Daily Checklist** (under
+>   `record_operations`) and **Scion Variety** (`manage_inventory`) remain. **The functions remain
+>   fully intact** — routes `operational.mortality`, `operational.regraft`, `operational.batches`
+>   (+ store/update/delete), controllers, views, permissions and data are untouched and still
+>   reachable directly (e.g. `/operational/batches`) and through the Inventory row actions /
+>   elsewhere. Recorded as an owner-directed divergence from PRD §5 / ERD §7 in `AGENTS.md` (no
+>   doc amendment).
+>   **(3) No migration, schema, route, permission-key, controller, calculation or `db_capstone` write.**
+>   **Verified:** `php artisan view:cache` clean; focused suites
+>   `MortalityTest|BatchManagementTest|RegraftTest` → **46 passed / 176 assertions** on
+>   `db_capstone_test` (full suite not re-run — the last full baseline is **408 / 2001** at EB;
+>   only Blade views changed). **Files:** `resources/views/analytics/index.blade.php`,
+>   `resources/views/layouts/sidebar.blade.php`, `AGENTS.md`, `session.handoff.md`. Working tree stays
+>   **uncommitted** (stacks on DI…EC; head `49351ce`).
+> - **▶ Session EB (DONE — Inventory regraft sub-batches are collapsible through the same chevron toggle as the Batches page; 2026-10-19):**
+>   Owner-directed UI/test pass on `/inventory` (validated against the client-approved v1.0 baseline
+>   `docs/CacaoTrack_PRD_UPDATED.md` §9.3 "nested or grouped views so parent batches and their associated
+>   regraft sub-batches are clearly distinguishable" / FR-08, and `docs/CacaoTrack_ERD_UPDATED.md` §3.8
+>   `Parent_Batch_ID`; the `_UPDATED` files were read only — **not edited**; no PRD/ERD change).
+>   **(1) One markup pattern (RULE 6):** `InventoryController@index` now adds `ancestors` (from the
+>   single `BatchTree::flatten()` traversal) and `has_children` (derived from the flattened tree, no extra
+>   queries) to `nodeMeta`. The table renders `collapse show child-of-{ancestorId}` on every nested row
+>   and a chevron `data-bs-toggle="collapse"` targeting `.child-of-{batch_id}`, exactly matching
+>   `operational.batches.partials.batch-row`; rows without children keep the `↳` indentation.
+>   **(2) Scope:** parent rows collapse their entire subtree (nested sub-batches supported), while all
+>   existing filters, ordering (newest-first), summary cards, row actions, modals and pagination are
+>   unchanged.
+>   **(3) No migration, schema, route, permission-key, calculation or `db_capstone` write.**
+>   **(4) Tests:** `InventoryTest` +1 (chevron targets, collapse classes and the `nodeMeta`
+>   `ancestors`/`has_children` payload); `NestedBatchesTest` now also locks those new `nodeMeta` keys.
+>   **Verified:** full MySQL suite **408 passed / 2001 assertions** on `db_capstone_test` (was 407/1994
+>   at EA); `vendor\bin\pint --test` + `php artisan view:cache` clean.
+>   **Files:** `app/Http/Controllers/InventoryController.php`, `resources/views/inventory/index.blade.php`,
+>   `tests/Feature/{InventoryTest,NestedBatchesTest}.php`, `AGENTS.md`, `session.handoff.md`. Working
+>   tree stays **uncommitted** (stacks on DI…EB; head `49351ce`).
+> - **▶ Session EA (DONE — Stock Ledger "Remaining Available" column removed everywhere; CSV export mirrors the client's manual ledger; 2026-10-12):**
+>   Owner-directed pass on `/analytics/stock-ledger` (validated against the client-approved v1.0 baseline
+>   `docs/CacaoTrack_PRD_UPDATED.md` §9.2/§9.3 — no running-balance column is defined; the owner's
+>   example client ledger has none; `_UPDATED` read only — **not edited**; no PRD/ERD change).
+>   **(1) Removed** the **Remaining Available** column from the on-screen month/grand-total tables, the
+>   printable PDF (its 26mm column; the five section groups widened **34 → 39.2mm** to fill the page) and
+>   the CSV export, plus the filter-help and footnote sentences on all three surfaces. The running
+>   balance is **still computed and reconciled** per batch inside
+>   `AnalyticsMetrics::stockLedgerGrid()` (`assertLedgerRunningBalanceReconciles()` against
+>   `Batch::survivingQuantity()`) as an internal integrity guard — only its display was removed
+>   (docblock updated; `StockLedgerRunningBalanceTest` still covers it).
+>   **(2) CSV export rebuilt in the client's ledger layout** (owner-chosen from the example): one block
+>   per month — month-title row, a grouped section header row (Grafted / Mortality / Regraft / Ready to
+>   Plant / Pullout) with a per-Scion-Variety sub-header row, every real dated event, then the month
+>   **TOTAL**; after all months the **GRAND TOTAL**, the shared footnote and the nested **Batch summary**.
+>   New helpers `ledgerCsvSectionHeaders()` / `ledgerCsvVarietyHeaders()`; `ledgerCsvLine()` no longer
+>   takes the month label nor emits the running balance. Values still read only from the same centralized
+>   grid (RULE 5/6).
+>   **(3) No migration, schema, route, permission-key or `db_capstone` write.**
+>   **Verified:** full MySQL suite **407 passed / 1994 assertions** on `db_capstone_test` (was 407/1984
+>   at DZ; +10 locks); `vendor\bin\pint --test` + `php artisan view:cache` clean; read-only live render on
+>   `db_capstone` (direct controller calls, no HTTP/no DB write): page **72,631 B**, PDF **32,605 B**,
+>   CSV **2,067 B**, none containing "Remaining Available".
+>   **Files:** `app/Http/Controllers/AnalyticsController.php`, `app/Support/StockLedgerPdf.php`,
+>   `app/Support/AnalyticsMetrics.php` (docblock), `resources/views/analytics/stock-ledger.blade.php`,
+>   `tests/Feature/{StockLedgerNestingTest,StockLedgerRunningBalanceTest}.php`, `AGENTS.md`,
+>   `session.handoff.md`. Working tree stays **uncommitted** (stacks on DI…DZ; head `49351ce`).
+> - **▶ Session DZ (DONE — Dashboard `Total Active Inventory` card + Analytics `Total Grafted` card; 2026-10-12):**
+>   Owner-directed KPI-card pass. **`/` (Dashboard):** added the **Total Active Inventory** flash card
+>   (`AnalyticsMetrics::totalActiveInventory()` — live **813**; `border-primary`; "Plants currently
+>   available", mirroring the `/inventory` card); the KPI row is now 3 cards (Total Grafted, Total
+>   Active Inventory, Crude Mortality Rate) at `col-xl-4 col-md-6`; `DashboardController` passes the
+>   new value. **`/analytics`:** added the **Total Grafted** flash card
+>   (`AnalyticsMetrics::totalGrafted()` — live **853**); the KPI row is now 3 cards (Total Grafted,
+>   Total Active Inventory, Crude Mortality Rate) at `col-md-4`;
+>   `AnalyticsController::operationalData()` passes the new value, and the **Operational Analytics PDF
+>   KPI strip + CSV KPI section gained "Total Grafted"** so page/PDF/CSV stay one definition (RULE 6;
+>   Session DY precedent). Both cards are live read-only projections — **never hardcoded** (RULE 5/6;
+>   PRD §16), validated against the client-approved v1.0 baseline (`docs/CacaoTrack_PRD_UPDATED.md` §10
+>   "Current Inventory" dashboard list / §9.1 inventory + batch info / §11 same definitions; `_UPDATED`
+>   read only — **not edited**). No migration, schema, route, permission-key or live-data change.
+>   **Verified:** full MySQL suite **407 passed / 1984 assertions** on `db_capstone_test` (was 407/1977
+>   at DY; +7 locks in `DashboardTest`/`AnalyticsTest`); `vendor\bin\pint` + `php artisan view:cache`
+>   clean; read-only live render on `db_capstone` through both controllers (no HTTP, no DB write):
+>   Dashboard **813**, Analytics **853** (active **813**); the 4-box PDF KPI strip's labels measured
+>   ≤ 30.5mm in the 38.25mm label cell. **Files:** `DashboardController`, `AnalyticsController`,
+>   `OperationalAnalyticsPdf` (docblock), `dashboard/index.blade.php`, `analytics/index.blade.php`,
+>   `DashboardTest`, `AnalyticsTest`, `AGENTS.md`, `session.handoff.md`. Working tree stays
+>   **uncommitted** (stacks on DI…DY; head `49351ce`).
+> - **▶ Session DY (DONE — Regraft Deficit removed from `/inventory`, `/` (Dashboard) and `/analytics`; 2026-10-12):**
+>   Owner-directed removal of the working, not-yet-client-confirmed Regraft Deficit (OD-10). Validated
+>   against the client-approved v1.0 baseline (`docs/CacaoTrack_PRD_UPDATED.md` §2.7/FR-08, §9.1/§10;
+>   `docs/CacaoTrack_ERD_UPDATED.md` §3.8/§3.12 — no Deficit is defined there); the `_UPDATED` files
+>   were read only — **not edited**.
+>   **(1) `/inventory`:** removed the **DEFICIT column**, the **Regraft Deficit summary card**, the row
+>   **More → Record Deficit** action, the **Deficit Breakdown modal**, the **Deficit line in the View
+>   modal** and the `data-deficit` payload/JS; the More dropdown is hidden where a row has no actions
+>   (archived / without `record_operations`). `InventoryController` no longer sums/passes `totalDeficit`
+>   nor emits a per-row `deficit`.
+>   **(2) `/` (Dashboard):** removed the **Regraft Deficit KPI card** (`DashboardController` no longer
+>   passes `totalRegraftDeficit`); the two remaining cards span `col-xl-6`.
+>   **(3) `/analytics`:** removed the **Regraft Deficit KPI card** and the **Regraft Deficit by Batch
+>   chart** + its JS, and their sections in the Operational Analytics **CSV and PDF exports**
+>   (`OperationalAnalyticsPdf` constructor lost the series) — page/PDF/CSV stay one definition (RULE 6).
+>   **(4) Kept:** the `/operational/regraft` page keeps its Deficit cards/column, and
+>   `Batch::regraftDeficit()` / `AnalyticsMetrics::totalRegraftDeficit()` / `regraftDeficitByBatch()`
+>   remain (still used there and by report snapshots). No migration, schema, route, permission or
+>   `db_capstone` write; `cacao:health` PASSED (5 batches, all 5 rules).
+>   **(5) Tests:** full MySQL suite **407 passed / 1977 assertions** on `db_capstone_test`;
+>   `vendor\bin\pint` + `php artisan view:cache` clean. `InventoryTest`/`DashboardTest`/`AnalyticsTest`
+>   updated (incl. `assertDontSee` removal locks), `SeededFamilyKpiTest` no longer asserts `totalDeficit`.
+>   **Files:** the 3 page views, `InventoryController`/`DashboardController`/`AnalyticsController`,
+>   `OperationalAnalyticsPdf`, the 4 test files, `AGENTS.md`, `session.handoff.md`. Working tree stays
+>   **uncommitted** (stacks on DI…DX; head `49351ce`).
+> - **▶ Session DX (DONE — Stock Ledger ascending-order requirement validated + regression test; test-only; 2026-10-12):**
+>   Owner-directed verification pass on `/analytics/stock-ledger` ("Ascending Order" = data arranged smallest
+>   → largest, as in an SQL `ORDER BY … ASC`).
+>   **(1) Validation (docs + live page, read-only):** checked `docs/CacaoTrack_PRD_UPDATED.md` /
+>   `docs/CacaoTrack_ERD_UPDATED.md` (client-approved v1.0 baseline; read only — **not edited**) and
+>   `AGENTS.md` — PRD §9.2 ("Tables should support filtering, sorting, and pagination where appropriate")
+>   and §9.3 (Stock Ledger) plus the ERD mandate no specific order, so nothing conflicts with ascending.
+>   The live page already renders ascending: month cards oldest → newest
+>   (`AnalyticsMetrics::stockLedgerGrid()` `ksort`), event rows by non-decreasing date (`usort` date + sort),
+>   and the nested **Batch summary** by batch code through `BatchTree`; the PDF/CSV read the same
+>   centralized grid, so all three surfaces share the order.
+>   **(2) Locked with one test:** new
+>   `StockLedgerRunningBalanceTest::test_ledger_is_rendered_in_ascending_order` — seeded months
+>   `2026-07 → 2026-09` ascending, every month's rows non-decreasing by date and stamped inside their own
+>   month card, batch summary `B001, B001-R1, B001-R1-R1, B002, B003`, and the rendered page shows the
+>   month labels / batch codes in that same order. **No controller, view, query, route, permission key or
+>   live-data change.**
+>   **(3) Verified:** full MySQL suite **407 passed / 1986 assertions** on `db_capstone_test` (was 406/1960
+>   at DW); `vendor\bin\pint` clean; `php artisan view:cache` clean; read-only live kernel
+>   `GET /analytics/stock-ledger` → **200** (October 2026 card, rows Oct 02 → Oct 03, summary B001 → B002;
+>   incidental session row(s) as in prior read-only smokes); `php artisan cacao:health` **PASSED**
+>   (5 batches, all 5 rules).
+>   **Files:** `tests/Feature/StockLedgerRunningBalanceTest.php` (+1 test), `session.handoff.md`.
+>   Working tree stays **uncommitted** (stacks on DI…DW; head `49351ce`).
+> - **▶ Session DW (DONE — Daily Checklist History tab; read-only; 2026-10-12):**
+>   Owner-directed: a **History tab inside the existing `/operational/checklist` page** (no new sidebar item,
+>   no new table, no migration/schema change) for reviewing past daily inspections.
+>   **(1) One record per day with stored `task_completes` rows**, built by the new centralized
+>   `App\Support\ChecklistHistory` (RULE 6): each record carries date, distinct staff (name + role),
+>   verifier(s), last verification time, per-day completed/total/pending counts and a derived status —
+>   **Completed** = every task on that day's list is done; **Pending** = some still open (owner-confirmed:
+>   `Not Done` is a per-task state only, since a day with zero completions has no stored row). The day's
+>   task list is the same definition as the existing printable checklist (active tasks now ∪ tasks completed
+>   that day, priority order) — `exportPdf` now reads the same `ChecklistHistory::tasksForDate()` so History
+>   and the PDF can never disagree.
+>   **(2) UI (`resources/views/operational/checklist/index.blade.php`):** green-and-white segmented
+>   `Today's Checklist | History` tabs; history filter card (Search by staff/task, From/To date range,
+>   Status → All/Completed/Pending, Clear Filters) using the shared `data-auto-filter` auto-submit (no Apply
+>   button); two-column responsive layout — paginated record list (newest first, selected row highlighted,
+>   10/page, filters kept across pages, `history_date` dropped from page links) and the read-only selected
+>   record detail (Staff / Verified By (role) / Time Checked + Checklist Tasks table with per-task
+>   Completed/Not Done status and real remarks). Footer actions: **Print** → the existing date-filtered
+>   `operational.checklist.export` PDF, and **View Full Details** → a read-only modal with per-task
+>   completed-by / verified-by / verified-at timestamps. Empty state when no records match; no horizontal
+>   overflow (`table-responsive` + min-width guards).
+>   **(3) Read-only:** history is GET-only — no route, controller action or form can modify a past record;
+>   a test asserts the page writes nothing (`task_completes` / `activity_tasks` / `activity_logs` unchanged).
+>   **(4) Tests:** `DailyChecklistTest` +6 (record list + selected detail rendering, Completed/Pending
+>   derivation + status filter, staff/task search + date range, per-task Not Done + no writes, auto-filter
+>   form + empty state, pagination keeps filters). **Verified:** full MySQL suite **406 passed / 1960
+>   assertions** on `db_capstone_test` (was 400/1900 at DV); `vendor\bin\pint` clean; `php artisan
+>   view:cache` clean; `npm run build` re-run (new scoped CSS). **Read-only live check on `db_capstone`:**
+>   `ChecklistHistory::records()` → **1 record** (2026-10-02, pending 1/4, Admin User); kernel
+>   `GET /operational/checklist?tab=history` → **200** with the record, Print link and full-details modal
+>   rendered; `cacao:health` **PASSED** (5 batches, all 5 rules). **No migration, schema, route,
+>   permission-key or live-data write** (one incidental session row from the smoke, as in prior sessions).
+>   **Files:** new `app/Support/ChecklistHistory.php`; `app/Http/Controllers/DailyChecklistController.php`;
+>   `resources/views/operational/checklist/index.blade.php`; `resources/css/app.css`;
+>   `tests/Feature/DailyChecklistTest.php`; `session.handoff.md`. Working tree remains **uncommitted**
+>   (stacks on DI…DV; head `49351ce`).
+> - **▶ Session DV (DONE — Archived tabs removed; Archive → Delete with dependency guards; live `db_capstone` cleanup; 2026-10-12):**
+>   Owner-directed: remove the **Archived tabs** from `/operational/checklist`, `/operational/batches` and
+>   `/operational/scion-varieties` and replace the **Archive** row action with a **Delete** that actually
+>   removes the record from the database (the owner reported archived rows lingering in the DB).
+>   **(1) Validation.** `docs/CacaoTrack_PRD_UPDATED.md` / `docs/CacaoTrack_ERD_UPDATED.md` (client-approved
+>   v1.0 baseline; read only — **not edited**) keep `Archived_At` nullable on Activity_Task §3.4, Batch
+>   §3.8 and Scion_Variety §3.9 — no schema/migration change was needed and none was made. The canonical
+>   v2.0 PRD/ERD are likewise unchanged (no rule change). Per **OD-5** (removal policy), a record with
+>   dependent records is **not** removable, so Delete is **guarded server-side** rather than cascading.
+>   The Design doc's former "archive instead of delete" practice is superseded for these three pages by
+>   owner direction (recorded here; no PRD/ERD/Design file was edited).
+>   **(2) One guarded delete rule per model (RULE 6):** `ActivityTask::canBeDeleted()` = no completion
+>   history (role gate unchanged: Manager/Administrator via `Role::CHECKLIST_DELETE_ROLES`);
+>   **new** `Batch::deletionBlockers()` / `canBeDeleted()` = no mortality records, regraft records,
+>   regraft sub-batches, stock-out lines, inventory snapshots or activity history; **new**
+>   `ScionVariety::deletionBlockers()` / `canBeDeleted()` = no batch assignments, stock-out lines or
+>   stock-in receipts (new `stockIns()` relation). Every delete is a DB transaction that removes the row
+>   and writes `Activity_Log` (`task_deleted`, `batch_deleted`, new `scion_variety_deleted` type + badge).
+>   When the server would refuse, the row's Delete button is disabled and its tooltip lists the blockers.
+>   **(3) Routes:** removed the 6 archive/restore routes; added `DELETE /operational/batches/{batch}`
+>   (`operational.batches.destroy`) and `DELETE /operational/scion-varieties/{scion_variety}`
+>   (`operational.scion-varieties.destroy`); the checklist `destroy` route is unchanged. Controllers:
+>   `archive()`/`restore()` replaced by `destroy()` on Batch and Scion Variety; checklist
+>   `archiveTask()`/`restoreTask()` deleted and `destroyTask()` no longer requires the archived state.
+>   **(4) Views:** tab pills, archived branches and archive/restore modals removed on all three pages;
+>   Delete confirmation modals added; listings are active-only (legacy archived rows, if any, stay hidden
+>   in the DB but are no longer reachable from the UI).
+>   **(5) Live `db_capstone` (approved one-time cleanup — fresh verified backup first, left untouched
+>   outside the repo):** `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_scion_delete_20261012_175232.sql`
+>   (**34,928 B**). The 3 archived **unreferenced** scion varieties (Trinitario, Toledo, Forastero) were
+>   deleted through the new guarded app path as user 1, writing 3 `scion_variety_deleted` Activity_Log rows
+>   (activity_id 11–13). Live after: `scion_varieties` **2** (Batangas, Toledo), archived **0**; batches
+>   **5** unchanged; `cacao:health` **PASSED** (5 batches, all 5 rules). No other live data touched; **no
+>   migration / schema action**.
+>   **(6) Tests:** full MySQL suite **400 passed / 1900 assertions** on `db_capstone_test` (was 401/1913
+>   at DU; net −1 test after deleting the obsolete archive/restore tests and adding the guarded-delete
+>   tests plus new `ScionVarietyManagementTest`); Pint + `view:cache` clean. Tests run only against
+>   `db_capstone_test`.
+>   **Files:** `app/Models/{ActivityTask,Batch,ScionVariety,ActivityLog}.php`,
+>   `app/Http/Controllers/{DailyChecklistController,BatchController,ScionVarietyController}.php`,
+>   `routes/web.php`, the three page views (+ `operational/batches/partials/batch-row.blade.php`),
+>   `tests/Feature/{DailyChecklistTest,BatchManagementTest,SeededFamilyKpiTest,ScionVarietyManagementTest}.php`,
+>   `session.handoff.md`, `AGENTS.md`. Working tree is **uncommitted** (stacks on the DI…DU files; head
+>   `49351ce`).
+> - **▶ Session DU (DONE — Inventory listing is newest-first; 2026-10-12):**
+>   Owner-directed ordering pass on `/inventory` (validated against the client-approved v1.0 baseline
+>   `docs/CacaoTrack_PRD_UPDATED.md` §9.3 "nested or grouped views so parent batches and their associated
+>   regraft sub-batches are clearly distinguishable" / FR-08 and `docs/CacaoTrack_ERD_UPDATED.md` §3.12;
+>   the `_UPDATED` files were read only — not edited).
+>   **(1) One ordering definition (RULE 6):** `App\Support\BatchTree::flatten()` / `groups()` gained an
+>   opt-in `$descending` flag — roots by `grafted_date` then `batch_code` descending (newest first; nulls
+>   last), children still ascending by code and always nested under their parent. Every other consumer
+>   (Batches page, Stock Ledger, analytics/historical reports, batch dropdowns) keeps the default
+>   ascending order.
+>   **(2) Caller:** `InventoryController@index` passes `descending: true`, so a newly added batch (code +
+>   today's date assigned on save) lands at the top of page 1; pagination, filters, summary cards, the
+>   nested `Regrafted` rows and all row actions are unchanged.
+>   **(3) Tests:** `BatchTreeTest` +1 (descending roots incl. the same-date code tie-break and preserved
+>   nesting); `InventoryTest` +1 (page lists `B002` before the older `B001` family with `B001-R1` still
+>   nested).
+>   **Verified:** full MySQL suite **401 passed / 1913 assertions** on `db_capstone_test` (was 399/1909 at
+>   DT); `vendor\bin\pint` clean; read-only live `db_capstone` check — tree order starts with the newest
+>   root **B002** (`B002, B001, B001-R1, B001-R1-R1, B001-R2`); `cacao:health` **PASSED** (5 batches).
+>   **No migration, schema, route, permission-key or `db_capstone` write.**
+> - **▶ Session DT (DONE — the Inventory View modal now lists the recorded mortality causes (one centralized grouped query, `MortalityRecord::causeBreakdownByBatch()`; read-only; no migration, schema, route, permission-key or `db_capstone` write**))
+> - **▶ Session DT (DONE — Inventory View modal shows the recorded mortality causes; 2026-10-12):**
+>   Owner-directed read-only display pass on `/inventory` (validated against the client-approved v1.0
+>   baseline `docs/CacaoTrack_PRD_UPDATED.md` FR-04 "Cause" / FR-08 "Inventory values must be derived from
+>   actual records" and `docs/CacaoTrack_ERD_UPDATED.md` §3.10 `Mortality_Record.Cause`; the `_UPDATED`
+>   files were read only — not edited).
+>   **(1) One breakdown (RULE 6):** new `MortalityRecord::causeBreakdownByBatch()` groups each batch's
+>   `mortality_records` by the recorded `cause` (returned exactly as stored — including the
+>   `Others: <description>` specification; a blank cause reports as `Unspecified`), ordered by quantity
+>   then cause. `InventoryController@index` calls it **once** for the whole filtered set (no N+1) and
+>   exposes `mortality_causes` in each `summaries` row.
+>   **(2) View modal:** the read-only `#viewBatchModal` gained a **Mortality Causes** section (CAUSE /
+>   QUANTITY table) fed by the same `data-details` payload; it shows "No mortality recorded for this
+>   batch." when the batch has no deaths. Rows are built with JS `textContent`, so a user-entered
+>   "Others" description is never interpreted as markup. Available to every viewer (archived included) —
+>   no new route, permission or write action.
+>   **(3) Tests:** `InventoryTest` +1 (`test_inventory_view_modal_shows_the_recorded_mortality_causes` —
+>   grouped/ordered breakdown, the raw `Others: Rat damage` specification preserved, and the rendered
+>   payload); the existing View-modal test now also asserts the empty-cause state
+>   (`"mortality_causes":[]` + the empty note).
+>   **Verified:** full MySQL suite **399 passed / 1909 assertions** on `db_capstone_test` (was 398/1898 at
+>   DS); `vendor\bin\pint --test` + `php artisan view:cache` clean; read-only live `db_capstone` check —
+>   `B001-R2 => Disease 110`, `B002 => Others: Over-irrigation 13`, other batches empty. **No migration,
+>   schema, route, permission-key or `db_capstone` write.** The cumulative DI+…+DT working-tree files
+>   remain **uncommitted** (head `49351ce`).
+> - **▶ Session DS (DONE — auto-filter UX unified on Inventory / Stock In / Stock Out / Cacao Tree Stock Ledger; 2026-10-04):**
+>   Owner-directed UI/test pass (validated against the client-approved v1.0 baseline
+>   `docs/CacaoTrack_PRD_UPDATED.md` §9.2 *"Tables should support filtering … where appropriate"* and §14
+>   (clean / consistent / refined UI); FR-09/FR-10 fields unchanged;
+>   `docs/CacaoTrack_ERD_UPDATED.md` §3.7 / §3.12 / §3.14 / §3.15 unchanged; **the `_UPDATED` files were read
+>   only — not edited**).
+>   **(1) One behavior (RULE 6):** the auto-apply filter JS now lives **once** in `resources/js/app.js` — any
+>   `form[data-auto-filter]` submits itself server-side: `input[name="search"]` debounces **400 ms**, select /
+>   date / number fields submit on `change`, Enter submits immediately, and a per-form guard blocks double
+>   navigations. Inventory's inline copy (Session DR) was removed and its form marked `data-auto-filter`, so
+>   all four pages share one implementation (RULE 6).
+>   **(2) Same Bootstrap filter card** on `/inventory`, `/inventory/stock-in`, `/inventory/stock-out` and
+>   `/analytics/stock-ledger`: `card mb-4` > `card-body py-3` > `row g-3 align-items-end`,
+>   `form-label text-muted small fw-bold mb-1` labels, `input-group-sm` search, `form-select-sm` /
+>   `form-control-sm` fields, and a single **Clear Filters** button (link to the clean route) replacing the
+>   Apply/funnel + reset pair. Page-specific fields kept: **Supplier** on Stock In; **Client** (+ Batch) on
+>   Stock Out; Batch / Scion Variety / Date From / Date To on the Stock Ledger (its `Filter Ledger` header
+>   was removed to match). No controller/route/validation change; every value is still server-side from live
+>   records.
+>   **(3) Tests:** +3 (`StockInTest`, `StockOutTest`, `AnalyticsTest` — each page renders its
+>   `data-auto-filter` form + **Clear Filters** and no funnel/Apply control); the `InventoryTest`
+>   auto-filter test (Session DR) also asserts `data-auto-filter`; the existing server-side filter tests are
+>   unchanged.
+>   **Verified:** full MySQL suite **398 passed / 1898 assertions** on `db_capstone_test` (was 395/1873 at
+>   DR); `vendor\bin\pint --test` + `php artisan view:cache` clean; `npm run build` re-run.
+>   **No migration, schema, controller, route, permission-key or `db_capstone` change.**
+> - **▶ Session DR (DONE — Inventory filters auto-apply server-side; Apply button removed, Clear Filters kept; 2026-10-04):**
+>   Owner-directed UI/test pass on `/inventory` (validated against the client-approved v1.0 baseline
+>   `docs/CacaoTrack_PRD_UPDATED.md` §2.7 / FR-08 — Inventory values must come from actual operational
+>   records, unchanged — and canonical v2.0 PRD §9.2 *"Tables should support filtering … where
+>   appropriate"*; ERD §3.12 / `_ERD_UPDATED` §3.12 unchanged; **the `_UPDATED` files were read only — not
+>   edited**).
+>   **(1) Filter form** (`resources/views/inventory/index.blade.php`): the Apply/Filter submit button was
+>   removed; the form (`#inventoryFilterForm`) auto-submits through the same server-side GET
+>   (`InventoryController@index` unchanged) — the search input debounces **400 ms** on `input`, the scion
+>   variety/status/batch-month selects and the batch-year field submit on `change`, and Enter submits
+>   immediately. Only the **Clear Filters** button (link to `inventory.index` with no query) remains.
+>   A `filterSubmitting` guard prevents double navigations. The five summary cards and the table refresh
+>   together because both are server-rendered from the same filtered query (Session DP/DJ semantics
+>   unchanged; server-side validation unchanged).
+>   **(2) Tests:** `InventoryTest` +1 (`test_inventory_filters_apply_automatically_without_an_apply_button`)
+>   — the page renders `#inventoryFilterForm` / `#filterSearch` / **Clear Filters** and no funnel/Apply
+>   control; the existing server-side filter tests are unchanged.
+>   **Verified:** full MySQL suite **395 passed / 1873 assertions** on `db_capstone_test` (was 394/1867 at
+>   DQ); `vendor\bin\pint --test` + `php artisan view:cache` clean. **No migration, schema, controller,
+>   route, permission-key or `db_capstone` change.**
+> - **▶ Session DQ (DONE — Add Batch form: Batch Code + Grafted Date are system-assigned; 2026-10-04):**
+>   Owner-directed UI/controller/test pass on the hosted Add Batch form (`/inventory` and the identical
+>   `/operational/batches` modal; validated against PRD §2.3/§2.6/FR-06/§7/§11/§14 and ERD §3.8; canonical
+>   v2.0 docs authoritative, the `_UPDATED` v1.0 files read only — not edited).
+>   **(1) Batch Code:** no longer typed. New centralized `Batch::nextBatchCode()` (RULE 6) returns `B` + the
+>   next sequential 3-digit number past the highest established ROOT batch (`B001`, `B002`, …); regraft
+>   sub-batch codes (`B001-R1`) and other non-`B<digits>` codes are ignored. `BatchController@store` assigns
+>   it inside the existing create transaction (`batch_code` unique index is the final guard); both page
+>   controllers pass `nextBatchCode` so the modal previews the code that will be assigned (live preview:
+>   **B003**).
+>   **(2) Grafted Date:** no longer picked. The server stores `now()->toDateString()` at establish time
+>   (PRD §2.6/OD-7: the 21-day cycle is derived from `grafted_date`), so the batch starts its cycle the day
+>   it is recorded. Both fields are shown read-only/disabled with the note "Assigned automatically …".
+>   **(3) Validation (server-authoritative):** `StoreBatchRequest` now validates `Batch::storeRules()` —
+>   `scion_variety_id` (nullable, active), `total_grafted` (required, integer ≥ 1) and `status`
+>   (active/inactive) only. Submitted `batch_code`/`grafted_date` are ignored (a test posts `HACK-999` + a
+>   future date and asserts `B002` + today are stored). `Batch::rules()` (and `UpdateBatchRequest`, incl.
+>   the Edit modal's rename/re-date path) is unchanged.
+>   **(4) Tests:** `InventoryTest` +1 (auto-assign from `/inventory`), 2 updated; `BatchManagementTest` +2
+>   (sequential code; `nextBatchCode()` ignores sub-batch/custom codes), duplicate-code + future-date
+>   creation tests replaced. **Verified:** full MySQL suite **394 passed / 1867 assertions** on
+>   `db_capstone_test` (was 392/1855 at DP); Pint + `php -l` + `view:cache` clean; read-only live check —
+>   `Batch::nextBatchCode()` = **B003** (roots B001/B002; sub-batches ignored). **No migration, schema,
+>   route, permission-key or `db_capstone` change.**
+> - **▶ Session DP (DONE — Inventory summary cards; 2026-10-03):**
+>   Owner-directed UI/controller/test pass on `/inventory` (validated against PRD §2.4/§2.5/§2.7/§10/§11/FR-08
+>   and ERD §3.8/§3.10/§3.11/§3.12; canonical v2.0 docs authoritative, the attached `_UPDATED` v1.0 files
+>   read only — not edited).
+>   **(1) Cards:** the single "Total Grafted" card was replaced (owner choice) with five filter-aware cards
+>   whose figures aggregate the SAME live per-batch values the rows render (RULE 5/6): **Total Mortality**
+>   = effective recorded mortality (strictly incrementing — PRD §2.5/§11, ERD §3.10); **Regraft Deficit**
+>   = `Batch::regraftDeficit()` (`max(0, mortality − regraft)` — the working definition, OD-10 still pending
+>   client confirmation, exactly as the DEFICIT column shows it); **Total Regrafted** = the cached
+>   `batches.regraft` counter (OD-12, reconciled against `regraft_records` by `cacao:health`);
+>   **Total Active Inventory** = SUM(`available_count`) of ACTIVE batches only
+>   (`AnalyticsMetrics::totalActiveInventory()` definition — archived excluded — applied to the filtered
+>   set); **Total Batches** = count of the listed (filtered) batches. Card subtexts exactly as specified
+>   by the owner ("Total plants recorded as dead" / "Plants still needing regrafting" / "Total plants
+>   regrafted" / "Plants currently available" / "Total number of batches").
+>   **(2) Controller:** `InventoryController@index` computes the five values from the existing `$summaries`
+>   map (no new queries / no N+1) and drops the old `totalGrafted` view variable; the docblock records each
+>   definition. The cards follow the page filters (search / scion variety / lifecycle status / batch
+>   month-year), matching the Regraft page summary cards.
+>   **(3) View:** `resources/views/inventory/index.blade.php` summary block is now a responsive 5-card row
+>   (`row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-5`) with Bootstrap border-start colors
+>   danger/warning/success/primary/dark. No CSS/JS change.
+>   **(4) Tests:** `InventoryTest` +2 (card values incl. archived exclusion + rendered titles/subtexts;
+>   filter-awareness) and the page test updated; `SeededFamilyKpiTest` dropped the page `totalGrafted`
+>   assertion (the page no longer shows that total) and +1 seeded card test (55 / 25 / 130 / 730 / 5).
+>   **Verified:** full MySQL suite **392 passed / 1855 assertions** on `db_capstone_test` (was 389/1831 at
+>   DO); Pint + `php -l` + `view:cache` clean. **No migration, schema, route, permission-key or
+>   `db_capstone` change.**
+>   **(5) Live (read-only) check on the owner-entered data:** the Inventory controller/view rendered
+>   83,565 bytes with all five cards present, and every card matched an independent live query exactly —
+>   Total Mortality **123**, Regraft Deficit **123**, Total Regrafted **270**, Total Active Inventory
+>   **853**, Total Batches **5**. No DB write was performed.
+> - **▶ Session DO (DONE — Inventory Status column + `[View] [More ▾]` action + "Date:" labels removed; 2026-10-03):**
+>   Owner-directed UI/controller/test pass on `/inventory`, validated against the client-approved v1.0 baseline
+>   `docs/CacaoTrack_PRD_UPDATED.md` (§2.6 21-day cycle; FR-06 Batch Status; FR-08 "Applicable current
+>   quantity/status") / `docs/CacaoTrack_ERD_UPDATED.md` (§3.8 `Batch.Status`) and the canonical v2.0 docs
+>   (OD-7: the cycle end is **derived** `Grafted_Date + 21 days`; the stored `Batch.Status` enumeration stays
+>   `active`/`inactive`). **The `_UPDATED` files were read only — not edited.**
+>   **(1) Date labels:** the `Date:` prefix was removed from the BATCH DETAILS / TOTAL GRAFTED / REGRAFT
+>   inline dates (the Session DN merged layout is kept; only the label text is gone). Archived rows now
+>   carry a small "Archived" note in BATCH DETAILS.
+>   **(2) Status column + filter:** new `Batch::lifecycleStatus()` (RULE 6, display-only — the stored
+>   `status` column is untouched): `cancelled` = invalidated record (stored `inactive` or archived) →
+>   `completed` = no available balance (`available_count = 0`) → `ready` = 21-day cycle reached
+>   (`grafted_date + 21 days`) → `growing` otherwise. Centralized `Batch::LIFECYCLE_*` constants /
+>   `LIFECYCLE_STATUSES` / `lifecycleLabels()` / `cycleReadyDate()` / `scopeWhereLifecycleStatus()`
+>   (query equivalent with the same precedence, incl. the boundary: exactly 21 days = Ready). The Status
+>   filter dropdown now offers Growing / Ready / Completed / Cancelled/Void and filters through that scope
+>   (replacing the old `active`/`depleted` filter). Badge colors (owner-specified): Growing
+>   `bg-warning text-dark`, Ready `bg-success`, Completed lavender `.badge-lifecycle-completed` (new
+>   `app.css` rule; `npm run build` re-run), Cancelled/Void `bg-danger`.
+>   **(3) Action column** is now `[View] [More ▾]` per the owner screenshot: **View** opens a read-only
+>   `#viewBatchModal` (Batch Information + Counts, fed by the same row payload as the Deficit review — no
+>   new queries), available to every viewer including archived rows; **More** groups **Regraft** (disabled
+>   when `survivingQuantity() = 0`), **Record Mortality** and **Record Deficit** — the same forms/routes/
+>   validation as before and as the operational pages (no fork). Regraft/Mortality render only for
+>   non-archived `record_operations` users; Record Deficit (read-only review) stays available for archived
+>   rows and users without the permission. The standalone Deficit action button was folded into More; the
+>   DEFICIT column badge is unchanged.
+>   **(4) Tests:** `InventoryTest` updated (bare inline dates + `Date:` absence; lifecycle status column,
+>   filter and the exact-21-day boundary; View modal + payload; More grouping; View available without
+>   `record_operations`) and the class docblock updated. **Verified:** full MySQL suite
+>   **389 passed / 1831 assertions** on `db_capstone_test` (was 385/1797 at DN); Pint + `php -l` +
+>   `view:cache` clean; `npm run build` re-run. **No migration, schema, route, permission-key or
+>   `db_capstone` change.**
+>   **(5) Live (read-only) smoke — the owner has re-entered operational data since the Session DI wipe:**
+>   kernel `GET /inventory` as the existing admin `admin@cacaotrack.test` returned **200** with the STATUS
+>   column, View modal and More menu rendered and **0** `Date:` labels. Read-only state check:
+>   **5 batches** (B001, B001-R1, B001-R1-R1, B001-R2, B002), stock_ins 2, mortality_records 2,
+>   regraft_records 3, stock_outs/stock_out_details/inventories 0, activity_logs 9; master data intact
+>   (users 1 · scion_varieties 5 · suppliers 3 · clients 3); `php artisan cacao:health` **PASSED**
+>   (`5 batch(es) satisfy all invariants`, all 5 rules). No operational/schema/data write was performed.
+> - **▶ Session DN (DONE — Inventory table values merged with their dates into single columns; nested-row badge renamed "Regrafted"; 2026-10-03):**
+>   Owner-directed UI/test pass on `/inventory` (validated against PRD §2.7/FR-08/§11/§14/§16 and
+>   ERD §3.8/§3.11/§3.12; canonical v2.0 docs authoritative, the attached `_UPDATED` v1.0 files left untouched).
+>   **(1) Merged date columns (request 1):** `BATCH DATE` + `BATCH` are now one **BATCH DETAILS** column
+>   (batch code on the first line; `Date: Jul 15, 2026` in smaller muted text below); **TOTAL GRAFTED** shows
+>   the quantity with its grafted date below; **REGRAFT** shows the counter with the date of its most recent
+>   regraft record below (`—` when none). The owner explicitly chose `grafted_date` for both Batch Details and
+>   Total Grafted — the same value today's Batch Date column already showed, so the Batch Month/Year filter
+>   stays in sync. `InventoryController@index` added one eager aggregate
+>   `withMax('regraftRecordsAsParent as latest_regraft_date', 'regraft_date')` (no N+1) exposed in
+>   `summaries`; every calculation, filter, sort, permission and action is unchanged; the empty-state colspan
+>   went 9→8. **(2) Badge rename (request 2):** the nested-row **Sub-batch** badge in the Inventory table now
+>   reads **Regrafted**; the Batches page badge and the other in-page "sub-batch" copy (footnote + Regraft
+>   modal) were deliberately left untouched. **(3) Tests:** `InventoryTest` +1 (header assertion now
+>   `BATCH DETAILS` + `Date: Jul 15, 2026`; new test records a real regraft and asserts the inline dates under
+>   Batch Details / Total Grafted / Regraft plus `summaries.latest_regraft_date`), `NestedBatchesTest`
+>   inventory badge assertion → `Regrafted`. **Verified:** full MySQL suite **385 passed / 1797 assertions**
+>   on `db_capstone_test` (was 384/1789 at DM); Pint + `php -l` + `view:cache` clean. **No migration, schema,
+>   route, permission-key or `db_capstone` change.**
+> - **▶ Session DM (DONE — Inventory row Mortality/Regraft actions open the same forms as the operational pages in modals, prefilled with the clicked batch; 2026-10-03):**
+>   Owner-directed UI/test pass on `/inventory` (validated against PRD §2.5/§2.8/FR-04/FR-05/FR-08/§7/§8/§14/§16
+>   and ERD §3.8/§3.10/§3.11; canonical v2.0 docs authoritative, the attached `_UPDATED` v1.0 files left untouched).
+>   **(1)** The row **Mortality** / **Regraft** buttons now open **the same forms as the operational pages**
+>   (`#recordMortalityModal` → `operational.mortality.records.store`; `#recordRegraftModal` →
+>   `operational.regraft.records.store`) with the clicked batch preselected. No fork of the forms, validation or
+>   controllers: `StoreMortalityRecordRequest` (bag `mortality`) / `StoreRegraftRecordRequest` (bag `regraft`) and
+>   the existing store actions are reused untouched; a validation failure reopens the right modal on `/inventory`
+>   (JS) with `old()` input, and the success redirects still go to the operational pages.
+>   **(2) Controller:** `InventoryController@index` now also passes the Mortality dropdown data (active batches +
+>   per-batch `quantityBreakdown()`) and the Regraft dropdown data (active, regraftable batches via
+>   `survivingQuantity()` + active scion varieties), matching what the operational pages pass. The per-row summary
+>   gained `regraftable` so the Regraft button is only offered when the batch has a surviving balance (otherwise a
+>   disabled button with "Nothing to regraft"). **(3) Permission:** both modals render only for
+>   `record_operations` users and the target routes stay server-side gated — no UI-only security.
+>   **(4) Tests:** `InventoryTest` now 28 passed (modal exposure + form fields; hidden without `record_operations`;
+>   archived suppression; mortality + regraft validation from `/inventory` with the right error bags; both success
+>   flows through the shared routes). **Verified:** full MySQL suite **384 passed / 1789 assertions** on
+>   `db_capstone_test` (was 379/1744 at DL); Pint + `php -l` + `view:cache` clean. **No migration, schema, route,
+>   permission-key or `db_capstone` change.**
+> - **▶ Session DL (DONE — Inventory page gained the Add Batch modal (the same FR-06 form as the Batches page), gated by `record_operations`; 2026-10-03):**
+>   Owner-directed UI/test pass on `/inventory` (validated against PRD §2.3/§5/FR-06/§7/§8/§13/§14/§16 and
+>   ERD §3.8/§3.9; canonical v2.0 docs authoritative, the attached `_UPDATED` v1.0 files left untouched).
+>   **(1)** `resources/views/inventory/index.blade.php` gained a page-header **Add Batch** button that opens
+>   the **same `#addBatchModal` form as `/operational/batches`** (Batch Code, Scion Variety (optional),
+>   Grafted Date, Status, Total Grafted). It posts to the single existing route
+>   `operational.batches.manage.store` (`POST /operational/batches/manage`) and validates through
+>   `StoreBatchRequest` (error bag `batch`); `BatchController@store` still owns the transaction,
+>   `available_count = total_grafted` (provisional `OD-3`) and the `Activity_Log` row. A validation failure
+>   reopens the modal on `/inventory` (JS) with `old()` input; the existing success redirect to
+>   `/operational/batches` is unchanged.
+>   **(2) Permission:** both the button **and the modal markup** render only for `record_operations` users;
+>   the target route stays server-side gated (`permission:record_operations`) — no UI-only security.
+>   **(3) Superseded earlier attempt:** an eye-icon read-only Batch Details modal briefly added the same day
+>   was **reverted** (owner: "not eyes icon but the add batches modal"); `InventoryController` is back to its
+>   Session DJ state (no new eager loads/counts) and no `details` payload remains.
+>   **(4) Tests:** `InventoryTest` +3 — modal/form exposed with the route + fields; hidden without
+>   `record_operations`; a submission from `/inventory` redirects back with the `batch` error bag and writes
+>   no batch. **Verified:** full MySQL suite **379 passed / 1744 assertions** on `db_capstone_test`
+>   (was 376/1724 at DK); Pint + `php -l` + `view:cache` clean. **No migration, schema, controller, route,
+>   permission-key or `db_capstone` change.**
+> - **▶ Session DK (DONE — Inventory row Action gained the read-only Deficit breakdown modal, flagged not yet client-confirmed; 2026-10-03):**
+>   Owner-directed UI/test pass on `/inventory` (validated against PRD §2.7 / FR-08 / §11 / §16 and
+>   ERD §3.8 / §3.10 / §3.12). **No migration, schema, controller, route, permission-key or
+>   `db_capstone` change** — `InventoryController@index` is untouched.
+>   **(1) ACTION column:** every row now carries a **Deficit** button (`btn-outline-info`) that opens the
+>   shared **`#deficitModal`**. It is a read-only review control, so it is **not** gated on
+>   `record_operations` and it also renders for **archived** rows; the existing Mortality/Regraft
+>   operation links and their gating are unchanged. The modal is populated by JS from a per-row
+>   `data-deficit` JSON payload built from the same `$summaries` values already rendered — **no new
+>   query / no N+1**.
+>   **(2) Modal content (read-only; owner ruled out any action inside):** warning banner with the exact
+>   owner-mandated text *"Deficit definition not yet confirmed with the client — this is a working
+>   calculation for internal review only."*; the working formula
+>   `Deficit = max(0, Mortality − Regraft)` with the substituted numbers (e.g. `max(0, 30 − 10) = 20`);
+>   then Batch / Parent Batch / Scion Variety / Total Grafted / Regraft / Mortality / Deficit /
+>   Available. Footer is **Close only** — no action button and no Regraft shortcut. The formula itself
+>   is unchanged and stays centralized in `Batch::regraftDeficit()` (RULE 6).
+>   **(3) Tests:** `InventoryTest` +3 — exact notice text + payload values (`mortality:30`,
+>   `regraft:10`, `deficit:20`, `available:60`); review available **without** `record_operations`;
+>   review available for an **archived** batch. **Verified:** full MySQL suite
+>   **376 passed / 1724 assertions** on `db_capstone_test` (was 373/1707 at DJ); Pint + `php -l` +
+>   `view:cache` clean. **`db_capstone` untouched.**
+>   **(4) Validation note (docs, do not edit unprompted):** the word "Deficit" appears in neither
+>   client-approved v1.0 doc (`docs/CacaoTrack_PRD_UPDATED.md` / `CacaoTrack_ERD_UPDATED.md`) — hence
+>   the explicit unconfirmed banner and **no PRD/ERD edit**. Their regraft/`Total_Grafted` wording is
+>   superseded by the client-CONFIRMED cumulative rule (canonical v2.0 docs + `AGENTS.md`); mortality
+>   stays an incrementing per-batch counter that never modifies the Regraft counter (ERD §3.10, rule 6).
+>   **Working tree:** DK's view+test edits stack on the still-uncommitted DI+DJ files (see NEXT UP 0d).
+> - **▶ Session DJ (DONE — Inventory page rebuilt into the per-batch template; row Action links to Mortality/Regraft; Record Monthly Inventory UI removed; 2026-10-03):**
+>   Owner-directed UI/controller pass on `/inventory` (validated against PRD §2.7 / FR-08 / §11 and
+>   ERD §3.8 / §3.12). **No migration, schema, route, permission-key or `db_capstone` change.**
+>   **(1) Listing replaced** — the monthly-snapshot table is now **one row per batch** (parents + regraft
+>   sub-batches, nested through `App\Support\BatchTree`; RULE 6) with columns **BATCH DATE | BATCH |
+>   SCION VARIETY | TOTAL GRAFTED | REGRAFT | MORTALITY | DEFICIT | AVAILABLE | ACTION**.
+>   `InventoryController@index` now queries `Batch` (eager `scionVariety` + `parent`,
+>   `withSum('mortalityRecords as mortality_sum')` — no N+1) and passes `batches` (paginator), a
+>   per-batch `summaries` map, `nodeMeta`, filters and the unchanged `totalGrafted` card
+>   (`SUM(total_grafted − regraft)`). Filters: search/scion-variety → batch; **Status** → live
+>   (`depleted` = `available_count = 0`); **Batch Month/Year** → `grafted_date`. Values all derive from
+>   actual records (RULE 5/§16): `Deficit` = centralized `Batch::regraftDeficit()`, `Available` =
+>   `available_count` (PRD §11), `Mortality` = effective recorded mortality.
+>   **(2) `Batch::regraftDeficit()`** gained an optional precomputed-mortality arg (same pattern as
+>   `survivingQuantity()`) so the page reuses the eager sum without duplicating the formula (RULE 6).
+>   **(3) "Record Monthly Inventory" removed from the page** (owner: "I don't need it") — no per-row
+>   snapshot button/modal/JS and no page-level modal. The FR-08 snapshot writer
+>   (`InventoryController@store` + `StoreInventorySnapshotRequest` + route `inventory.snapshots.store`)
+>   is **kept and still tested**, but is no longer reachable from the UI. **Flag:** the `inventories`
+>   table is now UI-write-dead (written only by the seeder/backend route) — revisit if the client
+>   expects to record monthly snapshots from the app.
+>   **(4) ACTION column added back** (owner: "process Deficit/Regraft/Mortality"): each non-archived row
+>   links into the existing operational flows **Mortality** and **Regraft** prefilled with the batch
+>   (`/operational/mortality?batch_id=…`, `/operational/regraft?batch_id=…`); archived rows show
+>   `Archived`; without `record_operations` the cell shows `—` (the target routes still enforce the
+>   permission server-side — PRD §5/§13). No forms or validation duplicated.
+>   **(5) Tests:** `InventoryTest` rewritten for the template (live values + deficit, batch/variety/
+>   status/grafted month+year filters, action links, archived suppressed, permission hidden; the
+>   snapshot writer tests remain); `NestedBatchesTest` inventory test now asserts batch tree nesting.
+>   **Verified:** full MySQL suite **373 passed / 1707 assertions** on `db_capstone_test`; Pint +
+>   `php -l` + `view:cache` clean. **`db_capstone` untouched.**
+>   **Working tree: uncommitted (cumulative DI+DJ files — see NEXT UP 0d). Open doc divergence (do not
+>   edit unprompted):** PRD §2.7 / FR-08 still describe stored monthly Inventory records, while the page
+>   now shows live batch values (the snapshot writer is retained but not exposed).
+> - **▶ Session DI (DONE — owner-approved re-wipe of live `db_capstone` operational data; GitHub published; Dashboard "Total Grafted" KPI; 2026-10-02):**
+>   **(1) Operational data cleared (owner-approved destructive action, fresh sign-off).** Backup first
+>   (verified, left untouched outside the repo):
+>   `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_wipe_20261002_201903.sql`
+>   (**37,136 B**, clean `Dump completed on 2026-10-02 20:19:03` trailer, `mysqldump` exit 0). **Truncated
+>   (FK-safe, `FOREIGN_KEY_CHECKS=0`, exit 0; `AUTO_INCREMENT` reset to 1):** activity_logs, inventories,
+>   stock_out_details, stock_outs, regraft_records, mortality_records, batches, stock_ins — the same 8
+>   tables as Session DD. **BEFORE:** batches 5, stock_ins 2, stock_outs 1, stock_out_details 1,
+>   mortality_records 2, regraft_records 1, inventories 4, activity_logs 14. **AFTER:** all 8 = **0**,
+>   `cacao:health` PASSED ("No batches to check.", exit 0). **Preserved (BEFORE == AFTER):** users 1
+>   (`admin@cacaotrack.test`), scion_varieties 5, suppliers 3, clients 3, activity_tasks 4, task_completes 1,
+>   migrations 53. No schema change; `db_capstone` otherwise untouched.
+>   **(2) GitHub published (owner request).** Local branch `master` now has remote `origin` →
+>   **https://github.com/tingalfilepenf-pixel/CacaoTrack** (public). The 18 staged-but-uncommitted files
+>   (Sessions DE–DH: mortality cap, branding, password toggles, sidebar accordion, exports) were committed
+>   as **`49351ce`** and pushed. `gh` CLI installed via winget and authenticated
+>   (`tingalfilepenf-pixel`). `.env` is gitignored (no secrets); `vendor/`, `node_modules/`, `/capstone`
+>   excluded. **Note:** the two sample exports `docs/cacao-operational-analytics-2026-09-25.csv` +
+>   `docs/cacao-stock-ledger.csv` were previously meant to stay untracked but went in with `49351ce`.
+>   **(3) Dashboard KPI swapped "Total Active Inventory" → "Total Grafted" (owner-directed, validated).**
+>   New centralized **`AnalyticsMetrics::totalGrafted()`** = `SUM(total_grafted − regraft)` across ALL
+>   batches (active + archived) — the same basis as the Inventory page's "Total Grafted" card and
+>   `AnalyticsMetrics::survivalVsMortality()`, per the CONFIRMED cumulative rule (PRD §11 Total Grafted /
+>   ERD §3.8; raw `SUM(total_grafted)` double-counts regrafted plants). `DashboardController` now passes
+>   `totalGrafted`; the card (`resources/views/dashboard/index.blade.php`) reads "Total Grafted" with the
+>   subtext "Live population (Grafted − Regraft) / Each plant counted once, all batches". Seeded value
+>   **750** (raw would be 880). **Validated:** full MySQL suite **369 passed / 1686 assertions** on
+>   `db_capstone_test`; Pint + `php -l` clean; `DashboardTest` + `SeededFamilyKpiTest` updated/extended.
+>   **`db_capstone` untouched.**
+>   **Open doc divergence (do not edit unprompted):** canonical **PRD §10** still lists *Total Active
+>   Inventory* as a dashboard KPI (OD-10 open) and the **Analytics page still shows Total Active
+>   Inventory** — the owner asked only for the Dashboard card. **Working tree:** the 5 dashboard files
+>   (`DashboardController`, `AnalyticsMetrics`, `dashboard/index.blade.php`, `DashboardTest`,
+>   `SeededFamilyKpiTest`) are **NOT committed/pushed yet**.
 > - **▶ Session DH (DONE — Users/Profile show-password toggles + sidebar collapse dead-space fix; no schema, route, permission or data change; `db_capstone` untouched; 2026-10-02):**
 >   Owner-directed UI pass, view/CSS/JS only. **(1) Show/hide password toggles (owner request; validated
 >   against PRD FR-02 / §13 and ERD `Users`):** every password input on **Users Management** (Add User
@@ -162,50 +808,269 @@
 >   **This clears the CZ live-drift note** (6 batches incl. B002-R1 / 3 regraft records / 2 Stock Out
 >   details). Docs-only commit follows; no code changed.
 > - **▶ NEXT UP (start here next session — manual flow-testing / vibecoding):**
->   - **(0) Live `db_capstone` is intentionally EMPTY of operational data — 0 batches; do NOT reseed.**
->     The owner is hand-entering every number to follow the flows step by step. Master/reference data is
->     intact and must stay: **users 1 · scion_varieties 5 · suppliers 3 · clients 3**; also untouched:
->     activity_tasks, task_completes, analytics, migrations, framework tables. The seeded baseline is NOT
->     in the DB — it lives only in the Session DD backup. Any restore/reseed needs fresh owner sign-off.
->   - **(0a) Quick state check (read-only).** `php artisan cacao:health` → until batches are entered it
->     should print `Cacao health check passed. No batches to check.` (exit 0); once batches exist it
->     validates all 5 rules. To inspect counts:
+>   - **(0) Live `db_capstone` holds owner-entered operational data (re-observed read-only in Sessions
+>     DO, DP, DQ, DV, DZ and EA, 2026-10-03…12) — do NOT reseed or truncate without fresh owner sign-off.**
+>     It was re-cleared in Session DI (2026-10-02) and the owner has since hand-entered the flows:
+>     **batches 5** — B001, B001-R1, B001-R1-R1, B001-R2, B002 — with stock_ins 2, mortality_records 2,
+>     regraft_records 3, **stock_outs 1, stock_out_details 1**, inventories 0, activity_logs 13;
+>     master/reference data is intact and must stay: **users 1 · scion_varieties 2 (Batangas, Toledo) ·
+>     suppliers 3 · clients 3**; also untouched: activity_tasks 4, task_completes 1, analytics, migrations,
+>     framework tables. **Session DV (2026-10-12)** deleted the 3 archived, unreferenced scion varieties
+>     (Trinitario, Toledo, Forastero) through the new guarded Delete after a fresh backup (see 0a); every
+>     table now has **0** archived rows. Live Inventory cards (Session DV; the **Regraft Deficit card was
+>     removed in Session DY**): Total Mortality **123**, Total Regrafted **270**, Total Active Inventory
+>     **813**, Total Batches **5**. Dashboard/Analytics live KPI cards (Session DZ): **Total Grafted
+>     853**, **Total Active Inventory 813**; `cacao:health` **PASSED** (5 batches, all 5 rules). A
+>     restore/reseed is **not** needed and needs fresh owner sign-off anyway; the seeded baseline lives
+>     only in the backups.
+>   - **(0a) Quick state check (read-only).** `php artisan cacao:health` → currently
+>     `Cacao health check passed. 5 batch(es) satisfy all invariants.` (exit 0; all 5 rules hold on the
+>     owner-entered data). With no batches it prints `No batches to check.` To inspect counts:
 >     `mysql -u root -h 127.0.0.1 db_capstone -t -e "SELECT 'batches' t, COUNT(*) c FROM batches;"`.
->     Backup available if a restore is ever approved:
->     `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_cleared_20261001_235027.sql` (36,106 B).
->   - **(0b) Manual entry order to exercise the flows end-to-end:** (i) **Batches** — create a root batch
->     (first `batch_id` will be **1**, `batch_code` B001); (ii) **Mortality Tracking**; (iii) **Regraft**
+>     Backups if a restore is ever approved (keep untouched): the Session DV pre-cleanup dump
+>     `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_scion_delete_20261012_175232.sql`
+>     (34,928 B), the Session DI wiper `...db_capstone_pre_wipe_20261002_201903.sql` (37,136 B)
+>     and the Session DD backup `...db_capstone_pre_cleared_20261001_235027.sql` (36,106 B).
+>   - **(0b) Manual entry order to exercise the flows end-to-end:** **Sidebar note (Session EC):** the
+>     **Mortality Tracking**, **Regraft** and **Batches** links are hidden from the Operational sidebar,
+>     but the functions remain — open them directly at `/operational/mortality`, `/operational/regraft`,
+>     `/operational/batches` (or via the Inventory row actions). (i) **Batches** — create a root batch;
+>     **as of Session DQ the form no longer asks for Batch Code or Grafted Date** — the server assigns the
+>     next free root code (first batch → **B001**, then B002, …) and today's date, and the modal previews
+>     the code; **the same Add Batch modal is also on `/inventory`** (Add Batch page action,
+>     `record_operations` users only — handy while hand-entering the flows); (ii) **Mortality Tracking**; (iii) **Regraft**
 >     (cap = `Batch::survivingQuantity()`); (iv) **Stock In** — Seedlings tab, then the Scion tab;
 >     (v) **Stock Out** (gate = `survivingQuantity()`; unit is **pots** only); (vi) **Inventory** —
->     "Record Monthly Inventory" snapshot. Re-run `cacao:health` and glance at the Dashboard / Stock
->     Ledger after each step.
->   - **(0c) Code/test baseline (unchanged, code-side only):** full MySQL suite
+>     check the **four** filter-aware summary cards (**Total Mortality** / **Total Regrafted** /
+>     **Total Active Inventory** (active batches only) / **Total Batches** — Session DP; the
+>     **Regraft Deficit card was removed in Session DY**; they follow the page filters), then the live
+>     per-batch template
+>     (**BATCH DETAILS** (code + grafted date, no `Date:` label) /
+>     **SCION VARIETY** / **TOTAL GRAFTED** (qty + grafted date) / **REGRAFT** (qty + latest regraft
+>     date) / MORTALITY / AVAILABLE / **STATUS** — the derived lifecycle badge **Growing**
+>     (<21 days) / **Ready** (21 days reached) / **Completed** (no available balance) / **Cancelled/Void**
+>     (inactive or archived); the Status filter filters by those same values — Sessions DO/DN/DJ;
+>     PRD §2.7/FR-08, ERD §3.12). Nested regraft rows carry a **Regrafted** badge and parents have the
+>     same collapsible sub-batch chevron toggle as the Batches page (Session EB). The row action is
+>     `[View] [More ▾]` (Session DO): **View** opens the read-only Batch Details modal — **since
+>     Session DT it also lists the batch's recorded Mortality Causes** (cause + quantity, from the real
+>     `mortality_records`; "No mortality recorded for this batch." when empty); **More** groups
+>     **Regraft** and **Record Mortality** (the same forms as the operational pages, as modals prefilled
+>     with that batch — Session DM) — **Session DY removed the Record Deficit action/modal and hides
+>     More for archived rows / users without `record_operations`**. **There is no "Record Monthly
+>     Inventory" action on the page (removed in Session DJ).** (vii) **Delete (Session DV)**
+>     — **the Archived tabs are gone** on Checklist / Batches / Scion Variety and the row trash button
+>     permanently deletes the record. It is refused (error toast; the row button is disabled and its
+>     tooltip lists the blockers) for a task with completion history, a batch with any
+>     mortality/regraft/stock-out/inventory/activity/sub-batch records, and a scion variety referenced by a
+>     batch / stock receipt / stock-out line. The live batches all have records, so Delete is refused for
+>     them — to see a successful delete, create a fresh batch (the Add Batch modal previews the auto code)
+>     and delete it before recording anything against it. A successful delete writes Activity History
+>     (`task_deleted` / `batch_deleted` / `scion_variety_deleted`). Re-run `cacao:health` and
+>     glance at the Dashboard / Stock Ledger after each step. (viii) **Daily Checklist → History
+>     (Session DW)** — complete a task (or leave some open) on `/operational/checklist`, then open the
+>     **History** tab: the day appears as a record (Completed when every task is done that day, otherwise
+>     Pending) with the real staff, verifier and remarks; use Search/From-To/Status (auto-apply) and the
+>     record's **Print** / **View Full Details** actions. History is read-only — nothing can be edited.
+>     (ix) **Stock Ledger (Sessions DX/EA)** — the page renders ascending; the **Remaining Available**
+>     column is gone from the page, PDF and CSV, and the CSV opens in the client's monthly-block layout
+>     (month title → grouped section + per-variety headers → events → month TOTAL → GRAND TOTAL →
+>     footnote → nested Batch summary). The running balance is still reconciled internally as a guard.
+>     (x) **Inventory sub-batch toggle (Session EB)** — on `/inventory`, use the chevron beside a parent
+>     batch code (e.g. **B001**) to collapse/expand its whole regraft subtree; childless nested rows keep
+>     the `↳` indent. The same control and behaviour now live on `/operational/batches`.
+>   - **(0c) Code/test baseline (code-side only):** full MySQL suite
 >     `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->     → **369 passed / 1687 assertions** (Session DF). Run tests **only** against `db_capstone_test`.
+>     → **428 passed / 2213 assertions** (Session EE; was 408/2001 at EB, 407/1994 at EA, 407/1984 at DZ,
+>     407/1977 at DY, 407/1986 at DX, 406/1960 at DW, 400/1900 at DV, 401/1913 at DU, 399/1909 at DT,
+>     398/1898 at DS, 395/1873 at DR, 394/1867 at DQ, 392/1855 at DP, 385/1797 at DN, 384/1789 at DM,
+>     379/1744 at DL, 376/1724 at DK, 373/1707 at DJ, 369/1686 at DI). Pint + `php -l` + `view:cache`
+>     clean. `phpunit.xml` now **forces** MySQL `db_capstone_test` and `tests/TestCase.php` refuses
+>     `RefreshDatabase` when the DB is not `db_capstone_test`. Run tests **only** against
+>     `db_capstone_test`.
+>   - **(0d) Repo / GitHub (updated Session EE).** Remote `origin` =
+>     **https://github.com/tingalfilepenf-pixel/CacaoTrack** (public, branch `master`); `gh` CLI installed.
+>     **Session EE added six commits on top of `49351ce`:** `22a0770` (permission catalog + routes),
+>     `05f785d` (stock forms + User Management), `cd3912c` (checklist UI + errors + sidebar + Dashboard),
+>     `3a522e3` (ActivityLog cleanup), `6f68b92` (tests) and the docs commit for this handoff/PRD/AGENTS.
+>     The older cumulative **DI…ED** changes in files not touched by Session EE are still uncommitted;
+>     the list below records them:
+>     Session DW — new `app/Support/ChecklistHistory.php` (record/detail/status derivation + shared day
+>     task list, RULE 6), `DailyChecklistController` (history filters/records/selected record; `exportPdf`
+>     now reads the shared definition), `operational/checklist/index.blade.php` (Today/History tabs, filter
+>     card, record list + read-only detail + full-details modal), `resources/css/app.css` (scoped tab/record
+>     styles), `DailyChecklistTest` (+6), `session.handoff.md`; Session DV — `ActivityTask`/`Batch`/`ScionVariety` (guarded delete rules; `ScionVariety::stockIns()`),
+>     `ActivityLog` (`scion_variety_deleted`), `DailyChecklistController`/`BatchController`/`ScionVarietyController`
+>     (`archive`/`restore` → guarded `destroy`), `routes/web.php` (2 new DELETE routes, 6 archive/restore
+>     routes removed), the 3 page views + `operational/batches/partials/batch-row.blade.php`,
+>     `DailyChecklistTest`/`BatchManagementTest`/`SeededFamilyKpiTest` updated,
+>     new `ScionVarietyManagementTest`, `session.handoff.md`, `AGENTS.md`; Session DU —
+>     `app/Support/BatchTree.php` (opt-in `$descending` flag), `app/Http/Controllers/InventoryController.php`
+>     (`descending: true`), `BatchTreeTest` (+1), `InventoryTest` (+1), `session.handoff.md`; Session DT —
+>     `app/Models/MortalityRecord.php` (`causeBreakdownByBatch()`),
+>     `app/Http/Controllers/InventoryController.php` (`mortality_causes` in `summaries`),
+>     `inventory/index.blade.php` (View modal Mortality Causes section + JS),
+>     `InventoryTest` (+1, 1 updated), `session.handoff.md`; Session DS —
+>     `resources/js/app.js` (centralized `form[data-auto-filter]` behavior), `inventory/index.blade.php`
+>     (inline auto-filter JS removed, `data-auto-filter` added),
+>     `inventory/stock-in/index.blade.php` + `inventory/stock-out/index.blade.php` +
+>     `analytics/stock-ledger.blade.php` (same filter card; Apply removed, Clear Filters kept) + rebuilt
+>     `public/build` assets, `StockInTest`/`StockOutTest`/`AnalyticsTest` (+1 each), `InventoryTest`
+>     (assert `data-auto-filter`); Session DR —
+>     `resources/views/inventory/index.blade.php` (filter form auto-applies; Apply button removed, Clear
+>     Filters kept), `InventoryTest` (+1); Session DI — `DashboardController`,
+>     `AnalyticsMetrics`, `dashboard/index.blade.php`, `DashboardTest`, `SeededFamilyKpiTest`; Session DJ
+>     — `InventoryController`, `Batch` (`regraftDeficit()` optional arg),
+>     `inventory/index.blade.php`, `InventoryTest`, `NestedBatchesTest`; Session DK
+>     — `inventory/index.blade.php` (Deficit review button + `#deficitModal`), `InventoryTest` (+3);
+>     Session DL — `inventory/index.blade.php` (Add Batch page action + `#addBatchModal`, gated on
+>     `record_operations`), `InventoryTest` (+3, replacing the reverted details tests);
+>     Session DM — `InventoryController` (modal dropdown data + per-row `regraftable`),
+>     `inventory/index.blade.php` (row Mortality/Regraft buttons open `#recordMortalityModal` /
+>     `#recordRegraftModal`, same forms/routes as the operational pages), `InventoryTest` (+5);
+>     Session DN — `InventoryController` (eager `latest_regraft_date` aggregate),
+>     `inventory/index.blade.php` (BATCH DETAILS / TOTAL GRAFTED / REGRAFT merged columns with inline
+>     dates; nested-row badge renamed **Regrafted**), `InventoryTest` (+1, header assertion updated),
+>     `NestedBatchesTest` (badge assertion → `Regrafted`);
+>     Session DO — `Batch` (derived `LIFECYCLE_*` constants + `lifecycleStatus()` / `lifecycleLabels()` /
+>     `cycleReadyDate()` / `scopeWhereLifecycleStatus()`), `InventoryController` (lifecycle status filter +
+>     summary fields), `inventory/index.blade.php` (no `Date:` labels, STATUS column + filter, View modal,
+>     `[View] [More ▾]` action), `resources/css/app.css` (`.badge-lifecycle-completed`) + rebuilt assets,
+>     `InventoryTest` (updated + lifecycle/View/More tests);
+>     Session DP — `InventoryController` (5 filter-aware card values, `totalGrafted` view var dropped),
+>     `inventory/index.blade.php` (5-card summary row), `InventoryTest` (+2, page test updated),
+>     `SeededFamilyKpiTest` (page `totalGrafted` assertion removed, +1 seeded card test);
+>     Session DQ — `Batch` (`nextBatchCode()` + `storeRules()`), `BatchController` (store auto-assign +
+>     `nextBatchCode` view data), `InventoryController` (view data), `StoreBatchRequest` (validates
+>     `storeRules()`; submitted `batch_code`/`grafted_date` ignored), both Add Batch modals
+>     (`inventory/index.blade.php`, `operational/batches/index.blade.php` — read-only auto fields),
+>     `InventoryTest` (+1, 2 updated), `BatchManagementTest` (+2, 2 replaced);
+>     Session DX — `StockLedgerRunningBalanceTest` (+1: ascending-order regression test);
+>     Session DY — `inventory/index.blade.php` (DEFICIT column, Regraft Deficit card, Record Deficit
+>     action, Deficit modal + View-modal line removed), `dashboard/index.blade.php` (Regraft Deficit
+>     card removed), `analytics/index.blade.php` (KPI + chart + print-modal copy),
+>     `InventoryController`/`DashboardController`/`AnalyticsController` (view data/exports),
+>     `OperationalAnalyticsPdf` (series removed), `InventoryTest`/`DashboardTest`/`AnalyticsTest`/
+>     `SeededFamilyKpiTest` updated, `AGENTS.md`;
+>     Session DZ — `DashboardController`/`AnalyticsController` (new KPI view data + PDF/CSV KPI list),
+>     `dashboard/index.blade.php` + `analytics/index.blade.php` (new cards),
+>     `OperationalAnalyticsPdf` (docblock), `DashboardTest`/`AnalyticsTest` (+7 locks), `AGENTS.md`;
+>     Session EA — `AnalyticsController` (CSV export rebuilt as the client's monthly-block ledger +
+>     `ledgerCsvSectionHeaders()`/`ledgerCsvVarietyHeaders()`; Remaining Available removed),
+>     `StockLedgerPdf` (column removed, section groups widened to 39.2mm, footnote updated),
+>     `AnalyticsMetrics` (docblock — running balance kept as internal reconciliation guard),
+>     `analytics/stock-ledger.blade.php` (column + copy removed),
+>     `StockLedgerNestingTest` (page/CSV/PDF locks incl. the new layout),
+>     `StockLedgerRunningBalanceTest` (docblock), `AGENTS.md`;
+>     Session EB — `InventoryController` (`nodeMeta` gained `ancestors` + `has_children`),
+>     `inventory/index.blade.php` (Batches-style collapsible sub-batch chevron + `child-of-*` row classes),
+>     `InventoryTest` (+1), `NestedBatchesTest` (nodeMeta locks), `AGENTS.md`;
+>     Session EC — `analytics/index.blade.php` (Total Grafted → green, Total Active Inventory → blue;
+>     colors swapped), `layouts/sidebar.blade.php` (Mortality Tracking / Regraft / Batches links
+>     removed; routes/pages retained), `AGENTS.md`;
+>     Session ED — `session.handoff.md` only (Phase 0 read-only audit; no code/database change);
+>     plus `session.handoff.md`. **No commit/push was made this session (not requested).**
+>   - **(0e) Phase 0 inspection (Session ED) — DECIDE BEFORE CODING; do not assume a role-based design yet.**
+>     The audit found no proposal document in the repo; the current model is per-user JSON. Before changing
+>     permissions/UI, get explicit owner/client decisions on: (a) keep per-user JSON (role = label) vs
+>     reintroduce a normalized roles/role_permissions model (AGENTS/ERD currently forbid the latter without
+>     an approved revision); (b) Administrator full implicit access vs permission-only; (c) checklist
+>     verification workflow (who verifies, with what role/permission, self-verification allowed?);
+>     (d) task add/edit authorization (Staff vs Manager/Admin); (e) Supplier/Client creation permission
+>     (`manage_stock` vs `manage_inventory`); (f) analytics exports (`view_analytics` vs
+>     `generate_reports`); (g) whether `/users` and Dashboard remain readable by every authenticated user.
+>     **Recommended order next session:** (1) test-safety first — add `.env.testing`/MySQL `db_capstone_test`
+>     config + a `TestCase` DB-name guard + route-permission negative tests; (2) permission data
+>     normalization/backfill for `correct_records` (and decide admin behavior); (3) route/UI permission
+>     alignment (Dashboard links, Generate Report button, stock quick-add); (4) checklist verification
+>     route/UI/fields; (5) branded `errors/403|404|500` and role/permission UI if approved; (6) dead
+>     activity-type cleanup + AGENTS catalog correction (8 keys) + full MySQL suite. **Do not run
+>     `migrate:fresh`/seeders against `db_capstone`; tests only against `db_capstone_test`.**
+>     The full Phase-0 findings live in the Session ED entry at the top of this file; no code was changed.
 >   - **(1) Remaining Session CS Tier-1 — safe, code-only, no client decision needed:**
 >     (i) log Inventory snapshots to `Activity_Log`; (ii) fix the "Total **Active** Inventory
->     includes archived" label; (iii) point `phpunit.xml` at MySQL `db_capstone_test`.
+>     includes archived" label — **the Dashboard no longer shows it (Session DI), the Analytics page
+>     still does**; (iii) point `phpunit.xml` at MySQL `db_capstone_test`.
 >   - **(2) Tier-2 — needs an owner/client decision, do NOT implement unprompted:** whether mortality
->     should decrement `available_count`; Active-vs-archived basis; the Regraft Deficit formula; the
->     date-filtered rate definition. (The mortality **cap** was owner-directed in Session DF — a new entry
->     is now validated against the live remaining `survivingQuantity()`; mortality still does not mutate
->     `available_count`.)
+>     should decrement `available_count`; Active-vs-archived basis; the Regraft Deficit formula (still
+>     shown only on `/operational/regraft` — Sessions DY removed it from Inventory/Dashboard/Analytics);
+>     the date-filtered rate definition. (The mortality **cap** was owner-directed in Session DF — a new
+>     entry is now validated against the live remaining `survivingQuantity()`; mortality still does not
+>     mutate `available_count`.)
 >   - **(3) Tier-3 — needs an approved ERD revision:** DB unique index for one monthly Inventory
 >     snapshot per batch; Stock In↔Batch traceability (`OD-8`); scion freshness (`OD-13`).
 >   - **(4) Client-gated features — do not build unprompted:** scion-receipt Edit/Archive/Details;
 >     scion-receipt traceability (graft/regraft → a scion-inclusive `Stock_In` row, no balance
 >     deduction); scion freshness/viability rule. See `AGENTS.md` §"P6 deferred items".
->   - **(5) Docs-only housekeeping:** the two sample exports
->     (`docs/cacao-operational-analytics-2026-09-25.csv`, `docs/cacao-stock-ledger.csv`) stay
->     untracked by design — do not add them.
+>   - **(5) Docs/exports note (updated Session DI):** the two sample exports
+>     (`docs/cacao-operational-analytics-2026-09-25.csv`, `docs/cacao-stock-ledger.csv`) were previously
+>     meant to stay untracked, but were part of the 18 staged files committed as `49351ce` (owner chose
+>     "commit them first" when publishing). They are now tracked — remove in a later commit if they should
+>     not ship.
 >   - **Do NOT re-investigate (already implemented + committed):** (1) the Stock Ledger's "Ready to
->     Plant" figure uses `survivingQuantity()` (mortality excluded) and Pullout is a cumulative
->     per-batch total, with the 'Ready to Plant' label kept — commit `11f674b`; (2) family-level
+>     Plant" figure uses `survivingQuantity()` (mortality + pull-out excluded, commit `839ecc2`) and
+>     Pullout posts **one dated row per Stock Out detail** (Session DC; the earlier cumulative-stamp
+>     design `11f674b` was reverted), with the 'Ready to Plant' label kept; (2) family-level
 >     mortality rollup — `Batch::familyMortality()` plus the "Family Mortality (incl. sub-batches)"
 >     column/tile, ADDITIONAL to the unchanged per-batch figure (Crude Mortality Rate numerator and
 >     Gap total unchanged) — commit `d43c2d5`; (3) the Mortality Tracking dropdown shows
 >     **Original / Stock Out / Remaining** from `Batch::quantityBreakdown()` and the mortality cap is the
->     live remaining balance — Session DF (see the top banner).
+>     live remaining balance — Session DF (see the top banner); (4) the **Dashboard KPI is now
+>     "Total Grafted"** = `AnalyticsMetrics::totalGrafted()` = `SUM(total_grafted − regraft)` across all
+>     batches (Session DI) — do not "fix" it back to Total Active Inventory on the Dashboard;
+>     (5) the **Inventory page is now the per-batch live template** (Session DJ; columns merged in
+>     Session DN) — **BATCH DETAILS** (code + grafted date stacked) / **SCION VARIETY** /
+>     **TOTAL GRAFTED** (qty + grafted date) / **REGRAFT** (qty + latest regraft date) / MORTALITY /
+>     AVAILABLE / **STATUS**, nested regraft rows carrying a **Regrafted** badge, with a row
+>     **Action** that opens the Mortality/Regraft forms in modals (Session DM — see item 8).
+>     **There is deliberately NO "Record Monthly Inventory" action on the page** (owner-removed) — do not
+>     re-add the snapshot modal/button unless the owner asks. The snapshot writer (`store()` + route) is
+>     still present and tested. (6) the **Regraft Deficit UI was removed from Inventory/Dashboard/
+>     Analytics** (Session DY, owner-directed) — the DEFICIT column, summary card, row action, both
+>     modals and the CSV/PDF sections are deliberately gone; do **not** re-add them there. The figure
+>     survives only on `/operational/regraft` through the centralized `Batch::regraftDeficit()` until the
+>     client confirms the definition (Tier-2). (7) the **Inventory page now also hosts the Add Batch
+>     modal** (Session DL) — the same `#addBatchModal` / `StoreBatchRequest` /
+>     `operational.batches.manage.store` flow as `/operational/batches`, gated on `record_operations`
+>     (button **and** markup). It is a deliberate shortcut, not a duplicate form: do not fork the form,
+>     the validation or the controller. (8) the **Inventory row Mortality/Regraft buttons now open modals
+>     with the same forms** (Session DM) — `#recordMortalityModal` / `#recordRegraftModal` post to the
+>     operational store routes and reuse `StoreMortalityRecordRequest` / `StoreRegraftRecordRequest`
+>     untouched; do not re-add `/operational/mortality?batch_id=…` / `/operational/regraft?batch_id=…`
+>     links, do not fork the forms/validation/controllers, and keep the row Regraft button limited to
+>     batches whose `survivingQuantity() > 0`. (9) the **Inventory columns are merged and the row badge
+>     reads "Regrafted"** (Session DN) — BATCH DETAILS stacks the code over its grafted date;
+>     TOTAL GRAFTED stacks the quantity over `grafted_date` (same as Batch Details, owner-chosen);
+>     REGRAFT stacks the counter over the latest `regraft_date` from `regraftRecordsAsParent`
+>     (`withMax` aggregate; `—` when none); do not split the dates back into separate columns, and do
+>     not "fix" the badge back to Sub-batch. The Batches page badge and the other in-page "sub-batch"
+>     copy (footnote, Regraft modal) still say Sub-batch by design. (10) the **Inventory Status column is
+>     derived, not stored** (Session DO) — `Batch::lifecycleStatus()` maps invalidated (stored `inactive`
+>     or archived) → **Cancelled/Void**, `available_count = 0` → **Completed**, `grafted_date + 21 days`
+>     reached → **Ready**, else **Growing**; the Status filter uses `scopeWhereLifecycleStatus()` (same
+>     precedence). Do not write these values into `batches.status` (its enum stays `active`/`inactive`) and
+>     do not split the definition per view. (11) the **Inventory row action is `[View] [More ▾]`**
+>     (Session DO; Deficit removed in DY) — View is the read-only `#viewBatchModal` (available to all
+>     viewers, archived included), and More groups **Regraft / Record Mortality** (the dropdown itself is
+>     hidden when there is no action to offer: archived rows / users without `record_operations`). Keep
+>     the forms/routes shared with the operational pages and do not re-add the standalone
+>     Mortality/Regraft buttons.
+>     (12) the **Inventory summary cards are the four owner-directed filter-aware cards** (Session DP;
+>     Regraft Deficit removed in DY) — Total Mortality / Total Regrafted / Total Active Inventory (active
+>     batches only) / Total Batches; they aggregate the same live per-batch values as the rows. Do not
+>     re-add the Total Grafted or Regraft Deficit cards, and do not fork the card definitions per view.
+>     (13) the **Checklist / Batches / Scion Variety pages use the guarded Delete, not Archive** (Session DV) —
+>     the Archived tabs, archive/restore routes (`operational.checklist.tasks.archive|restore`,
+>     `operational.batches.archive|restore`, `operational.scion-varieties.archive|restore`) and their modals
+>     are deliberately gone; keep the guards centralized (`ActivityTask::canBeDeleted()`,
+>     `Batch::deletionBlockers()`, `ScionVariety::deletionBlockers()`) and keep refusals non-destructive —
+>     do not re-add the tabs/routes, do not turn the guards into a cascade, and do not delete the
+>     `Archived_At` columns (still in the ERD). Supplier/Client keep their archive/restore by owner choice.
+>     (14) the **Dashboard/Analytics KPI cards** (Session DZ) and the **Stock Ledger page/CSV layout**
+>     (Sessions DX/EA) are current: Dashboard and Analytics both show Total Grafted / Total Active
+>     Inventory / Crude Mortality Rate; the Stock Ledger renders ascending, has **no Remaining Available
+>     column** (page/PDF/CSV), and the CSV uses the client's monthly-block layout. Do not re-add the
+>     running-balance column or restore the old flat CSV.
 > - **▶ Session DA (DONE — display-only "Ready to Plant" footnote added to the Stock Ledger; live `cacao:health` re-run clean; 2026-10-01):**
 >   **(1) Footnote (display/text only, no logic change)** — one line was appended to the SAME three locations as
 >   the Phase 7C Regraft/Grafted footnote: the on-screen grid note
@@ -922,23 +1787,44 @@
 >   `...\Temp\opencode\db_capstone_pre_phase7d_20260929_000206.sql`,
 >   `...\Temp\opencode\db_capstone_pre_regraft_rename_20260930.sql`,
 >   `...\Temp\opencode\db_capstone_pre_reseed_20260930_034319.sql`,
->   `...\Temp\opencode\db_capstone_pre_reseed_20261001_201512.sql` and
->   `...\Temp\opencode\db_capstone_pre_reseed_20261001_213846.sql`.
+>   `...\Temp\opencode\db_capstone_pre_reseed_20261001_213846.sql`,
+>   `...\Temp\opencode\db_capstone_pre_cleared_20261001_235027.sql` (Session DD) and
+>   `...\Temp\opencode\db_capstone_pre_wipe_20261002_201903.sql` (Session DI).
 > - **Verify quickly:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->   (never point tests at `db_capstone`) — expect **349 passed / 1554 assertions**. Also run
+>   (never point tests at `db_capstone`) — expect **399 passed / 1909 assertions** (Session DT). Also run
 >   `php artisan cacao:health` after a `migrate:fresh --seed` on `db_capstone_test` — it must pass
 >   clean (exit 0; it now also reconciles `available_count` against Stock Out history). Check the
->   checkpoint with `git log --oneline -5` (latest Session DB docs commit, `aa847f2`, `11f674b`,
->   `d43c2d5`, `6f41a6a`). Full detail: the Session DB/DA/CY/CX/CW/CV/CU/CT/CS/CR/CQ/CP/CO/CN/CM/CL/CK/CJ
->   bullets in the banner above and the Session CH entry in §2, plus §3, §5 and §6 (and the earlier
->   CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ entries).
+>   checkpoint with `git log --oneline -5` (head `49351ce`, then `808ac38`, `3d69285`, `839ecc2`,
+>   `fe973b1`). Full detail: the Session DT/DS/DR/DQ/DP/DO/DN/DM/DL/DK/DJ/DI/DH/DG/DF/DE bullets in the banner
+>   above plus the Session DB/DA/CY/CX/CW/CV/CU/CT/CS/CR/CQ/CP/CO/CN/CM/CL/CK/CJ entries and the Session CH
+>   entry in §2, plus §3, §5 and §6 (and the earlier CG/CA/BZ/BY/BX/BV/BU/BT/BS/BR/BQ entries).
 
 Paste this file into a new chat to continue. It captures the exact state of the
-project after **Session DB (2026-10-01)** — the one approved destructive reseed of live `db_capstone`
+project after **Session DT (2026-10-12)**: live `db_capstone` holds **owner-entered operational
+data** — **5 batches** (B001, B001-R1, B001-R1-R1, B001-R2, B002; the owner re-entered the flows after
+the Session DI re-wipe) with stock_ins 2 · mortality_records 2 · regraft_records 3 · stock_outs 0 ·
+inventories 0 · activity_logs 9; master data preserved: users 1 · scion_varieties 5 · suppliers 3 ·
+clients 3; **`cacao:health` PASSES all 5 invariants** — do **NOT** reseed/truncate without owner
+sign-off. Session DT added the read-only **Mortality Causes** breakdown to the Inventory View modal
+(`MortalityRecord::causeBreakdownByBatch()` — one grouped query, no N+1; raw `Others: <description>`
+kept; rendered with `textContent`). Session DS centralized the auto-apply filter behavior once in
+`app.js` (`form[data-auto-filter]`: 400 ms search debounce, immediate dropdown/date changes, Enter
+submits) and
+reused the same Bootstrap filter card on `/inventory`, `/inventory/stock-in`, `/inventory/stock-out` and
+`/analytics/stock-ledger` — the Apply/funnel button is removed everywhere and only **Clear Filters**
+remains; page-specific fields (Supplier / Client / Batch / Scion Variety / dates) stay per page.
+(`StoreBatchRequest` still validates `Batch::storeRules()`; the Add Batch form's system-assigned
+**Batch Code** (next free root code; live preview B003) and **Grafted Date** (today) from Session DQ are
+unchanged.) The working tree carries the **uncommitted
+DI+DJ+DK+DL+DM+DN+DO+DP+DQ+DR+DS+DT** changes (head `49351ce`), and the suite is **399 passed / 1909
+assertions** on `db_capstone_test`. See the top banner (Session DT) + "NEXT UP" for the resume point;
+historical context follows. **Session DB (2026-10-01)**, earlier, was the one approved
+destructive reseed of live `db_capstone`
 (verified backup `db_capstone_pre_reseed_20261001_213846.sql`, 37,202 B; `migrate:fresh --seed --force`,
-exit 0; `cacao:health` PASSED on 5 batches / all 5 rules; all 20 sidebar pages 200). The seeded family
-is B001 Batangas 500/400/100 · B001-R1 Toledo 100/50/30 · B001-R1-R1 Criollo 30/30/0 · B002 Trinitario
-150/150/0 · B003 Forastero 100/100/0, KPIs 730 / 7.33% (55/750) / 25. **Session CY (2026-10-01)**,
+exit 0; `cacao:health` PASSED on 5 batches / all 5 rules; all 20 sidebar pages 200). Its seeded family
+was B001 Batangas 500/400/100 · B001-R1 Toledo 100/50/30 · B001-R1-R1 Criollo 30/30/0 · B002 Trinitario
+150/150/0 · B003 Forastero 100/100/0, KPIs 730 / 7.33% (55/750) / 25 — **superseded by the Session DI
+wipe**. **Session CY (2026-10-01)**,
 immediately before, added a "counts each plant once" help note on the three
 cross-batch `total_grafted` totals (Stock Ledger nested summary, Gap Report Expected, Inventory Total
 Grafted card; view/PDF/CSV; commits `b451b9c` + `6f41a6a`) and re-reseeded live `db_capstone` with that code
@@ -1452,7 +2338,305 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ Current quick start (latest: Session CY, 2026-10-01 — cross-batch-totals help note + live `db_capstone` reseed):**
+- **▶ Current quick start (latest: Session EE, 2026-10-28 — role permissions + Daily Checklist workflow + friendly UI):**
+  **(1)** The permission catalog now has 10 keys (adds `manage_checklist` + `complete_checklist`) with
+  descriptions; defaults live in `Role::DEFAULT_PERMISSIONS_BY_ROLE` (provisional). **(2)** Staff can
+  complete checklist tasks but not manage/verify; Managers manage and verify but cannot complete;
+  completion and verification are separate (`verified_by_id`/`verified_at` start null; the new
+  `operational.checklist.completions.verify` route records Manager verification). **(3)** Inventory view
+  allows `record_operations|manage_inventory|manage_stock`; recording a snapshot requires
+  `record_operations`. Inline Supplier/Client creation now requires `manage_inventory`. **(4)** `/users`
+  is `manage_users`-only and has role templates, descriptions and Apply role defaults. **(5)** Friendly
+  403/404 pages, permission-driven sidebar and Dashboard Quick Actions (analytics/activity hidden without
+  the matching permission). **(6)** Tests: `phpunit.xml` forces `db_capstone_test` and a TestCase guard
+  blocks any other DB; full suite **428 passed / 2213 assertions**. **Live SQL is proposed only — NOT
+  EXECUTED** (see §5a). Existing stored permissions were not changed.
+- **▶ Previous quick start (Session EC, 2026-10-20 — Analytics KPI colors swapped + Operational sidebar links hidden):**
+  **(1)** `/analytics` KPI cards now read **Total Grafted = green** (`border-success`/`text-success`)
+  and **Total Active Inventory = blue** (`border-primary`/`text-primary`); Crude Mortality Rate stays
+  red. Presentation-only — same live `AnalyticsMetrics` values, labels and PDF/CSV exports.
+  **(2)** The Operational sidebar no longer shows **Mortality Tracking**, **Regraft** or **Batches**
+  (only Daily Checklist + Scion Variety remain). **The pages/functions still exist** — open them by
+  URL (`/operational/mortality`, `/operational/regraft`, `/operational/batches`) or via the Inventory
+  row actions; no route/controller/permission changed. Owner-directed divergence from PRD §5 / ERD §7
+  recorded in `AGENTS.md`.
+  **(3) Files:** `resources/views/analytics/index.blade.php`,
+  `resources/views/layouts/sidebar.blade.php`, `AGENTS.md`, `session.handoff.md`. No migration, schema,
+  route, permission, calculation or `db_capstone` write.
+  **(4) Verified:** `php artisan view:cache` clean; focused suites
+  `MortalityTest|BatchManagementTest|RegraftTest` **46 passed / 176 assertions** on
+  `db_capstone_test` (full suite not re-run — last full baseline **408 / 2001** at EB; Blade-only
+  change). The cumulative DI…EC working-tree files remain **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's vibecoding/manual flow-testing (NEXT UP 0b) — check
+  `/analytics` for the green/blue cards, then re-check the Dashboard (3 KPI cards), the Stock Ledger
+  (ascending; no Remaining Available), `/inventory` sub-batch toggles and `cacao:health`. Commit/push
+  only when the owner asks.
+- **▶ Previous quick start (Session EB, 2026-10-19 — Inventory collapsible sub-batch toggle, same as Batches):**
+  **(1)** `/inventory` now has the same chevron **Toggle sub-batches** control as `/operational/batches`:
+  a parent row collapses/expands its whole regraft subtree, while childless nested rows keep the `↳`
+  indent. `InventoryController@index` adds `ancestors` + `has_children` to `nodeMeta` from the single
+  `BatchTree::flatten()` traversal (no extra queries), and every nested `<tr>` carries
+  `collapse show child-of-{ancestorId}`. Filters, newest-first ordering, summary cards, row actions,
+  modals and pagination are unchanged.
+  **(2) Files:** `app/Http/Controllers/InventoryController.php`,
+  `resources/views/inventory/index.blade.php`, `tests/Feature/{InventoryTest,NestedBatchesTest}.php`,
+  `AGENTS.md`, `session.handoff.md`. No migration, schema, route, permission, calculation or
+  `db_capstone` write.
+  **(3) Verified:** full MySQL suite **408 passed / 2001 assertions** on `db_capstone_test`;
+  `vendor\bin\pint --test` + `php artisan view:cache` clean. The cumulative DI…EB working-tree files
+  remain **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's vibecoding/manual flow-testing (NEXT UP 0b) — start on
+  `/inventory` by expanding/collapsing the **B001** family, then re-check the Dashboard (3 KPI cards),
+  `/analytics`, the Stock Ledger (ascending; no Remaining Available) and `cacao:health`. Nothing is
+  committed since `49351ce`; commit/push only when the owner asks.
+- **▶ Previous quick start (Session EA, 2026-10-12 — Stock Ledger "Remaining Available" removed; CSV export in the client's monthly-block layout):**
+  **(1)** `/analytics/stock-ledger` no longer shows the **Remaining Available** column on the page, the
+  printable PDF or the CSV; the CSV export now opens as the client's manual ledger — one block per month
+  (month title, grouped section header + per-Scion-Variety sub-header rows, events, month TOTAL), then
+  GRAND TOTAL, the footnote and the nested Batch summary. The running balance is still computed and
+  reconciled internally as an integrity guard.
+  **(2) Files:** `AnalyticsController` (CSV rebuild + helper methods), `StockLedgerPdf` (column removed;
+  section groups widened to 39.2mm), `AnalyticsMetrics` (docblock), `analytics/stock-ledger.blade.php`,
+  `StockLedgerNestingTest` (+layout locks), `StockLedgerRunningBalanceTest` (docblock). No migration,
+  schema, route, permission or `db_capstone` write.
+  **(3) Verified:** full MySQL suite **407 passed / 1994 assertions** on `db_capstone_test`;
+  `vendor\bin\pint --test` + `php artisan view:cache` clean; read-only live render (page/PDF/CSV) shows
+  no "Remaining Available". The cumulative working-tree files remain **uncommitted** (head `49351ce`).
+- **▶ Previous quick start (Session DZ, 2026-10-12 — Dashboard Total Active Inventory card + Analytics Total Grafted card):**
+  **(1)** `/` now shows **three** KPI cards — Total Grafted (**853** live), **Total Active Inventory** (new,
+  **813** live, `border-primary`, "Plants currently available") and Crude Mortality Rate — and `/analytics`
+  mirrors it with **Total Grafted** (new, **853**), Total Active Inventory (**813**) and Crude Mortality Rate
+  (`col-md-4` each). Both cards read the centralized `AnalyticsMetrics` definitions (RULE 6) — never
+  hardcoded; the Operational Analytics **PDF/CSV** exports now also carry **Total Grafted** (the PDF KPI
+  strip renders 4 boxes, labels fit).
+  **(2) Files:** `DashboardController`, `AnalyticsController`, `OperationalAnalyticsPdf` (docblock),
+  `dashboard/index.blade.php`, `analytics/index.blade.php`, `DashboardTest`, `AnalyticsTest`. No migration,
+  schema, route, permission or `db_capstone` write.
+  **(3) Verified:** full MySQL suite **407 passed / 1984 assertions** on `db_capstone_test`; `vendor\bin\pint`
+  + `php artisan view:cache` clean; read-only live render through both controllers — Dashboard **813**,
+  Analytics **853**. The cumulative DI…DZ working-tree files remain **uncommitted** (head `49351ce`).
+- **▶ Previous quick start (Session DW, 2026-10-12 — Daily Checklist History tab):**
+  **(1)** `/operational/checklist` now has a **Today's Checklist | History** segmented tab pair. The History
+  tab lists one read-only record per day with stored completions (date, staff, Completed/Pending badge,
+  x/y tasks) with auto-applying Search / From-To / Status filters + Clear Filters, and shows the selected
+  record's tasks, remarks, staff, verifier + time, **Print** (existing date PDF) and **View Full Details**
+  (read-only modal) buttons.
+  **(2) Files:** new `app/Support/ChecklistHistory.php`, `DailyChecklistController`, the checklist view,
+  `resources/css/app.css`, `DailyChecklistTest` (+6). No migration, schema, route, permission or
+  `db_capstone` write.
+  **(3) Verified:** full MySQL suite **406 passed / 1960 assertions** (was 400/1900 at DV); `vendor\bin\pint`
+  + `php artisan view:cache` clean; `npm run build` re-run; read-only live check — 1 record (2026-10-02,
+  pending 1/4, Admin User), page 200, `cacao:health` PASSED. The cumulative DI…DW working-tree files remain
+  **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — complete a few tasks
+  and revisit the History tab — or start the remaining Session CS Tier-1 items.
+- **▶ Previous quick start (Session DV, 2026-10-12 — Archived tabs removed; Archive → guarded Delete):**
+  **(1)** On `/operational/checklist`, `/operational/batches` and `/operational/scion-varieties` the
+  **Archived tab is gone** and the row **Archive** action is now **Delete**, which permanently removes
+  the record. Delete is **server-guarded** (RULE 6): checklist tasks with completion history,
+  batches with any mortality/regraft/stock-out/inventory/activity records, and referenced scion
+  varieties are refused with a clear message; rows whose Delete would be refused show a disabled
+  button with the blocker list in its tooltip.
+  **(2) Files:** `ActivityTask`/`Batch`/`ScionVariety` (guarded delete rules), `ActivityLog`
+  (`scion_variety_deleted`), the three controllers (`archive`/`restore` → `destroy`),
+  `routes/web.php`, the three views + `batches/partials/batch-row.blade.php`, the tests (incl. new
+  `ScionVarietyManagementTest`). No migration/schema change.
+  **(3) Verified:** full MySQL suite **400 passed / 1900 assertions** on `db_capstone_test`;
+  `vendor\bin\pint --test` + `php artisan view:cache` clean; live cleanup of the 3 archived
+  unreferenced scion varieties done (fresh backup
+  `...\Temp\opencode\db_capstone_pre_scion_delete_20261012_175232.sql`, 34,928 B; live `cacao:health`
+  PASSED). The cumulative DI…DV working-tree files remain **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — add a batch and
+  try Delete (blocked once it has records), or start the remaining Session CS Tier-1 items.
+- **▶ Previous quick start (Session DT, 2026-10-12 — Inventory View modal shows the recorded mortality causes):**
+  **(1)** On `/inventory`, the read-only **View** modal gained a **Mortality Causes** section: each batch's
+  `mortality_records` are grouped by recorded cause (quantity-ordered; `Others: <description>` kept
+  verbatim) through the new centralized `MortalityRecord::causeBreakdownByBatch()` — one grouped query for
+  the whole filtered set (no N+1) — and rendered client-side with `textContent`. A batch with no deaths
+  shows "No mortality recorded for this batch."
+  **(2) Files:** `app/Models/MortalityRecord.php`, `app/Http/Controllers/InventoryController.php`
+  (`mortality_causes` in `summaries`), `resources/views/inventory/index.blade.php` (View modal section +
+  JS), `tests/Feature/InventoryTest.php` (+1, 1 updated). No migration, schema, route, permission or
+  `db_capstone` write.
+  **(3) Verified:** full MySQL suite **399 passed / 1909 assertions** on `db_capstone_test`;
+  `vendor\bin\pint --test` + `php artisan view:cache` clean; read-only live check (`B001-R2` Disease 110,
+  `B002` "Others: Over-irrigation" 13). The cumulative DI+…+DT working-tree files remain **uncommitted**
+  (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — click View on a batch
+  with mortality and confirm the causes — or start the remaining Session CS Tier-1 items.
+- **▶ Previous quick start (Session DS, 2026-10-04 — one auto-filter pattern on Inventory / Stock In / Stock Out / Stock Ledger):**
+  **(1)** The auto-apply filter behavior now lives **once** in `resources/js/app.js`
+  (`form[data-auto-filter]`: 400 ms search debounce, immediate dropdown/date changes, Enter submits,
+  double-submit guard). `/inventory` uses it (inline copy removed) and `/inventory/stock-in`,
+  `/inventory/stock-out` and `/analytics/stock-ledger` now reuse the same Bootstrap filter card —
+  `card-body py-3`, `row g-3 align-items-end`, small labels + `form-select-sm`/`form-control-sm`,
+  `input-group-sm` search — with only **Clear Filters** (the Apply/funnel button removed). Supplier stays
+  on Stock In; Client/Batch stay on Stock Out; the ledger keeps Batch / Scion Variety / Date From / To.
+  **(2) Files:** `resources/js/app.js`, `inventory/index.blade.php`, `inventory/stock-in/index.blade.php`,
+  `inventory/stock-out/index.blade.php`, `analytics/stock-ledger.blade.php`, rebuilt `public/build`
+  assets, `StockInTest`/`StockOutTest`/`AnalyticsTest` (+1 each), `InventoryTest` (asserts
+  `data-auto-filter`). No migration, schema, controller, route, permission or `db_capstone` change.
+  **(3) Verified:** full MySQL suite **398 passed / 1898 assertions** on `db_capstone_test`;
+  `vendor\bin\pint --test` + `php artisan view:cache` clean; `npm run build` re-run. The cumulative
+  DI+DJ+DK+DL+DM+DN+DO+DP+DQ+DR+DS working-tree files remain **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — change a filter on
+  any of the four pages and watch it apply without a button — or start the remaining Session CS Tier-1
+  items.
+- **▶ Previous quick start (Session DR, 2026-10-04 — Inventory filters apply automatically server-side):**
+  **(1)** `/inventory`'s filter bar no longer has an Apply/Filter button; the form (`#inventoryFilterForm`)
+  auto-submits the same server-side GET — text search debounces **400 ms**, the dropdowns and batch-year
+  submit immediately on change, Enter submits at once — and only **Clear Filters** remains.
+  `InventoryController@index` is untouched; the table and the five filter-aware summary cards refresh
+  together.
+  **(2) Files:** `resources/views/inventory/index.blade.php` (form + `@push('scripts')` auto-submit),
+  `InventoryTest` (+1). No migration, schema, controller, route, permission or `db_capstone` change.
+  **(3) Verified:** full MySQL suite **395 passed / 1873 assertions** on `db_capstone_test`;
+  `vendor\bin\pint --test` + `php artisan view:cache` clean. The cumulative
+  DI+DJ+DK+DL+DM+DN+DO+DP+DQ+DR working-tree files remain **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — type in the
+  Search Batch field or pick a filter and watch the table + five cards refresh without pressing a
+  button — or start the remaining Session CS Tier-1 items.
+- **▶ Previous quick start (Session DQ, 2026-10-04 — Add Batch form auto-assigns Batch Code + Grafted Date):**
+  **(1)** The Add Batch form (`/inventory` and the identical `/operational/batches` modal) no longer lets
+  users type/pick **Batch Code** or **Grafted Date**: both render read-only with the note "Assigned
+  automatically …". The server assigns `Batch::nextBatchCode()` (next sequential root code; live preview
+  **B003**) and `now()->toDateString()` inside the create transaction; `StoreBatchRequest` validates
+  `Batch::storeRules()` (scion variety / total grafted / status) and ignores any submitted
+  `batch_code`/`grafted_date`.
+  **(2) Files:** `Batch` (`nextBatchCode()` + `storeRules()`), `BatchController` (store + `nextBatchCode`
+  view data), `InventoryController` (view data), `StoreBatchRequest`, both Add Batch modals,
+  `InventoryTest` (+1, 2 updated), `BatchManagementTest` (+2, 2 replaced). No migration, schema, route,
+  permission or `db_capstone` change.
+  **(3) Verified:** full MySQL suite **394 passed / 1867 assertions** on `db_capstone_test`; Pint + `php -l`
+  + `view:cache` clean; read-only live `nextBatchCode()` = **B003**. The cumulative
+  DI+DJ+DK+DL+DM+DN+DO+DP+DQ working-tree files remain **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — add a batch from
+  `/inventory` and watch the auto code/date — or start the remaining Session CS Tier-1 items.
+- **▶ Previous quick start (Session DP, 2026-10-03 — Inventory summary cards):**
+  **(1)** `/inventory` now has five filter-aware summary cards replacing the old Total Grafted card:
+  **Total Mortality** (effective recorded mortality — strictly incrementing, PRD §2.5/§11), **Regraft
+  Deficit** (`Batch::regraftDeficit()` = max(0, mortality − regraft) — the working OD-10 definition, still
+  pending client confirmation), **Total Regrafted** (the cached `batches.regraft` counter, reconciled
+  against `regraft_records`), **Total Active Inventory** (`SUM(available_count)` of ACTIVE batches only —
+  the `AnalyticsMetrics::totalActiveInventory()` definition, archived excluded) and **Total Batches**
+  (filtered batch count). Cards follow the page filters (search / scion variety / lifecycle status / batch
+  month-year) and aggregate the same live per-batch values the rows show (RULE 5/6).
+  **(2) Files:** `InventoryController` (five view values from the existing `$summaries`, no new queries;
+  old `totalGrafted` view var dropped), `resources/views/inventory/index.blade.php` (responsive 5-card
+  row), `InventoryTest` (+2, page test updated), `SeededFamilyKpiTest` (page `totalGrafted` assertion
+  removed, +1 seeded card test). No migration, schema, route, permission or `db_capstone` change.
+  **(3) Verified:** full MySQL suite **392 passed / 1855 assertions** on `db_capstone_test`; Pint +
+  `php -l` + `view:cache` clean; read-only live check on the owner's 5 batches — every card matched an
+  independent live query exactly (mortality **123**, deficit **123**, regrafted **270**, active inventory
+  **853**, batches **5**).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — watch the five
+  cards update after each recorded Mortality/Regraft/Stock Out — or start the remaining Session CS
+  Tier-1 items. The cumulative **DI+DJ+DK+DL+DM+DN+DO+DP** working-tree files remain **uncommitted**
+  (head `49351ce`).
+- **▶ Previous quick start (Session DO, 2026-10-03 — Inventory Status column + `[View] [More ▾]` action; "Date:" labels removed):**
+  **(1)** `/inventory` drops the `Date:` prefixes (values kept) and adds the derived **STATUS** column —
+  **Growing** (`grafted_date` < 21 days) / **Ready** (21 days reached) / **Completed** (`available_count = 0`)
+  / **Cancelled/Void** (stored `inactive` or archived) — centralized in `Batch::lifecycleStatus()`
+  (RULE 6; the stored `batches.status` enum stays `active`/`inactive`; OD-7 cycle is derived). The Status
+  filter now filters those same values via `Batch::scopeWhereLifecycleStatus()`.
+  **(2)** The row action is `[View] [More ▾]`: **View** opens the read-only `#viewBatchModal` (every viewer,
+  archived included); **More** groups **Regraft** (disabled when nothing to regraft), **Record Mortality**
+  and **Record Deficit** — the same forms/routes/validation as the operational pages; the Deficit review
+  stays read-only and permission-free. The standalone Deficit/Mortality/Regraft buttons are gone.
+  **(3) Files:** `Batch`, `InventoryController`, `resources/views/inventory/index.blade.php`,
+  `resources/css/app.css` (`.badge-lifecycle-completed`) + rebuilt assets, `tests/Feature/InventoryTest.php`
+  (updated + lifecycle/View/More tests). No migration, schema, route, permission or `db_capstone` change.
+  **(4) Verified:** full MySQL suite **389 passed / 1831 assertions** on `db_capstone_test`; Pint + `php -l`
+  + `view:cache` clean; read-only live `/inventory` smoke **200** (Status/View/More render, 0 `Date:` labels).
+  The cumulative **DI+DJ+DK+DL+DM+DN+DO** working-tree files remain **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — the live
+  `db_capstone` now holds 5 owner-entered batches (B001, B001-R1, B001-R1-R1, B001-R2, B002) and
+  `cacao:health` passes all 5 invariants — or start the remaining Session CS Tier-1 items.
+- **▶ Previous quick start (Session DN, 2026-10-03 — Inventory table values merged with their dates into single columns; nested-row badge renamed "Regrafted"):**
+  **(1)** `/inventory` rendered **BATCH DETAILS** (batch code with `Date: …` below — the label later removed
+  in Session DO), **TOTAL GRAFTED** (quantity with its grafted date below) and **REGRAFT** (counter with the
+  latest regraft record's date below, `—` when none). `InventoryController@index` gained one eager aggregate
+  (`withMax('regraftRecordsAsParent as latest_regraft_date', 'regraft_date')`, no N+1) exposed in `summaries`.
+  **(2)** The nested-row **Sub-batch** badge now reads **Regrafted** (Inventory page only). **(3) Verified:**
+  full MySQL suite **385 passed / 1797 assertions** at the time; the files stayed uncommitted into
+  Session DO.
+- **▶ Previous quick start (Session DM, 2026-10-03 — Inventory row Mortality/Regraft actions open the same forms as the operational pages in modals, prefilled with the clicked batch):**
+  **(1)** `/inventory` row **Mortality** / **Regraft** buttons now open `#recordMortalityModal` /
+  `#recordRegraftModal` — the same forms as the operational pages — and post to the shared
+  `operational.mortality.records.store` / `operational.regraft.records.store` routes (error bags
+  `mortality` / `regraft`; JS reopens the right modal on failure and the success redirects stay on the
+  operational pages). **(2)** `InventoryController@index` now passes the modal dropdown data
+  (`quantityBreakdown()` for Mortality; active regraftable batches via `survivingQuantity()` + active scion
+  varieties for Regraft), and the row's Regraft button is only offered when `survivingQuantity() > 0`
+  (otherwise a disabled "Nothing to regraft" button). **(3) Files:** `InventoryController`,
+  `resources/views/inventory/index.blade.php`, `tests/Feature/InventoryTest.php` (+5 tests). No migration,
+  schema, route, permission or `db_capstone` change. **(4) Verified:** full MySQL suite **384 passed / 1789
+  assertions** on `db_capstone_test`; Pint + `php -l` + `view:cache` clean. The cumulative DI+DJ+DK+DL+DM
+  working-tree files remain **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — record
+  Mortality/Regraft straight from the Inventory row — or start the remaining Session CS Tier-1 items.
+- **▶ Previous quick start (Session DL, 2026-10-03 — Inventory page gained the Add Batch modal (the same FR-06 form as `/operational/batches`)):**
+  **(1)** `/inventory` exposed an **Add Batch** page action (**`record_operations`** users only) that opens
+  the same `#addBatchModal` form as `/operational/batches`; it posts to the shared
+  `operational.batches.manage.store` route, reopens on validation errors and preserves `old()` input.
+  **(2)** The eye/details modal briefly added earlier the same day was reverted. **(3) Files:**
+  `resources/views/inventory/index.blade.php`, `tests/Feature/InventoryTest.php` (+3). No migration, schema,
+  controller, route, permission or `db_capstone` change. **(4) Verified:** full MySQL suite **379 passed /
+  1744 assertions** on `db_capstone_test`; Pint + `php -l` + `view:cache` clean.
+- **▶ Previous quick start (Session DK, 2026-10-03 — Inventory row Action gained the read-only Deficit breakdown modal, flagged not yet client-confirmed):**
+  **(1) Inventory page (`/inventory`)**: each row's **Action** cell now also shows a **Deficit** button
+  (read-only review — available to every viewer, **archived rows included**, and deliberately **not**
+  gated on `record_operations`) that opens the shared **`#deficitModal`**. The modal carries the warning
+  banner *"Deficit definition not yet confirmed with the client — this is a working calculation for
+  internal review only."*, the working formula `Deficit = max(0, Mortality − Regraft)` with the
+  substituted numbers, and Batch / Parent / Scion Variety / Total Grafted / Regraft / Mortality /
+  Deficit / Available. **No action button and no Regraft shortcut inside** (owner-directed; footer is
+  Close only). Values come from the same per-row `data-deficit` payload the page already renders
+  (`Batch::regraftDeficit()`, RULE 6) — no new query / no N+1. The per-batch template, the
+  Mortality/Regraft action links, their permission gating and the removed "Record Monthly Inventory" UI
+  (Session DJ) are all unchanged.
+  **(2) Files:** `resources/views/inventory/index.blade.php`, `tests/Feature/InventoryTest.php` (+3
+  tests). No migration/controller/route/permission/`db_capstone` change.
+  **(3) Verified:** full MySQL suite **376 passed / 1724 assertions** on `db_capstone_test`; Pint +
+  `php -l` + `view:cache` clean.
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — use the row
+  **Deficit** button for internal review while the deficit definition is still open (Tier-2) — or start
+  the remaining Session CS Tier-1 items. The cumulative DI+DJ+DK working-tree files are **uncommitted**
+  (head `49351ce`).
+- **▶ Previous quick start (Session DJ, 2026-10-03 — Inventory page rebuilt into the per-batch template; row Action links to Mortality/Regraft; "Record Monthly Inventory" UI removed):**
+  **(1) Inventory page (`/inventory`)** now lists **one row per batch** (parents + regraft sub-batches,
+  nested via `App\Support\BatchTree`) with **BATCH DATE / BATCH / SCION VARIETY / TOTAL GRAFTED / REGRAFT /
+  MORTALITY / DEFICIT / AVAILABLE / ACTION** — live values only (`Deficit` = `Batch::regraftDeficit()`,
+  `Available` = `available_count`; PRD §2.7/FR-08/§11, ERD §3.8/§3.12). The **"Record Monthly Inventory"**
+  button/modal was **removed from the page** (owner); the snapshot writer (`store()` +
+  `StoreInventorySnapshotRequest` + `inventory.snapshots.store`) is kept and still tested, but is
+  UI-unreachable. **Action** per non-archived row links to the existing flows:
+  **Mortality** → `/operational/mortality?batch_id=…` and **Regraft** →
+  `/operational/regraft?batch_id=…` (archived rows show `Archived`; without `record_operations` → `—`).
+  **(2) `Batch::regraftDeficit()`** gained an optional precomputed-mortality arg so the page reuses one
+  eager `withSum` (formula unchanged; same pattern as `survivingQuantity()`).
+  **(3) Verified:** full MySQL suite **373 passed / 1707 assertions** on `db_capstone_test`; Pint +
+  `php -l` + `view:cache` clean; **no migration/schema/route/permission/`db_capstone` change.** The
+  cumulative DI+DJ working-tree files are **uncommitted** (head `49351ce`).
+  **Next options:** continue the owner's manual flow-testing (top banner NEXT UP 0b) — use the Inventory
+  row Action links to record Mortality/Regraft for the batch — or start the remaining Session CS Tier-1
+  items.
+- **▶ Previous quick start (Session DI, 2026-10-02 — live `db_capstone` re-wiped; GitHub published; Dashboard KPI = Total Grafted):**
+  **(1) Wipe (owner-approved):** the same 8 operational tables were truncated (activity_logs, inventories,
+  stock_out_details, stock_outs, regraft_records, mortality_records, batches, stock_ins); backup
+  `...\Temp\opencode\db_capstone_pre_wipe_20261002_201903.sql` (37,136 B); master data preserved (users 1,
+  scion_varieties 5, suppliers 3, clients 3); `AUTO_INCREMENT` reset to 1; `cacao:health` clean
+  ("No batches to check.").
+  **(2) GitHub:** public repo **https://github.com/tingalfilepenf-pixel/CacaoTrack**, branch `master`,
+  remote `origin`; commit `49351ce` (Sessions DE–DH) pushed; `gh` CLI installed.
+  **(3) Dashboard:** the "Total Active Inventory" card is now **"Total Grafted"** =
+  `AnalyticsMetrics::totalGrafted()` = `SUM(total_grafted − regraft)` across all batches (seeded 750);
+  full MySQL suite **369 passed / 1686 assertions**; Pint + `php -l` clean; `db_capstone` untouched. The
+  5 dashboard files are **uncommitted**.
+  **Next options:** continue the owner's manual flow-testing on the empty live DB (top banner NEXT UP (0b))
+  — check the new Dashboard Total Grafted card after entering batches — or start the remaining Session CS
+  Tier-1 items.
+- **▶ Previous quick start (Session CY, 2026-10-01 — cross-batch-totals help note + live `db_capstone` reseed):**
   **(1) Help note (commit `b451b9c`):** the Stock Ledger nested Batch summary totals (view/PDF/CSV),
   the Gap Report Expected total (view/PDF/CSV) and the Inventory Total Grafted card now carry a one-line
   note that the cross-batch total counts each plant once (a regrafted plant is not added again under its
@@ -5435,6 +6619,20 @@ upgraded + reseeded in Phase 7D, 2026-09-29). **Committed** `7c84843`, `59488db`
 
 ## 3. Current database state (`db_capstone`)
 
+**✅ LATEST (Session DT, 2026-10-12) — live `db_capstone` holds owner-entered operational data
+(re-verified read-only this session).** The current live state is the Session DI re-wipe followed by the
+owner's manual entry (see banner `NEXT UP` (0)): **5 batches** — B001, B001-R1, B001-R1-R1, B001-R2, B002 —
+with stock_ins 2, mortality_records 2 (B001-R2 `Disease` **110**; B002 `Others: Over-irrigation` **13**),
+regraft_records 3, stock_outs 0, inventories 0, activity_logs 9; master data preserved (users 1 ·
+scion_varieties 5 · suppliers 3 · clients 3); **`cacao:health` PASSES all 5 invariants**. **Do NOT
+reseed/truncate without fresh owner sign-off.** The Session CY/CH paragraphs below are historical
+(superseded by the Session DI wipe and the owner's re-entry).
+
+**No schema and no data change in Sessions DX–DZ.** DX (test-only), DY (Regraft Deficit UI removal) and
+DZ (the Dashboard Total Active Inventory + Analytics Total Grafted KPI cards) are UI/test work. DZ's
+read-only live render through both controllers (no HTTP, no DB write) confirms Dashboard Total Active
+Inventory **813** and Analytics Total Grafted **853** / active **813**.
+
 **✅ LATEST (Session CY, 2026-10-01) — re-reseeded with today's fixes.** One owner-approved destructive
 action (`php artisan migrate:fresh --seed --force`, connection `mysql` / database `db_capstone`) after a
 verified backup
@@ -5987,6 +7185,133 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
        viability and scion-receipt Edit/Archive/Details remain unbuilt (client-gated, deferred).
 
 ## 5. Verification status
+- **Session DZ (Dashboard Total Active Inventory + Analytics Total Grafted KPI cards, 2026-10-12): full
+  suite GREEN; UI/controller/test only.** MySQL suite (`$env:DB_CONNECTION='mysql';
+  $env:DB_DATABASE='db_capstone_test'; php artisan test`) **407 passed / 1984 assertions, 0 failures**
+  (was 407/1977 at DY; +7 assertions locking the two cards and the PDF/CSV KPI alignment).
+  `DashboardController` passes `totalActiveInventory` and the `/` KPI row is 3 cards (`col-xl-4`);
+  `AnalyticsController::operationalData()` passes `totalGrafted` and the `/analytics` KPI row is 3 cards
+  (`col-md-4`); the Operational Analytics PDF KPI strip + CSV KPI section gained **Total Grafted** from
+  the same centralized `AnalyticsMetrics::totalGrafted()` (page/PDF/CSV one definition, RULE 6).
+  `vendor\bin\pint --test` + `php artisan view:cache` clean. Read-only live render on `db_capstone`
+  through both controllers (no HTTP/no DB write): Dashboard **813**, Analytics **853** / active **813**.
+  **No migration, schema, route, permission-key or `db_capstone` write.**
+- **Session DW (Daily Checklist History tab, 2026-10-12): full suite GREEN; read-only UI + tests only.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **406 passed / 1960 assertions, 0 failures** (was 400/1900 at DV; +6 `DailyChecklistTest` cases: record
+  list + selected detail, Completed/Pending derivation + status filter, staff/task search + date range,
+  per-task Not Done + no-write assertion, auto-filter form + empty state, pagination keeps filters). New
+  centralized `App\Support\ChecklistHistory` (RULE 6) builds one read-only record per day with stored
+  completions (date, staff/verifier + roles, counts, derived Completed/Pending status) and shares the
+  day's task-list definition with the existing `ChecklistPdf`; `DailyChecklistController@index` validates
+  the filters and selects the record, `exportPdf` now reads the shared definition; the view gains the
+  `Today's Checklist | History` tabs, the auto-applying filter card, the record list + read-only detail
+  and the full-details modal; scoped CSS in `app.css` (`npm run build` re-run). Read-only live check on
+  `db_capstone`: `ChecklistHistory::records()` → 1 record (2026-10-02, pending 1/4, Admin User), kernel
+  `GET /operational/checklist?tab=history` → 200, `cacao:health` PASSED. `vendor\bin\pint --test` +
+  `php artisan view:cache` clean. **No migration, schema, route, permission-key or `db_capstone` write;
+  tests run only against `db_capstone_test`.**
+- **Session DU (Inventory listing newest-first, 2026-10-12): full suite GREEN; 401 passed / 1913 assertions**
+  (was 399/1909 at DT). `BatchTree::flatten()`/`groups()` gained an opt-in `$descending` flag (roots newest
+  first, children still nested/ascending; every other consumer keeps the default) and
+  `InventoryController@index` passes `descending: true`, so a newly added batch lands on top of page 1.
+  `BatchTreeTest` +1 (descending roots + same-date tie-break + preserved nesting), `InventoryTest` +1
+  (B002 before the older B001 family with B001-R1 still nested). Pint clean; read-only live `db_capstone`
+  tree order starts with the newest root B002; `cacao:health` PASSED. **No migration, schema, route,
+  permission-key or `db_capstone` write.**
+- **Session DV (Archived tabs removed → guarded Delete on Checklist / Batches / Scion Variety, 2026-10-12):
+  full suite GREEN; 400 passed / 1900 assertions** (was 401/1913 at DU; net −1 after deleting the obsolete
+  archive/restore tests and adding the guarded-delete tests plus the new `ScionVarietyManagementTest`).
+  `ActivityTask::canBeDeleted()`, new `Batch::deletionBlockers()`/`canBeDeleted()` and new
+  `ScionVariety::deletionBlockers()`/`canBeDeleted()` (RULE 6); each delete is transactional and writes
+  `Activity_Log` (`task_deleted`, `batch_deleted`, new `scion_variety_deleted`); 6 archive/restore routes
+  removed and 2 DELETE routes added; the 3 page views are active-only. Approved one-time live cleanup: the
+  3 archived unreferenced scion varieties deleted through the guarded app path after a fresh backup
+  (`db_capstone_pre_scion_delete_20261012_175232.sql`, 34,928 B); live `scion_varieties` 2, every table 0
+  archived, `cacao:health` PASSED. Pint + `view:cache` clean. **No migration/schema change; no other live
+  data touched.**
+- **Session DT (Inventory View modal shows the recorded mortality causes, 2026-10-12): full suite GREEN; read-only UI/query/test only.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **399 passed / 1909 assertions, 0 failures** (was 398/1898 at DS; +1 `InventoryTest` case —
+  `test_inventory_view_modal_shows_the_recorded_mortality_causes` — plus the existing View-modal test
+  now asserts the empty-cause state `"mortality_causes":[]`). New centralized
+  `MortalityRecord::causeBreakdownByBatch()` (RULE 6) groups a batch's `mortality_records` by the
+  recorded `cause` (raw, incl. `Others: <description>`; blank → `Unspecified`), ordered by quantity then
+  cause; `InventoryController@index` calls it **once** per page (no N+1) and exposes `mortality_causes`
+  in each `summaries` row. The read-only `#viewBatchModal` renders it as a CAUSE / QUANTITY table built
+  with JS `textContent` (user text never interpreted as markup); "No mortality recorded for this batch."
+  otherwise. Read-only docs check: `_UPDATED` FR-04 ("Cause") / FR-08 ("derived from actual records") and
+  ERD §3.10 `Mortality_Record.Cause` are satisfied; no PRD/ERD edit. Read-only live check on
+  `db_capstone`: `B001-R2` → Disease 110, `B002` → "Others: Over-irrigation" 13, other batches empty.
+  `vendor\bin\pint --test` + `php artisan view:cache` clean. **No migration, schema, route,
+  permission-key or `db_capstone` write; tests run only against `db_capstone_test`.**
+- **Session DS (auto-filter UX unified on Inventory / Stock In / Stock Out / Stock Ledger, 2026-10-04): full suite GREEN; UI/test only.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **398 passed / 1898 assertions, 0 failures** (was 395/1873 at DR; +3 cases: `StockInTest::test_stock_in_filters_apply_automatically_without_an_apply_button`,
+  `StockOutTest::test_stock_out_filters_apply_automatically_without_an_apply_button`,
+  `AnalyticsTest::test_stock_ledger_filters_apply_automatically_without_an_apply_button`; the
+  `InventoryTest` auto-filter test also asserts `data-auto-filter`). The behavior is centralized once in
+  `resources/js/app.js` for every `form[data-auto-filter]`: search debounces 400 ms, select/date/number
+  fields submit on `change`, Enter submits immediately, double-submit guarded. The four filters keep their
+  page-specific fields (Inventory: search/variety/status/month/year; Stock In: search/supplier/type/dates;
+  Stock Out: search/client/batch/dates; Stock Ledger: batch/variety/dates) and only **Clear Filters**
+  remains. Controllers/routes/validation unchanged; `vendor\bin\pint --test` + `php artisan view:cache`
+  clean; `npm run build` re-run. Read-only docs check: `_UPDATED` §9.2 (filtering support) and §14
+  (consistent/refined UI) are satisfied; FR-09/FR-10 fields and ERD §3.7/§3.12/§3.14/§3.15 unchanged; no
+  PRD/ERD edit. **No migration, schema, controller, route, permission-key or `db_capstone` change; tests
+  run only against `db_capstone_test`.**
+- **Session DR (Inventory filters auto-apply server-side, 2026-10-04): full suite GREEN; UI/test only.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **395 passed / 1873 assertions, 0 failures** (was 394/1867 at DQ; +1 `InventoryTest` case —
+  `test_inventory_filters_apply_automatically_without_an_apply_button`, asserting `#inventoryFilterForm` /
+  `#filterSearch` / **Clear Filters** render and no funnel/Apply control exists). The search input
+  debounces 400 ms; the scion variety/status/batch-month selects and the batch-year field submit on
+  `change`; Enter submits immediately; `InventoryController@index` (server-side validation and the five
+  filter-aware summary cards) is unchanged. `vendor\bin\pint --test` + `php artisan view:cache` clean.
+  Read-only check of the docs: `_UPDATED` §2.7/FR-08 (values from actual records) and canonical PRD §9.2
+  ("Tables should support filtering …") are satisfied; no PRD/ERD edit. **No migration, schema,
+  controller, route, permission-key or `db_capstone` change; tests run only against `db_capstone_test`.**
+- **Session DQ (Add Batch form system-assigned code/date, 2026-10-04): full suite GREEN; UI/controller/test only.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **394 passed / 1867 assertions, 0 failures** (was 392/1855 at DP; `InventoryTest` +1 auto-assign case +
+  2 updated, `BatchManagementTest` +2 — sequential code + `nextBatchCode()` ignoring sub-batch/custom
+  codes — with the duplicate-code and future-date creation tests replaced). `vendor\bin\pint` + `php -l` +
+  `php artisan view:cache` clean. `Batch::nextBatchCode()` (RULE 6) assigns the next sequential root code
+  (`B001`, `B002`, …; sub-batch codes ignored) and `BatchController@store` stores `now()->toDateString()`;
+  `StoreBatchRequest` validates `Batch::storeRules()` and ignores submitted `batch_code`/`grafted_date`.
+  Read-only live check: `Batch::nextBatchCode()` = **B003** (live roots B001/B002). **No migration, schema,
+  route, permission-key or `db_capstone` change; tests run only against `db_capstone_test`.**
+- **Session DP (Inventory summary cards, 2026-10-03): full suite GREEN; UI/controller/test only.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **392 passed / 1855 assertions, 0 failures** (was 389/1831 at DO; +3 tests: 2 `InventoryTest` card
+  cases — live filtered values incl. archived exclusion + rendered titles/subtexts, and filter-awareness —
+  and 1 `SeededFamilyKpiTest` seeded card check; the Inventory page test was updated).
+  `vendor\bin\pint` + `php -l` + `php artisan view:cache` clean. `InventoryController@index` computes the
+  five card values from the existing `$summaries` map (no new queries) and drops the old `totalGrafted`
+  view variable; the page shows Total Mortality / Regraft Deficit / Total Regrafted / Total Active
+  Inventory (active batches only) / Total Batches. Read-only live check on the owner's 5 batches matched
+  independent queries exactly (123 / 123 / 270 / 853 / 5). **No migration, schema, route, permission-key
+  or `db_capstone` change; tests run only against `db_capstone_test`.**
+- **Session DN (Inventory table merged columns + "Regrafted" badge, 2026-10-03): full suite GREEN; UI/test only.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **385 passed / 1797 assertions, 0 failures** (was 384/1789 at DM; +1 `InventoryTest` case: the merged
+  BATCH DETAILS / TOTAL GRAFTED / REGRAFT cells render the correct inline dates through a real regraft
+  flow, header assertion now `BATCH DETAILS` + `Date: Jul 15, 2026`; `NestedBatchesTest` inventory badge
+  assertion → `Regrafted`). `vendor\bin\pint` + `php -l` + `php artisan view:cache` clean.
+  `InventoryController@index` adds one eager `withMax('regraftRecordsAsParent as latest_regraft_date',
+  'regraft_date')` (no N+1, exposed in `summaries`); no calculation, filter, sort, permission or action
+  changed. **No migration, schema, route, permission-key or `db_capstone` change; tests run only against
+  `db_capstone_test`.**
+- **Session DM (Inventory row Mortality/Regraft modal forms, 2026-10-03): full suite GREEN; UI/test only.**
+  MySQL suite (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`)
+  **384 passed / 1789 assertions, 0 failures** (was 379/1744 at DL; +5 `InventoryTest` cases: modal
+  exposure + form fields, modals hidden without `record_operations`, archived suppression, mortality +
+  regraft validation from `/inventory` with the `mortality`/`regraft` error bags, and both success flows
+  through the shared routes). `vendor\bin\pint` + `php -l` + `php artisan view:cache` clean. The row
+  Mortality/Regraft buttons open the same forms as the operational pages; `InventoryController@index` now
+  passes the Mortality dropdown data (`quantityBreakdown()`), the regraftable-batch dropdown data
+  (`survivingQuantity()`) + active scion varieties, and a per-row `regraftable` flag. **No migration,
+  schema, route, permission-key or `db_capstone` change; tests run only against `db_capstone_test`.**
 - **Session CY (cross-batch-totals help note + live `db_capstone` reseed, 2026-10-01): full suite GREEN; reseed verified.**
   **(1) Help note (commit `b451b9c`):** a one-line note that the total counts each plant once (a
   regrafted plant is not added again under its new sub-batch) was added to the Stock Ledger nested
@@ -6466,12 +7791,112 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
   ```
   A `db_capstone_test` MySQL database was created for this. `RefreshDatabase` wipes it each run —
   it is separate from `db_capstone`, so real data is safe. Never point tests at `db_capstone`.
-- Plain `php artisan test` / `composer test` will still fail until `pdo_sqlite` is enabled.
+- Session EE changed this: `phpunit.xml` now forces `DB_CONNECTION=mysql` /
+  `DB_DATABASE=db_capstone_test` (`force="true"`), and `tests/TestCase.php` throws before
+  `RefreshDatabase` can migrate if the database is not exactly `db_capstone_test`. Plain
+  `php artisan test` is therefore safe (SQLite is no longer used). The explicit PowerShell override
+  above remains the belt-and-braces command.
 - The foundation tables (`varieties`, `scions`, `pot_types`, `batches`) have no dedicated model
   tests (they are pure schema + seed data) — but every Management page built on them now has a
   feature test (`BatchManagementTest` added in Session Z).
 
+## 5a. Proposed live SQL — NOT EXECUTED (awaiting approval)
+
+**Do not run these statements without fresh owner approval.** They were written against the
+verified live shape (read-only): `db_capstone.users` has primary key `id` (not `user_id`),
+`permissions` is a nullable JSON array, and the single live account is role `Administrator` with
+`["manage_users","manage_inventory","manage_stock","record_operations","view_analytics","generate_reports","view_activity"]`.
+The statements add only the new checklist keys and preserve every existing key.
+
+```sql
+-- NOT EXECUTED — awaiting approval
+-- 1. Manager accounts: add manage_checklist only when missing.
+UPDATE users
+SET permissions = JSON_ARRAY_APPEND(COALESCE(permissions, JSON_ARRAY()), '$', 'manage_checklist')
+WHERE role = 'Manager'
+  AND JSON_VALID(COALESCE(permissions, JSON_ARRAY()))
+  AND NOT JSON_CONTAINS(COALESCE(permissions, JSON_ARRAY()), JSON_QUOTE('manage_checklist'));
+
+-- 2. Administrator accounts: add manage_checklist only when missing.
+UPDATE users
+SET permissions = JSON_ARRAY_APPEND(COALESCE(permissions, JSON_ARRAY()), '$', 'manage_checklist')
+WHERE role = 'Administrator'
+  AND JSON_VALID(COALESCE(permissions, JSON_ARRAY()))
+  AND NOT JSON_CONTAINS(COALESCE(permissions, JSON_ARRAY()), JSON_QUOTE('manage_checklist'));
+
+-- 3. Administrator accounts: add complete_checklist only when missing.
+UPDATE users
+SET permissions = JSON_ARRAY_APPEND(COALESCE(permissions, JSON_ARRAY()), '$', 'complete_checklist')
+WHERE role = 'Administrator'
+  AND JSON_VALID(COALESCE(permissions, JSON_ARRAY()))
+  AND NOT JSON_CONTAINS(COALESCE(permissions, JSON_ARRAY()), JSON_QUOTE('complete_checklist'));
+
+-- 4. OPTIONAL — only if an existing Staff account must complete checklist tasks.
+UPDATE users
+SET permissions = JSON_ARRAY_APPEND(COALESCE(permissions, JSON_ARRAY()), '$', 'complete_checklist')
+WHERE role = 'Staff'
+  AND JSON_VALID(COALESCE(permissions, JSON_ARRAY()))
+  AND NOT JSON_CONTAINS(COALESCE(permissions, JSON_ARRAY()), JSON_QUOTE('complete_checklist'));
+```
+
+**Expected live effect if ever approved:** statement 1 → 0 rows (no Manager account exists);
+statements 2–3 → 1 row (the Administrator gains `manage_checklist` and `complete_checklist`);
+statement 4 → 0 rows (no Staff account exists). No other permission key and no other table is
+touched. **Status: NOT EXECUTED — awaiting approval.** No live user permission was modified in
+Session EE.
+
 ## 6. Open decisions / next steps
+- **Latest sessions (DE–DZ) are captured in the top banner, "NEXT UP" and the "Quick start for the next
+  session" section:** **DE** = Stock In/Out quick-add links removed (view-only); **DF** = mortality cap
+  now `survivingQuantity()` + dropdown shows Original / Stock Out / Remaining; **DG** = branding
+  (logo in login/sidebar, navbar profile dropdown removed); **DH** = show/hide password toggles +
+  sidebar accordion/dead-space fix; **DI** = owner-approved `db_capstone` operational re-wipe, GitHub
+  publish (`49351ce`), Dashboard KPI → **Total Grafted** = `AnalyticsMetrics::totalGrafted()`; **DJ** =
+  **Inventory page rebuilt into the per-batch template** (BATCH DATE / BATCH / SCION VARIETY / TOTAL
+  GRAFTED / REGRAFT / MORTALITY / DEFICIT / AVAILABLE / ACTION), **"Record Monthly Inventory" UI
+  removed**; **DK** = the row read-only **Deficit** review modal (working definition, not yet
+  client-confirmed); **DL** = the Inventory **Add Batch** modal (same FR-06 form as
+  `/operational/batches`); **DM** = the row **Mortality/Regraft** actions open the same forms as the
+  operational pages in modals prefilled with the clicked batch; **DN** = the Inventory table columns
+  merged into **BATCH DETAILS / TOTAL GRAFTED / REGRAFT** (each value stacked with its date inline;
+  REGRAFT uses the latest `regraft_date` via a `withMax` aggregate) + the nested-row **Sub-batch** badge
+  renamed **Regrafted**; **DO** = the `Date:` labels removed + derived **STATUS** column
+  (Growing / Ready / Completed / Cancelled-Void, `Batch::lifecycleStatus()`; filter uses
+  `scopeWhereLifecycleStatus()`) and the row action rebuilt as **`[View] [More ▾]`** (read-only View modal;
+  Regraft / Record Mortality / Record Deficit under More) (suite **389/1831** at DO); **DP** = the five
+  filter-aware Inventory **summary cards** (Total Mortality / Regraft Deficit / Total Regrafted / Total
+  Active Inventory / Total Batches, replacing the Total Grafted card; suite **392/1855**); **DQ** = the
+  hosted Add Batch form now **system-assigns** the **Batch Code** (`Batch::nextBatchCode()`, next
+  sequential root code; live preview B003) and **Grafted Date** (today), both shown read-only;
+  `StoreBatchRequest` validates `Batch::storeRules()` and ignores submitted values (suite **394/1867**);
+  **DR** = the `/inventory` filter bar now **auto-applies server-side** — the Apply/Filter button is
+  removed and only **Clear Filters** remains; text search debounces 400 ms while the dropdowns/batch-year
+  submit immediately, and the table + five summary cards refresh together (suite **395/1873**);
+  **DS** = that auto-filter behavior is centralized once in `app.js` (`form[data-auto-filter]`) and reused
+  by `/inventory/stock-in`, `/inventory/stock-out` and `/analytics/stock-ledger`, which now share the same
+  Bootstrap filter card with only **Clear Filters** (suite **398/1898**); **DT** = the read-only Inventory
+  **View** modal now lists the batch's recorded **Mortality Causes** (cause + quantity via the new
+  centralized `MortalityRecord::causeBreakdownByBatch()`, one grouped query; raw `Others: <description>`
+  preserved; suite **399/1909**); **DU** = the `/inventory` listing is **newest-first** (`BatchTree` opt-in
+  `$descending` flag; `InventoryController@index` passes `descending: true`; suite **401/1913**); **DV** =
+  the **Archived tabs were removed** from Checklist / Batches / Scion Variety and row **Archive → guarded
+  permanent Delete** (centralized `canBeDeleted()`/`deletionBlockers()`; transactional deletes writing
+  `task_deleted` / `batch_deleted` / new `scion_variety_deleted`; 6 archive/restore routes → 2 DELETE
+  routes; approved one-time live cleanup of the 3 archived unreferenced scion varieties after a fresh
+  backup; suite **400/1900**); **DW** = the read-only **Daily Checklist History** tab (one record per day
+  with stored completions — date, staff, Completed/Pending, per-task Not Done; auto-applying
+  Search/From-To/Status + Clear Filters; selected-record detail with staff/verifier/remarks; **Print**
+  reuses the existing date PDF; **View Full Details** read-only modal; new `App\Support\ChecklistHistory`;
+  suite **406/1960**); **DZ** = the Dashboard **Total Active Inventory** card (`/`, live **813**) + the
+  Analytics **Total Grafted** card (`/analytics`, live **853**), both centralized `AnalyticsMetrics`
+  calls, with the Operational Analytics PDF/CSV KPI lists aligned (4-box PDF strip); suite **407/1984**;
+  **EA** = the Stock Ledger **"Remaining Available" column removed** from the page, the PDF and the CSV
+  (the running balance is still computed and reconciled internally as an integrity guard) and the
+  **CSV export rebuilt in the client's manual-ledger layout** (one block per month: month title,
+  grouped section + per-Scion-Variety header rows, events, month TOTAL; then GRAND TOTAL, footnote and
+  nested Batch summary); suite **407/1994**.
+  The DI+DJ+DK+DL+DM+DN+DO+DP+DQ+DR+DS+DT+DU+DV+DW+DZ+EA working-tree files are uncommitted (head `49351ce`).
+  Nothing below is newer than these.
 - **Latest sessions (CH–CY) are captured in the top banner, the "Quick start for the next session"
   section and §5.** Summary: **CH** = Phase 7D live-`db_capstone` upgrade + reseed; **CJ**/**CK** =
   client-confirmed cumulative `total_grafted` + corrected mortality-rate denominator
