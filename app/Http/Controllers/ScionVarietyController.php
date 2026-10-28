@@ -38,9 +38,12 @@ class ScionVarietyController extends Controller
             });
 
         $scionVarieties = (clone $visible)
-            // `stockOutDetails`/`stockIns` counts feed the row Delete button's
-            // dependency check (ScionVariety::deletionBlockers()).
-            ->withCount(['batches', 'stockOutDetails', 'stockIns'])
+            // The BATCHES column shows `batches_count`; the other two relations
+            // are only existence checks for the row Delete button's dependency
+            // check (ScionVariety::deletionBlockers()). `withExists()` supplies
+            // the `*_exists` attributes it reads, so no per-row queries run.
+            ->withCount('batches')
+            ->withExists(['batches', 'stockOutDetails', 'stockIns'])
             ->orderBy('scion_variety_name')
             ->paginate(10)
             ->withQueryString();
