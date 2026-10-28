@@ -18,6 +18,9 @@
     $filterValues = $filters ?? [];
     $roleOptions = $roleOptions ?? collect();
     $permissionCatalog = $permissionCatalog ?? \App\Models\Role::PERMISSIONS;
+    $permissionDescriptions = $permissionDescriptions ?? \App\Models\Role::PERMISSION_DESCRIPTIONS;
+    $roleDefaults = $roleDefaults ?? \App\Models\Role::DEFAULT_PERMISSIONS_BY_ROLE;
+    $roleTemplateNames = $roleTemplateNames ?? \App\Models\Role::templateRoleNames();
     $roleCounts = $roleCounts ?? collect();
     $totalUsers = $totalUsers ?? ($userList ? $userList->total() : 0);
     $administratorsCount = $administratorsCount ?? 0;
@@ -120,6 +123,47 @@
                 <div class="fs-3 fw-bold">{{ number_format($otherRolesCount) }}</div>
                 <div class="text-muted small">Staff and custom role names</div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Role templates and help (generated from the centralized Role catalog) -->
+<div class="card mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="m-0 font-weight-bold text-primary">What each role can do</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4" style="width: 14rem;">ROLE</th>
+                        <th>ACCESS RESTRICTIONS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (\App\Models\Role::ROLES as $templateRole)
+                        <tr>
+                            <td class="ps-4"><span class="badge {{ $roleBadge($templateRole) }}">{{ $templateRole }}</span></td>
+                            <td>
+                                @foreach ($roleDefaults[$templateRole] ?? [] as $key)
+                                    <span class="badge bg-light text-dark border mb-1" title="{{ $permissionDescriptions[$key] ?? '' }}">
+                                        {{ $permissionCatalog[$key] ?? $key }}
+                                    </span>
+                                @endforeach
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        <div class="border-top px-4 py-3">
+            <p class="text-muted small mb-1">
+                To create a new role, type a new role name and tick what it can do. Roles are saved per user.
+            </p>
+            <p class="text-muted small mb-0">
+                <i class="bi bi-info-circle me-1"></i>The built-in templates are proposed defaults and remain provisional pending panel confirmation. Applying a template never changes an existing account until you save the form.
+            </p>
         </div>
     </div>
 </div>
@@ -299,6 +343,18 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                         <div class="form-text">Choose a built-in role or type a custom role name.</div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            <select class="form-select form-select-sm" id="addUserTemplate" style="max-width: 14rem;" aria-label="Role template">
+                                <option value="">Choose a template…</option>
+                                @foreach ($roleTemplateNames as $templateName)
+                                    <option value="{{ $templateName }}">{{ $templateName }}</option>
+                                @endforeach
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-role-defaults="addUser">
+                                Apply role defaults
+                            </button>
+                        </div>
+                        <div class="form-text">Applying a template changes this form only; saving is a separate step.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label text-muted small fw-bold">Access Restrictions <span class="text-danger">*</span></label>
@@ -310,14 +366,15 @@
                         @enderror
                         <div class="border rounded p-3">
                             @foreach ($permissionCatalog as $key => $label)
-                                <div class="form-check">
+                                <div class="form-check mb-2">
                                     <input class="form-check-input" type="checkbox" name="permissions[]" value="{{ $key }}"
                                         id="addPermission_{{ $key }}" @checked(in_array($key, old('permissions', []), true))>
                                     <label class="form-check-label" for="addPermission_{{ $key }}">{{ $label }}</label>
+                                    <div class="form-text mt-0">{{ $permissionDescriptions[$key] ?? '' }}</div>
                                 </div>
                             @endforeach
                         </div>
-                        <div class="form-text">At least one access restriction is required. Administrator always keeps Manage Users &amp; Roles.</div>
+                        <div class="form-text">At least one access restriction is required. Administrator always keeps Manage Users and Roles.</div>
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
@@ -392,6 +449,18 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                         <div class="form-text">Use caution when changing your own role — demoting your own Administrator account may lock you out of management.</div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            <select class="form-select form-select-sm" id="editUserTemplate" style="max-width: 14rem;" aria-label="Role template">
+                                <option value="">Choose a template…</option>
+                                @foreach ($roleTemplateNames as $templateName)
+                                    <option value="{{ $templateName }}">{{ $templateName }}</option>
+                                @endforeach
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-role-defaults="editUser">
+                                Apply role defaults
+                            </button>
+                        </div>
+                        <div class="form-text">Applying a template changes this form only; saving is a separate step.</div>
                     </div>
                     <div class="mb-0">
                         <label class="form-label text-muted small fw-bold">Access Restrictions <span class="text-danger">*</span></label>
@@ -403,14 +472,15 @@
                         @enderror
                         <div class="border rounded p-3">
                             @foreach ($permissionCatalog as $key => $label)
-                                <div class="form-check">
+                                <div class="form-check mb-2">
                                     <input class="form-check-input" type="checkbox" name="permissions[]" value="{{ $key }}"
                                         id="editPermission_{{ $key }}">
                                     <label class="form-check-label" for="editPermission_{{ $key }}">{{ $label }}</label>
+                                    <div class="form-text mt-0">{{ $permissionDescriptions[$key] ?? '' }}</div>
                                 </div>
                             @endforeach
                         </div>
-                        <div class="form-text">At least one access restriction is required. Administrator always keeps Manage Users &amp; Roles.</div>
+                        <div class="form-text">At least one access restriction is required. Administrator always keeps Manage Users and Roles.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -541,8 +611,35 @@
                 document.querySelectorAll('#editUserForm input[name="permissions[]"]').forEach(function (checkbox) {
                     checkbox.checked = permissions.includes(checkbox.value);
                 });
+
+                const editTemplateSelect = document.getElementById('editUserTemplate');
+                if (editTemplateSelect) { editTemplateSelect.value = ''; }
             });
         }
+
+        // Role templates are generated once from Role::DEFAULT_PERMISSIONS_BY_ROLE
+        // and only change the form; the administrator still saves separately.
+        const roleDefaults = @json($roleDefaults);
+        document.querySelectorAll('[data-role-defaults]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const prefix = button.getAttribute('data-role-defaults');
+                const select = document.getElementById(prefix + 'Template');
+                const form = document.getElementById(prefix + 'Form');
+                const roleInput = document.getElementById(prefix + 'Role');
+                if (!select || !form || !select.value) { return; }
+
+                const template = select.value;
+                const defaults = Array.isArray(roleDefaults[template]) ? roleDefaults[template] : [];
+
+                form.querySelectorAll('input[name="permissions[]"]').forEach(function (checkbox) {
+                    checkbox.checked = defaults.includes(checkbox.value);
+                });
+
+                if (roleInput && template !== 'Blank') {
+                    roleInput.value = template;
+                }
+            });
+        });
 
         if (deleteModalEl) {
             deleteModalEl.addEventListener('show.bs.modal', function (event) {

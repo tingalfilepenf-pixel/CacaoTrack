@@ -5,9 +5,11 @@
 
 @section('page_actions')
 <div class="d-flex gap-2">
-    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#supplierModal">
-        <i class="bi bi-truck me-1"></i> New Supplier
-    </button>
+    @if (auth()->user()->hasPermission('manage_inventory'))
+        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#supplierModal">
+            <i class="bi bi-truck me-1"></i> New Supplier
+        </button>
+    @endif
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#stockInModal">
         <i class="bi bi-plus-lg me-1"></i> New Stock In
     </button>
@@ -90,8 +92,8 @@
 <!-- Filters -->
 <div class="card mb-4">
     <div class="card-body py-3">
-        <form method="GET" action="{{ route('inventory.stock-in') }}" class="row g-3 align-items-end">
-            <div class="col-md-3">
+        <form method="GET" action="{{ route('inventory.stock-in') }}" class="row g-3 align-items-end" id="stockInFilterForm" data-auto-filter>
+            <div class="col-md-2">
                 <label for="filterSearch" class="form-label text-muted small fw-bold mb-1">Search</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -125,12 +127,9 @@
                 <label for="filterDateTo" class="form-label text-muted small fw-bold mb-1">To</label>
                 <input type="date" class="form-control form-control-sm" id="filterDateTo" name="date_to" value="{{ $filters['date_to'] ?? '' }}">
             </div>
-            <div class="col-md-1 d-flex gap-2">
-                <button type="submit" class="btn btn-sm btn-outline-secondary flex-fill" title="Filter">
-                    <i class="bi bi-funnel"></i>
-                </button>
-                <a href="{{ route('inventory.stock-in') }}" class="btn btn-sm btn-outline-secondary" title="Reset filters">
-                    <i class="bi bi-arrow-counterclockwise"></i>
+            <div class="col-md-2">
+                <a href="{{ route('inventory.stock-in') }}" class="btn btn-sm btn-outline-secondary w-100" title="Clear all filters">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Clear Filters
                 </a>
             </div>
         </form>
@@ -299,6 +298,9 @@
                         @error('supplier_id', 'stockin')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
+                        @unless (auth()->user()->hasPermission('manage_inventory'))
+                            <div class="form-text">Not listed? Ask a Manager to add it.</div>
+                        @endunless
                     </div>
 
                     <div class="row mb-3">
@@ -388,6 +390,7 @@
     </div>
 </div>
 
+@if (auth()->user()->hasPermission('manage_inventory'))
 <!-- New Supplier Modal -->
 <div class="modal fade" id="supplierModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -432,6 +435,7 @@
         </div>
     </div>
 </div>
+@endif
 
 <!-- Stock In Details Modal -->
 <div class="modal fade" id="stockInDetailsModal" tabindex="-1" aria-hidden="true">
@@ -600,7 +604,7 @@
             new bootstrap.Modal(stockInModalEl).show();
         @elseif ($errors->stockin->any())
             new bootstrap.Modal(stockInModalEl).show();
-        @elseif ($errors->supplier->any())
+        @elseif ($errors->supplier->any() && supplierModalEl)
             new bootstrap.Modal(supplierModalEl).show();
         @endif
 

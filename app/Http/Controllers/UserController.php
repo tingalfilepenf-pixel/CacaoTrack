@@ -14,14 +14,15 @@ use Illuminate\View\View;
 class UserController extends Controller
 {
     /**
-     * FR-02 User Management listing. Readable by any authenticated user
-     * (mirrors the other Management pages); Add/Edit/Delete UI and routes
-     * are restricted to holders of the `manage_users` access restriction
-     * (see requireManageUsers() and the `permission:manage_users` middleware).
+     * FR-02 User Management. The listing and every mutation require the
+     * `manage_users` access restriction (route middleware + requireManageUsers()).
      *
      * A user's role name and access restrictions live directly on the user
      * (`users.role` + `users.permissions`), so this page is the single
-     * management surface — no separate Roles table exists (ERD §2.1).
+     * management surface — no separate Roles table exists (ERD §2.1). The role
+     * templates are generated from the centralized `Role` catalog and defaults
+     * (RULE 6); applying one only changes the form until the administrator
+     * saves, so stored permissions are never overwritten automatically.
      */
     public function index(Request $request): View
     {
@@ -67,6 +68,9 @@ class UserController extends Controller
             'filters' => $filters,
             'roleOptions' => $roleOptions,
             'permissionCatalog' => Role::PERMISSIONS,
+            'permissionDescriptions' => Role::PERMISSION_DESCRIPTIONS,
+            'roleDefaults' => Role::DEFAULT_PERMISSIONS_BY_ROLE,
+            'roleTemplateNames' => Role::templateRoleNames(),
             'roleCounts' => $roleCounts,
             'totalUsers' => (clone $base)->count(),
             'administratorsCount' => (clone $base)->where('role', Role::ADMINISTRATOR)->count(),
