@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\Role;
 use App\Models\User;
 use App\Support\AnalyticsMetrics;
 use Illuminate\Http\Request;
@@ -58,6 +59,29 @@ class DashboardController extends Controller
         }
 
         $actions = [];
+
+        // Staff see the four approved shortcuts only; Mortality and Regraft
+        // remain reachable from the Inventory page and their own routes.
+        if ($user->roleLabel() === Role::STAFF) {
+            if (
+                $user->hasPermission('record_operations')
+                || $user->hasPermission('manage_inventory')
+                || $user->hasPermission('manage_stock')
+            ) {
+                $actions[] = ['label' => 'Inventory', 'route' => 'inventory.index', 'icon' => 'bi-box-seam', 'class' => 'btn-outline-primary'];
+            }
+
+            if ($user->hasPermission('manage_stock')) {
+                $actions[] = ['label' => 'Stock In', 'route' => 'inventory.stock-in', 'icon' => 'bi-box-arrow-in-right', 'class' => 'btn-outline-primary'];
+                $actions[] = ['label' => 'Stock Out', 'route' => 'inventory.stock-out', 'icon' => 'bi-box-arrow-right', 'class' => 'btn-outline-secondary'];
+            }
+
+            if ($user->hasPermission('manage_checklist') || $user->hasPermission('complete_checklist')) {
+                $actions[] = ['label' => 'Daily Checklist', 'route' => 'operational.checklist', 'icon' => 'bi-check-square', 'class' => 'btn-outline-success'];
+            }
+
+            return $actions;
+        }
 
         if ($user->hasPermission('record_operations')) {
             $actions[] = ['label' => 'Record Mortality', 'route' => 'operational.mortality', 'icon' => 'bi-clipboard-pulse', 'class' => 'btn-outline-danger'];

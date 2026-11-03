@@ -597,9 +597,12 @@ class RolePermissionAccessTest extends TestCase
         $this->actingAs($staff)->get(route('dashboard'))
             ->assertOk()
             ->assertSee('Quick Actions')
-            ->assertSee('Record Mortality')
+            ->assertSee('Inventory')
             ->assertSee('Stock In')
+            ->assertSee('Stock Out')
             ->assertSee('Daily Checklist')
+            ->assertDontSee('Record Mortality')
+            ->assertDontSee('Record Regraft')
             ->assertDontSee('Total Grafted')
             ->assertDontSee('Crude Mortality Rate')
             ->assertDontSee('Recent Activities');

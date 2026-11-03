@@ -78,7 +78,10 @@ class DashboardTest extends TestCase
         $response->assertViewHas('crudeMortalityRate', AnalyticsMetrics::crudeMortalityRate());
 
         // Real rendered values: 200 grafted (live population), 20/200 = 10.00%.
+        // Effective active inventory: 180 available − 20 mortality = 160.
+        $this->assertSame(160, AnalyticsMetrics::totalActiveInventory());
         $response->assertSee('200');
+        $response->assertSee('160');
         $response->assertSee('10.00%');
     }
 
@@ -126,6 +129,54 @@ class DashboardTest extends TestCase
         $response->assertDontSee('8.4%');
         $response->assertDontSee('5,200');
         $response->assertDontSee('Supplier A');
+    }
+
+    public function test_staff_quick_actions_are_the_four_approved_shortcuts(): void
+    {
+        $staff = User::factory()->create();
+
+        $this->actingAs($staff)->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Quick Actions')
+            ->assertViewHas('quickActions', fn (array $actions) => $actions === [
+                ['label' => 'Inventory', 'route' => 'inventory.index', 'icon' => 'bi-box-seam', 'class' => 'btn-outline-primary'],
+                ['label' => 'Stock In', 'route' => 'inventory.stock-in', 'icon' => 'bi-box-arrow-in-right', 'class' => 'btn-outline-primary'],
+                ['label' => 'Stock Out', 'route' => 'inventory.stock-out', 'icon' => 'bi-box-arrow-right', 'class' => 'btn-outline-secondary'],
+                ['label' => 'Daily Checklist', 'route' => 'operational.checklist', 'icon' => 'bi-check-square', 'class' => 'btn-outline-success'],
+            ])
+            ->assertDontSee('Record Mortality')
+            ->assertDontSee('Record Regraft');
+    }
+
+    public function test_administrator_and_manager_quick_actions_are_unchanged(): void
+    {
+        $administrator = User::factory()->admin()->create();
+
+        $this->actingAs($administrator)->get(route('dashboard'))
+            ->assertOk()
+            ->assertViewHas('quickActions', fn (array $actions) => array_column($actions, 'label') === [
+                'Record Mortality',
+                'Record Regraft',
+                'Stock In',
+                'Stock Out',
+                'Daily Checklist',
+                'Scion Varieties',
+                'Clients',
+                'Suppliers',
+                'Reports',
+            ]);
+
+        $manager = User::factory()->role(Role::MANAGER)->create();
+
+        $this->actingAs($manager)->get(route('dashboard'))
+            ->assertOk()
+            ->assertViewHas('quickActions', fn (array $actions) => array_column($actions, 'label') === [
+                'Daily Checklist',
+                'Scion Varieties',
+                'Clients',
+                'Suppliers',
+                'Reports',
+            ]);
     }
 
     public function test_dashboard_recent_activities_use_the_real_audit_trail_and_are_limited_to_five(): void
