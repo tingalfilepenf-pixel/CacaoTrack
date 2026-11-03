@@ -30,6 +30,18 @@ class TaskComplete extends Model
         ];
     }
 
+    /**
+     * Maker–checker rule (FR-03): a completion may be verified only while it
+     * is still unverified and by a person other than the one who completed it.
+     * This is the single definition reused by the controller guard and both
+     * checklist views (RULE 6).
+     */
+    public function canBeVerifiedBy(User $user): bool
+    {
+        return $this->verified_at === null
+            && (int) $this->user_id !== (int) $user->getKey();
+    }
+
     public function task(): BelongsTo
     {
         return $this->belongsTo(ActivityTask::class, 'task_id', 'task_id');

@@ -170,6 +170,46 @@ class DatabaseSeeder extends Seeder
             );
         }
 
+        // Stock In has no batch_id: it records the received quantity before a
+        // batch is established. Scion_Receiving was merged into Stock_In
+        // (client-confirmed same real-world event), so scion receipts are seeded
+        // here too: a row with a `scion_variety_id` includes scion; a seedling
+        // row leaves it null. The scion receipts for varieties used by the
+        // seeded regrafts are recorded before those regrafts run.
+        $stockIns = [
+            ['supplier_name' => 'Davao Cacao Growers', 'quantity' => 500, 'origin' => 'Davao del Sur', 'date_received' => '2026-07-01'],
+            ['supplier_name' => 'Bukidnon Seedling Supply', 'quantity' => 300, 'origin' => 'Bukidnon', 'date_received' => '2026-08-01'],
+            ['scion_variety_name' => 'Criollo', 'supplier_name' => 'Davao Cacao Growers', 'quantity' => 120, 'unit_price' => 12.50, 'origin' => 'Davao del Sur', 'notes' => 'Premium Criollo scion bundle.', 'date_received' => '2026-08-15'],
+            ['scion_variety_name' => 'Toledo', 'supplier_name' => 'Davao Cacao Growers', 'quantity' => 100, 'unit_price' => 11.50, 'origin' => 'Davao del Sur', 'notes' => 'Toledo scion bundle for the seeded regraft.', 'date_received' => '2026-09-01'],
+            ['scion_variety_name' => 'Trinitario', 'supplier_name' => null, 'quantity' => 80, 'unit_price' => null, 'origin' => null, 'notes' => null, 'date_received' => '2026-08-20'],
+        ];
+
+        foreach ($stockIns as $stockIn) {
+            $isScion = isset($stockIn['scion_variety_name']);
+
+            $supplierId = $stockIn['supplier_name'] === null
+                ? null
+                : Supplier::where('supplier_name', $stockIn['supplier_name'])->value('supplier_id');
+
+            $scionVarietyId = $isScion
+                ? ScionVariety::where('scion_variety_name', $stockIn['scion_variety_name'])->value('scion_variety_id')
+                : null;
+
+            $keys = $isScion
+                ? ['scion_variety_id' => $scionVarietyId, 'date_received' => $stockIn['date_received']]
+                : ['supplier_id' => $supplierId, 'date_received' => $stockIn['date_received']];
+
+            StockIn::firstOrCreate($keys, [
+                'supplier_id' => $supplierId,
+                'scion_variety_id' => $scionVarietyId,
+                'user_id' => $admin->id,
+                'quantity' => $stockIn['quantity'],
+                'unit_price' => $stockIn['unit_price'] ?? null,
+                'origin' => $stockIn['origin'] ?? '',
+                'notes' => $stockIn['notes'] ?? null,
+            ]);
+        }
+
         // Phase 7B regraft scenario — seeded ONLY through the RegraftBatch action
         // (never a raw insert): 100 plants move out of B001 Batangas into the
         // linked sub-batch B001-R1 using Toledo. Guarded so re-running the
@@ -219,44 +259,6 @@ class DatabaseSeeder extends Seeder
         }
 
         $b001r1r1 ??= Batch::where('batch_code', 'B001-R1-R1')->first();
-
-        // Stock In has no batch_id: it records the received quantity before a
-        // batch is established. Scion_Receiving was merged into Stock_In
-        // (client-confirmed same real-world event), so scion receipts are seeded
-        // here too: a row with a `scion_variety_id` includes scion; a seedling
-        // row leaves it null.
-        $stockIns = [
-            ['supplier_name' => 'Davao Cacao Growers', 'quantity' => 500, 'origin' => 'Davao del Sur', 'date_received' => '2026-07-01'],
-            ['supplier_name' => 'Bukidnon Seedling Supply', 'quantity' => 300, 'origin' => 'Bukidnon', 'date_received' => '2026-08-01'],
-            ['scion_variety_name' => 'Criollo', 'supplier_name' => 'Davao Cacao Growers', 'quantity' => 120, 'unit_price' => 12.50, 'origin' => 'Davao del Sur', 'notes' => 'Premium Criollo scion bundle.', 'date_received' => '2026-08-15'],
-            ['scion_variety_name' => 'Trinitario', 'supplier_name' => null, 'quantity' => 80, 'unit_price' => null, 'origin' => null, 'notes' => null, 'date_received' => '2026-08-20'],
-        ];
-
-        foreach ($stockIns as $stockIn) {
-            $isScion = isset($stockIn['scion_variety_name']);
-
-            $supplierId = $stockIn['supplier_name'] === null
-                ? null
-                : Supplier::where('supplier_name', $stockIn['supplier_name'])->value('supplier_id');
-
-            $scionVarietyId = $isScion
-                ? ScionVariety::where('scion_variety_name', $stockIn['scion_variety_name'])->value('scion_variety_id')
-                : null;
-
-            $keys = $isScion
-                ? ['scion_variety_id' => $scionVarietyId, 'date_received' => $stockIn['date_received']]
-                : ['supplier_id' => $supplierId, 'date_received' => $stockIn['date_received']];
-
-            StockIn::firstOrCreate($keys, [
-                'supplier_id' => $supplierId,
-                'scion_variety_id' => $scionVarietyId,
-                'user_id' => $admin->id,
-                'quantity' => $stockIn['quantity'],
-                'unit_price' => $stockIn['unit_price'] ?? null,
-                'origin' => $stockIn['origin'] ?? '',
-                'notes' => $stockIn['notes'] ?? null,
-            ]);
-        }
 
         // Stock Out: header + one detail line. Phase 7B scenario — the release
         // is taken from the regraft sub-batch B001-R1 (seedlings move out of the

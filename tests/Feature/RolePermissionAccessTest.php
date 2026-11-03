@@ -371,6 +371,155 @@ class RolePermissionAccessTest extends TestCase
         $this->assertDatabaseMissing('task_completes', ['task_id' => $second->task_id]);
     }
 
+    public function test_same_user_cannot_verify_their_own_checklist_completion(): void
+    {
+        foreach ([Role::MANAGER, Role::ADMINISTRATOR] as $roleName) {
+            $user = User::factory()->role($roleName)->create();
+            $task = $this->createTask('Own completion for '.$roleName);
+            $completion = TaskComplete::create([
+                'task_id' => $task->task_id,
+                'user_id' => $user->id,
+                'completion_date' => now()->toDateString(),
+            ]);
+
+            $this->actingAs($user)
+                ->post(route('operational.checklist.completions.verify', $completion))
+                ->assertRedirect(route('operational.checklist'))
+                ->assertSessionHas('error', 'A different person must verify this task. You completed it.');
+
+            $completion->refresh();
+            $this->assertNull($completion->verified_by_id);
+            $this->assertNull($completion->verified_at);
+        }
+
+        $staff = User::factory()->create();
+        $task = $this->createTask('Own completion for Staff');
+        $completion = TaskComplete::create([
+            'task_id' => $task->task_id,
+            'user_id' => $staff->id,
+            'completion_date' => now()->toDateString(),
+        ]);
+
+        $this->actingAs($staff)
+            ->post(route('operational.checklist.completions.verify', $completion))
+            ->assertForbidden();
+
+        $this->assertNull($completion->fresh()->verified_at);
+    }
+
+    public function test_a_different_manage_checklist_holder_can_verify_a_completion(): void
+    {
+        $completer = User::factory()->role(Role::MANAGER)->create();
+        $verifier = User::factory()->role(Role::MANAGER)->create();
+        $task = $this->createTask('Cross verification');
+        $completion = TaskComplete::create([
+            'task_id' => $task->task_id,
+            'user_id' => $completer->id,
+            'completion_date' => now()->toDateString(),
+        ]);
+
+        $this->actingAs($verifier)
+            ->post(route('operational.checklist.completions.verify', $completion))
+            ->assertRedirect(route('operational.checklist'))
+            ->assertSessionHas('success', 'Task verification recorded.');
+
+        $completion->refresh();
+        $this->assertSame($verifier->id, $completion->verified_by_id);
+        $this->assertNotNull($completion->verified_at);
+    }
+
+    public function test_an_already_verified_completion_cannot_be_verified_again(): void
+    {
+        $verifier = User::factory()->role(Role::MANAGER)->create();
+        $completer = User::factory()->create();
+        $task = $this->createTask('Already verified');
+        $completion = TaskComplete::create([
+            'task_id' => $task->task_id,
+            'user_id' => $completer->id,
+            'verified_by_id' => $verifier->id,
+            'completion_date' => now()->toDateString(),
+            'verified_at' => now(),
+        ]);
+
+        $this->actingAs($verifier)
+            ->post(route('operational.checklist.completions.verify', $completion))
+            ->assertRedirect(route('operational.checklist'))
+            ->assertSessionHas('error', 'This task has already been verified.');
+    }
+
+    public function test_own_completion_hides_the_verify_button_and_shows_the_another_person_note(): void
+    {
+        $manager = User::factory()->role(Role::MANAGER)->create();
+        $task = $this->createTask('Self-completed task');
+        $completion = TaskComplete::create([
+            'task_id' => $task->task_id,
+            'user_id' => $manager->id,
+            'completion_date' => now()->toDateString(),
+        ]);
+        $verifyUrl = route('operational.checklist.completions.verify', $completion);
+
+        foreach ([
+            route('operational.checklist'),
+            route('operational.checklist', ['tab' => 'history']),
+        ] as $url) {
+            $this->actingAs($manager)->get($url)
+                ->assertOk()
+                ->assertSee('Another person must verify this.')
+                ->assertDontSee('data-verify-url="'.$verifyUrl.'"', false);
+        }
+
+        $otherManager = User::factory()->role(Role::MANAGER)->create();
+
+        $this->actingAs($otherManager)->get(route('operational.checklist'))
+            ->assertOk()
+            ->assertSee('data-verify-url="'.$verifyUrl.'"', false)
+            ->assertDontSee('Another person must verify this.');
+    }
+
+    public function test_role_descriptions_and_can_cannot_lists_are_generated_from_the_permission_catalog(): void
+    {
+        foreach (Role::ROLES as $roleName) {
+            $this->assertArrayHasKey($roleName, Role::ROLE_DESCRIPTIONS);
+            $this->assertNotSame('', Role::descriptionFor($roleName));
+
+            $can = Role::canDo($roleName);
+            $cannot = Role::cannotDo($roleName);
+            $canKeys = array_column($can, 'key');
+            $cannotKeys = array_column($cannot, 'key');
+
+            $this->assertEqualsCanonicalizing(Role::defaultPermissionsFor($roleName), $canKeys);
+            $this->assertEqualsCanonicalizing(array_keys(Role::PERMISSIONS), [...$canKeys, ...$cannotKeys]);
+            $this->assertSame([], array_values(array_intersect($canKeys, $cannotKeys)));
+
+            foreach ([...$can, ...$cannot] as $permission) {
+                $this->assertSame(Role::PERMISSIONS[$permission['key']], $permission['label']);
+                $this->assertSame(Role::PERMISSION_DESCRIPTIONS[$permission['key']], $permission['description']);
+            }
+        }
+
+        $this->assertSame([], Role::cannotDo(Role::ADMINISTRATOR));
+        $this->assertSame([], Role::canDo('Custom Role'));
+        $this->assertNull(Role::descriptionFor('Custom Role'));
+        $this->assertStringNotContainsStringIgnoringCase('approve staff', implode(' ', Role::ROLE_DESCRIPTIONS));
+    }
+
+    public function test_user_management_shows_role_guides_and_custom_role_text(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->get(route('users.index'))
+            ->assertOk()
+            ->assertSee(Role::descriptionFor(Role::ADMINISTRATOR))
+            ->assertSee(Role::descriptionFor(Role::MANAGER))
+            ->assertSee(Role::descriptionFor(Role::STAFF))
+            ->assertSee('Custom role: permissions chosen for this user.')
+            ->assertSee('id="addUserRoleGuide"', false)
+            ->assertSee('id="editUserRoleGuide"', false)
+            ->assertSee('id="addUserRoleGuideCan"', false)
+            ->assertSee('id="editUserRoleGuideCannot"', false)
+            ->assertDontSee('approve staff records', false);
+    }
+
     public function test_user_management_shows_templates_descriptions_and_help(): void
     {
         $admin = User::factory()->admin()->create();

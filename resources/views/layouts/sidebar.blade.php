@@ -34,7 +34,7 @@
 @endphp
 <nav id="sidebar">
     <div class="sidebar-header">
-        <img src="{{ asset('images/cacao-logo.jpg') }}" alt="CACAO TRACK" style="height: 40px; width: 40px; object-fit: contain; border-radius: 50%;">
+        <img src="{{ asset('images/cacao-logo.jpg') }}" alt="CACAO TRACK" style="height: 48px; width: 48px; object-fit: contain; border-radius: 50%; background-color: #fff; border: 2px solid rgba(255, 255, 255, 0.45);">
     </div>
     
     <div class="nav flex-column py-2" id="sidebarNav">
@@ -148,7 +148,7 @@
             <i class="bi bi-person-circle"></i>
             <span>Profile</span>
         </a>
-        <div class="px-3 pb-2 text-muted small">
+        <div class="px-3 pb-2 text-white-50 small">
             <i class="bi bi-person-badge me-1"></i>Signed in as {{ $currentUser?->roleLabel() ?? 'Guest' }}
         </div>
         <form method="POST" action="{{ route('logout') }}">

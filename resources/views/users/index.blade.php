@@ -20,6 +20,14 @@
     $permissionCatalog = $permissionCatalog ?? \App\Models\Role::PERMISSIONS;
     $permissionDescriptions = $permissionDescriptions ?? \App\Models\Role::PERMISSION_DESCRIPTIONS;
     $roleDefaults = $roleDefaults ?? \App\Models\Role::DEFAULT_PERMISSIONS_BY_ROLE;
+    $roleGuides = collect(\App\Models\Role::ROLES)->mapWithKeys(fn ($roleName) => [
+        $roleName => [
+            'description' => \App\Models\Role::descriptionFor($roleName),
+            'can' => collect(\App\Models\Role::canDo($roleName))->pluck('label')->all(),
+            'cannot' => collect(\App\Models\Role::cannotDo($roleName))->pluck('label')->all(),
+        ],
+    ])->all();
+    $customRoleDescription = 'Custom role: permissions chosen for this user.';
     $roleTemplateNames = $roleTemplateNames ?? \App\Models\Role::templateRoleNames();
     $roleCounts = $roleCounts ?? collect();
     $totalUsers = $totalUsers ?? ($userList ? $userList->total() : 0);
@@ -137,20 +145,39 @@
             <table class="table table-sm align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th class="ps-4" style="width: 14rem;">ROLE</th>
-                        <th>ACCESS RESTRICTIONS</th>
+                        <th class="ps-4" style="width: 17rem;">ROLE</th>
+                        <th>CAN</th>
+                        <th>CANNOT</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (\App\Models\Role::ROLES as $templateRole)
                         <tr>
-                            <td class="ps-4"><span class="badge {{ $roleBadge($templateRole) }}">{{ $templateRole }}</span></td>
+                            <td class="ps-4">
+                                <span class="badge {{ $roleBadge($templateRole) }}">{{ $templateRole }}</span>
+                                <div class="text-muted small mt-2">{{ \App\Models\Role::descriptionFor($templateRole) }}</div>
+                            </td>
                             <td>
-                                @foreach ($roleDefaults[$templateRole] ?? [] as $key)
-                                    <span class="badge bg-light text-dark border mb-1" title="{{ $permissionDescriptions[$key] ?? '' }}">
-                                        {{ $permissionCatalog[$key] ?? $key }}
-                                    </span>
-                                @endforeach
+                                <ul class="list-unstyled mb-0 small">
+                                    @forelse (\App\Models\Role::canDo($templateRole) as $permission)
+                                        <li class="mb-1" title="{{ $permission['description'] }}">
+                                            <i class="bi bi-check-circle-fill text-success me-1"></i>{{ $permission['label'] }}
+                                        </li>
+                                    @empty
+                                        <li class="text-muted">No access restrictions.</li>
+                                    @endforelse
+                                </ul>
+                            </td>
+                            <td>
+                                <ul class="list-unstyled mb-0 small text-muted">
+                                    @forelse (\App\Models\Role::cannotDo($templateRole) as $permission)
+                                        <li class="mb-1" title="{{ $permission['description'] }}">
+                                            <i class="bi bi-dash-circle me-1"></i>{{ $permission['label'] }}
+                                        </li>
+                                    @empty
+                                        <li>No restrictions in the catalog.</li>
+                                    @endforelse
+                                </ul>
                             </td>
                         </tr>
                     @endforeach
@@ -163,6 +190,7 @@
             </p>
             <p class="text-muted small mb-0">
                 <i class="bi bi-info-circle me-1"></i>The built-in templates are proposed defaults and remain provisional pending panel confirmation. Applying a template never changes an existing account until you save the form.
+                Custom role names are not listed above. {{ $customRoleDescription }}
             </p>
         </div>
     </div>
@@ -355,6 +383,7 @@
                             </button>
                         </div>
                         <div class="form-text">Applying a template changes this form only; saving is a separate step.</div>
+                        @include('users.partials.role-guide', ['prefix' => 'addUser'])
                     </div>
                     <div class="mb-3">
                         <label class="form-label text-muted small fw-bold">Access Restrictions <span class="text-danger">*</span></label>
@@ -461,6 +490,7 @@
                             </button>
                         </div>
                         <div class="form-text">Applying a template changes this form only; saving is a separate step.</div>
+                        @include('users.partials.role-guide', ['prefix' => 'editUser'])
                     </div>
                     <div class="mb-0">
                         <label class="form-label text-muted small fw-bold">Access Restrictions <span class="text-danger">*</span></label>
@@ -614,12 +644,70 @@
 
                 const editTemplateSelect = document.getElementById('editUserTemplate');
                 if (editTemplateSelect) { editTemplateSelect.value = ''; }
+
+                renderRoleGuide('editUser', document.getElementById('editUserRole').value);
             });
         }
 
-        // Role templates are generated once from Role::DEFAULT_PERMISSIONS_BY_ROLE
-        // and only change the form; the administrator still saves separately.
+        if (addModalEl) {
+            addModalEl.addEventListener('show.bs.modal', function () {
+                const roleInput = document.getElementById('addUserRole');
+                renderRoleGuide('addUser', roleInput ? roleInput.value : '');
+            });
+        }
+
+        // Role templates and the role guide are generated once from the
+        // centralized Role catalog; applying one only changes the form and the
+        // administrator still saves separately.
         const roleDefaults = @json($roleDefaults);
+        const roleGuides = @json($roleGuides);
+        const customRoleDescription = @json($customRoleDescription);
+
+        const fillRoleGuideList = function (list, items, iconClass) {
+            if (!list) { return; }
+            list.innerHTML = '';
+            items.forEach(function (label) {
+                const item = document.createElement('li');
+                item.className = 'mb-1';
+                const icon = document.createElement('i');
+                icon.className = iconClass + ' me-1';
+                item.appendChild(icon);
+                item.appendChild(document.createTextNode(label));
+                list.appendChild(item);
+            });
+        };
+
+        const renderRoleGuide = function (prefix, roleName) {
+            const panel = document.getElementById(prefix + 'RoleGuide');
+            if (!panel) { return; }
+
+            const name = (roleName || '').trim();
+            if (!name) {
+                panel.classList.add('d-none');
+                return;
+            }
+
+            const guide = Object.prototype.hasOwnProperty.call(roleGuides, name) ? roleGuides[name] : null;
+            const title = document.getElementById(prefix + 'RoleGuideTitle');
+            const description = document.getElementById(prefix + 'RoleGuideDescription');
+            const canList = document.getElementById(prefix + 'RoleGuideCan');
+            const cannotList = document.getElementById(prefix + 'RoleGuideCannot');
+
+            panel.classList.remove('d-none');
+            if (title) { title.textContent = name; }
+
+            if (!guide) {
+                if (description) { description.textContent = customRoleDescription; }
+                fillRoleGuideList(canList, [], 'bi bi-check-circle-fill text-success');
+                fillRoleGuideList(cannotList, [], 'bi bi-dash-circle');
+                return;
+            }
+
+            if (description) { description.textContent = guide.description; }
+            fillRoleGuideList(canList, guide.can || [], 'bi bi-check-circle-fill text-success');
+            fillRoleGuideList(cannotList, guide.cannot || [], 'bi bi-dash-circle');
+        };
+
         document.querySelectorAll('[data-role-defaults]').forEach(function (button) {
             button.addEventListener('click', function () {
                 const prefix = button.getAttribute('data-role-defaults');
@@ -638,7 +726,32 @@
                 if (roleInput && template !== 'Blank') {
                     roleInput.value = template;
                 }
+
+                renderRoleGuide(prefix, template === 'Blank' ? (roleInput ? roleInput.value : '') : template);
             });
+        });
+
+        ['addUser', 'editUser'].forEach(function (prefix) {
+            const select = document.getElementById(prefix + 'Template');
+            const roleInput = document.getElementById(prefix + 'Role');
+
+            const guideName = function () {
+                const template = select ? select.value : '';
+                if (template && template !== 'Blank') { return template; }
+                return roleInput ? roleInput.value : '';
+            };
+
+            if (select) {
+                select.addEventListener('change', function () {
+                    renderRoleGuide(prefix, guideName());
+                });
+            }
+
+            if (roleInput) {
+                roleInput.addEventListener('input', function () {
+                    renderRoleGuide(prefix, roleInput.value);
+                });
+            }
         });
 
         if (deleteModalEl) {

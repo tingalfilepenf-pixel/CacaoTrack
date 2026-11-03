@@ -107,11 +107,17 @@ class CorrectRecord
      * and remark. The source batch's live balance and regraft counter and the
      * linked sub-batch's counts are adjusted atomically so the invariants keep
      * holding. The new quantity is re-validated against the source's
-     * surviving cap as if the original regraft had never happened.
+     * surviving cap as if the original regraft had never happened, and against
+     * the selected scion variety's derived stock: the record's own current
+     * consumption is returned first, and the resulting total consumption may
+     * never exceed the stock received for that variety.
      *
      * Blocked outright when the created sub-batch already has dependent activity
      * (mortality, stock-out or a further regraft), matching the rule that locks
-     * a regraft transaction once its sub-batch has operational records.
+     * a regraft transaction once its sub-batch has operational records. The
+     * affected scion-variety rows are locked in ascending id order together
+     * with the source and sub-batch, so concurrent regrafts and corrections
+     * cannot overdraw the derived stock.
      *
      * @param  array<string, mixed>  $data
      * @return array<string, array{from: mixed, to: mixed}>
@@ -130,16 +136,34 @@ class CorrectRecord
             $source = Batch::query()->lockForUpdate()->findOrFail($locked->parent_batch_id);
             $subBatch = Batch::query()->lockForUpdate()->findOrFail($locked->batch_id);
 
+            $oldQuantity = (int) $locked->quantity;
+            $newQuantity = (int) $data['quantity'];
+            $currentVarietyId = $subBatch->scion_variety_id !== null
+                ? (int) $subBatch->scion_variety_id
+                : null;
+            $newVarietyId = (int) $data['scion_variety_id'];
+
+            // Lock every scion variety affected by the correction in ascending
+            // id order before reading availability. This shares the regraft
+            // action's locking strategy, so regrafts and corrections touching
+            // the same derived stock serialize instead of overdrawing it.
+            $varieties = ScionVariety::lockForScionStock([$currentVarietyId, $newVarietyId]);
+            $newVariety = $varieties->get($newVarietyId);
+
+            if ($newVariety === null || $newVariety->isArchived()) {
+                $this->fail('regraft_correction', [
+                    'scion_variety_id' => 'Select an active scion variety.',
+                ]);
+            }
+
             // Rule 4: a regraft whose sub-batch already has operational records
-            // is locked and must not be rewritten.
+            // is locked and must not be rewritten. This runs after the variety
+            // locks so its reads use the post-lock snapshot.
             if ($subBatch->hasDependentActivity()) {
                 $this->fail('regraft_correction', [
                     'record' => self::dependentSubBatchMessage($subBatch->batch_code),
                 ]);
             }
-
-            $oldQuantity = (int) $locked->quantity;
-            $newQuantity = (int) $data['quantity'];
 
             // Regraftable cap with this record's own quantity treated as
             // returned to the source, then re-applied.
@@ -154,14 +178,20 @@ class CorrectRecord
                 ]);
             }
 
-            $scionVariety = ScionVariety::query()
-                ->whereKey($data['scion_variety_id'])
-                ->whereNull('archived_at')
-                ->first();
+            // The record's own current consumption is returned to its current
+            // variety before the new quantity is applied. When the variety
+            // changes, the old quantity is returned to the old variety and the
+            // new quantity is taken from the new variety's live balance. The
+            // signed balance rejects any state whose total consumption would
+            // exceed received stock.
+            $sameVariety = $currentVarietyId !== null && $currentVarietyId === $newVarietyId;
+            $availableScions = $newVariety->scionBalance() + ($sameVariety ? $oldQuantity : 0);
 
-            if ($scionVariety === null) {
+            if ($newQuantity > $availableScions) {
                 $this->fail('regraft_correction', [
-                    'scion_variety_id' => 'The selected scion variety is not available.',
+                    ($sameVariety ? 'quantity' : 'scion_variety_id') => $availableScions <= 0
+                        ? 'No scions are currently available for this variety. Record new scion stock through Stock In before proceeding.'
+                        : "This correction would exceed the {$availableScions} scions available for {$newVariety->scion_variety_name}.",
                 ]);
             }
 
@@ -178,7 +208,7 @@ class CorrectRecord
 
             $changes = $this->diff([
                 'quantity' => [$oldQuantity, $newQuantity],
-                'scion_variety_id' => [$subBatch->scion_variety_id, $scionVariety->scion_variety_id],
+                'scion_variety_id' => [$subBatch->scion_variety_id, $newVarietyId],
                 'regraft_date' => [$locked->regraft_date?->toDateString(), $date->toDateString()],
                 'remark' => [$locked->remark, $remark],
             ]);
@@ -194,7 +224,7 @@ class CorrectRecord
             // quantity (no operational records, so nothing else has moved it).
             $subBatch->total_grafted = $newQuantity;
             $subBatch->available_count = $newQuantity;
-            $subBatch->scion_variety_id = $scionVariety->scion_variety_id;
+            $subBatch->scion_variety_id = $newVarietyId;
             $subBatch->grafted_date = $date->toDateString();
             $subBatch->save();
 
@@ -217,9 +247,12 @@ class CorrectRecord
 
     /**
      * Correct a Stock_In receiving record. Stock In holds no live batch balance
-     * (ERD §3.7), so the correction is a straight re-validated update of the
-     * receiving fields; the scion/seedling "both or neither" rule is enforced by
-     * the form request exactly as for a new entry.
+     * (ERD §3.7), but a scion receipt feeds the derived scion stock: the
+     * correction may not reduce, re-assign or remove a receipt if that would
+     * leave the old variety with less received stock than it has already
+     * consumed. The affected varieties are locked in ascending id order before
+     * the consumption is read. The scion/seedling "both or neither" rule is
+     * enforced by the form request exactly as for a new entry.
      *
      * @param  array<string, mixed>  $data
      * @return array<string, array{from: mixed, to: mixed}>
@@ -228,6 +261,42 @@ class CorrectRecord
     {
         return DB::transaction(function () use ($record, $data, $actorId): array {
             $locked = StockIn::query()->lockForUpdate()->findOrFail($record->stock_in_id);
+
+            $oldQuantity = (int) $locked->quantity;
+            $newQuantity = (int) $data['quantity'];
+            $oldVarietyId = $locked->scion_variety_id !== null
+                ? (int) $locked->scion_variety_id
+                : null;
+            $newVarietyId = isset($data['scion_variety_id']) && $data['scion_variety_id'] !== null
+                ? (int) $data['scion_variety_id']
+                : null;
+
+            // Lock every variety whose received stock this correction can
+            // change, in ascending id order, before reading consumption.
+            $varieties = ScionVariety::lockForScionStock([$oldVarietyId, $newVarietyId]);
+
+            // Reducing, re-assigning or removing this receipt must never leave
+            // the old variety with less received stock than it has consumed.
+            // A same-variety increase (or an unrelated field-only correction)
+            // cannot reduce received stock, so it needs no stock check.
+            $reducesReceived = $oldVarietyId !== null
+                && ($newVarietyId !== $oldVarietyId || $newQuantity < $oldQuantity);
+
+            if ($reducesReceived) {
+                $oldVariety = $varieties->get($oldVarietyId);
+
+                if ($oldVariety !== null) {
+                    $used = $oldVariety->usedScionQuantity();
+                    $otherReceived = $oldVariety->receivedScionQuantity() - $oldQuantity;
+                    $receivedAfter = $otherReceived + ($newVarietyId === $oldVarietyId ? $newQuantity : 0);
+
+                    if ($receivedAfter < $used) {
+                        $this->fail('stockin_correction', [
+                            ($newVarietyId === $oldVarietyId ? 'quantity' : 'scion_variety_id') => "This correction would leave {$oldVariety->scion_variety_name} with {$receivedAfter} received scions, below the {$used} already consumed.",
+                        ]);
+                    }
+                }
+            }
 
             $changes = $this->diff([
                 'supplier_id' => [$locked->supplier_id, $data['supplier_id']],

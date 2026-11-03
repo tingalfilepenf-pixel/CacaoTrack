@@ -61,11 +61,28 @@ class RegraftController extends Controller
             ->paginate(10)
             ->withQueryString();
 
+        $regraftScionVarieties = ScionVariety::query()
+            ->receivedInStockIn()
+            ->withScionAvailability()
+            ->orderBy('scion_variety_name')
+            ->get();
+
+        // The correction form lists every qualifying variety plus each listed
+        // sub-batch's current variety, so an unchanged value can always be shown.
+        $regraftCorrectionVarieties = $regraftScionVarieties
+            ->concat($history->getCollection()->map(
+                fn (RegraftRecord $record) => $record->batch?->scionVariety,
+            )->filter())
+            ->unique('scion_variety_id')
+            ->sortBy('scion_variety_name')
+            ->values();
+
         return view('operational.regraft.index', [
             'summaries' => $summaries,
             'regraftableBatches' => $regraftableBatches,
             'history' => $history,
-            'scionVarieties' => ScionVariety::active()->orderBy('scion_variety_name')->get(),
+            'regraftScionVarieties' => $regraftScionVarieties,
+            'regraftCorrectionVarieties' => $regraftCorrectionVarieties,
             'filters' => $filters,
             'totalDeficit' => $summaries->sum('deficit'),
             'totalRegrafted' => $summaries->sum('regraft'),

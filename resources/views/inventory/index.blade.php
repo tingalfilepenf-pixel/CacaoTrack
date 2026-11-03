@@ -576,7 +576,6 @@
                                 @php $regraftBatch = $summary['batch']; @endphp
                                 <option value="{{ $regraftBatch->batch_id }}"
                                     data-code="{{ $regraftBatch->batch_code }}"
-                                    data-variety-id="{{ $regraftBatch->scion_variety_id }}"
                                     data-regraftable="{{ $summary['regraftable'] }}"
                                     data-grafted-date="{{ $regraftBatch->grafted_date?->format('Y-m-d') }}"
                                     @selected(old('batch_id') == $regraftBatch->batch_id)>
@@ -613,14 +612,23 @@
                     </div>
 
                     <div class="mb-3">
-                        <label for="invRegraftScionVariety" class="form-label text-muted small fw-bold">New Sub-Batch Scion Variety <span class="text-danger">*</span></label>
-                        <select class="form-select @error('scion_variety_id', 'regraft') is-invalid @enderror" id="invRegraftScionVariety" name="scion_variety_id" required>
-                            <option value="" disabled @selected(old('scion_variety_id') === null)>Select Scion Variety</option>
-                            @foreach ($activeScionVarieties as $scionVariety)
-                                <option value="{{ $scionVariety->scion_variety_id }}" @selected(old('scion_variety_id') == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
+                        <label for="invRegraftScionVariety" class="form-label text-muted small fw-bold">Replacement Scion Variety <span class="text-danger">*</span></label>
+                        <select class="form-select @error('scion_variety_id', 'regraft') is-invalid @enderror" id="invRegraftScionVariety" name="scion_variety_id" required @disabled($regraftScionVarieties->isEmpty())>
+                            <option value="" disabled @selected(old('scion_variety_id') === null)>Select scion variety…</option>
+                            @foreach ($regraftScionVarieties as $scionVariety)
+                                <option value="{{ $scionVariety->scion_variety_id }}" data-available="{{ $scionVariety->availableScionQuantity() }}" @selected(old('scion_variety_id') == $scionVariety->scion_variety_id)>{{ $scionVariety->scion_variety_name }}</option>
                             @endforeach
                         </select>
-                        <div class="form-text">Defaults to the source batch's variety; the sub-batch may use a different one.</div>
+                        <div class="form-text">Choose the scion used for this regraft. Only varieties recorded in Stock In are listed.</div>
+                        <div class="form-text" id="invRegraftScionAvailability">Available scion quantity: —</div>
+                        @if ($regraftScionVarieties->isEmpty())
+                            <div class="alert alert-warning py-2 small mt-2 mb-0">
+                                No scion has been recorded in Stock In yet. Record a Scion Stock In first.
+                                @if (auth()->user()->hasPermission('manage_stock'))
+                                    <a href="{{ route('inventory.stock-in') }}" class="alert-link">Go to Stock In</a>.
+                                @endif
+                            </div>
+                        @endif
                         @error('scion_variety_id', 'regraft')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
@@ -633,7 +641,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning text-dark fw-bold" id="invRegraftSubmitBtn">Save Regraft</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-bold" id="invRegraftSubmitBtn" @disabled($regraftScionVarieties->isEmpty())>Save Regraft</button>
                 </div>
             </form>
         </div>
@@ -723,13 +731,16 @@
         }
 
         // Regraft modal: prefill the clicked batch, cap the quantity at the
-        // batch's surviving balance and default the sub-batch variety to the
-        // source's (same behaviour as the Regraft page form).
+        // batch's surviving balance and at the selected variety's remaining
+        // scion stock (same behaviour as the Regraft page form).
         const regraftBatchSelect = document.getElementById('invRegraftBatch');
         const regraftQuantityInput = document.getElementById('invRegraftQuantity');
-        const regraftVarietySelect = document.getElementById('invRegraftScionVariety');
         const regraftDateInput = document.getElementById('invRegraftDate');
         const regraftHint = document.getElementById('invRegraftQuantityHint');
+        const regraftScionSelect = document.getElementById('invRegraftScionVariety');
+        const regraftScionAvailability = document.getElementById('invRegraftScionAvailability');
+        const regraftSubmitBtn = document.getElementById('invRegraftSubmitBtn');
+        const hasRegraftScionVarieties = regraftScionSelect ? regraftScionSelect.options.length > 1 : false;
 
         const applyRegraftConstraints = function () {
             if (!regraftBatchSelect) {
@@ -738,15 +749,48 @@
 
             const option = regraftBatchSelect.options[regraftBatchSelect.selectedIndex];
             const regraftable = option ? parseInt(option.getAttribute('data-regraftable') || '0', 10) : 0;
-            const varietyId = option ? option.getAttribute('data-variety-id') : null;
             const graftedDate = option ? option.getAttribute('data-grafted-date') : null;
+            const scionOption = regraftScionSelect && regraftScionSelect.selectedIndex >= 0
+                ? regraftScionSelect.options[regraftScionSelect.selectedIndex]
+                : null;
+            const scionId = scionOption ? scionOption.value : '';
+            const scionAvailable = scionOption
+                ? parseInt(scionOption.getAttribute('data-available') || '0', 10)
+                : 0;
 
-            if (regraftable > 0) {
-                regraftQuantityInput.max = regraftable;
-                regraftHint.textContent = 'Up to ' + regraftable + ' available for regrafting.';
+            if (regraftScionAvailability) {
+                regraftScionAvailability.textContent = scionId
+                    ? 'Available scion quantity: ' + scionAvailable.toLocaleString() + '.'
+                    : 'Available scion quantity: —';
+            }
+
+            const cap = scionId ? Math.min(regraftable, scionAvailable) : regraftable;
+
+            if (scionId && scionAvailable <= 0) {
+                regraftQuantityInput.max = 0;
+                regraftHint.textContent = 'No scions are currently available for this variety. Record new scion stock through Stock In before proceeding.';
+            } else if (scionId && regraftable <= 0) {
+                regraftQuantityInput.removeAttribute('max');
+                regraftHint.textContent = 'This batch has no remaining regraftable quantity.';
+            } else if (scionId && cap > 0) {
+                regraftQuantityInput.max = cap;
+                const availableLabel = scionAvailable === 1
+                    ? '1 scion is'
+                    : scionAvailable.toLocaleString() + ' scions are';
+                let message = availableLabel + ' available. You can regraft up to '
+                    + cap.toLocaleString() + ' plants now.';
+                const pending = regraftable - cap;
+
+                if (pending > 0) {
+                    message += ' The remaining ' + pending.toLocaleString() + ' will stay pending.';
+                }
+
+                regraftHint.textContent = message;
             } else {
                 regraftQuantityInput.removeAttribute('max');
-                regraftHint.textContent = '';
+                regraftHint.textContent = scionId
+                    ? ''
+                    : 'Select a replacement scion variety to see how many plants you can regraft now.';
             }
 
             if (graftedDate) {
@@ -755,13 +799,17 @@
                 regraftDateInput.removeAttribute('min');
             }
 
-            if (varietyId) {
-                regraftVarietySelect.value = varietyId;
+            if (regraftSubmitBtn && hasRegraftScionVarieties) {
+                regraftSubmitBtn.disabled = scionId !== '' && scionAvailable <= 0;
             }
         };
 
         if (regraftBatchSelect) {
             regraftBatchSelect.addEventListener('change', applyRegraftConstraints);
+        }
+
+        if (regraftScionSelect) {
+            regraftScionSelect.addEventListener('change', applyRegraftConstraints);
         }
 
         if (regraftModalEl && regraftBatchSelect) {

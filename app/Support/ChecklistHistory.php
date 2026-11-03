@@ -128,9 +128,13 @@ class ChecklistHistory
      * Full read-only detail of one day's checklist, or null when the date has
      * no stored completion.
      *
-     * @return array{date: Carbon, status: string, completed_count: int, pending_count: int, total_count: int, staff: list<array{name: string, role: string}>, verifiers: list<array{name: string, role: string}>, checked_at: Carbon|null, tasks: list<array{task: ActivityTask, status: string, completion_id: int|null, completed_by: string|null, verified: bool, verified_by: string|null, verified_at: Carbon|null, remark: string|null}>}|null
+     * `can_verify` comes from the single maker–checker helper
+     * {@see TaskComplete::canBeVerifiedBy()} so the History tab never retypes
+     * the rule (RULE 6).
+     *
+     * @return array{date: Carbon, status: string, completed_count: int, pending_count: int, total_count: int, staff: list<array{name: string, role: string}>, verifiers: list<array{name: string, role: string}>, checked_at: Carbon|null, tasks: list<array{task: ActivityTask, status: string, completion_id: int|null, completed_by: string|null, verified: bool, verified_by: string|null, verified_at: Carbon|null, can_verify: bool, remark: string|null}>}|null
      */
-    public static function record(string $date): ?array
+    public static function record(string $date, ?User $viewer = null): ?array
     {
         $completions = self::completionsForDate($date);
 
@@ -151,7 +155,7 @@ class ChecklistHistory
             'staff' => self::people($completions->pluck('user')),
             'verifiers' => self::people($completions->pluck('verifier')),
             'checked_at' => $completions->pluck('verified_at')->filter()->max(),
-            'tasks' => $tasks->map(function (ActivityTask $task) use ($completions): array {
+            'tasks' => $tasks->map(function (ActivityTask $task) use ($completions, $viewer): array {
                 $completion = $completions->get($task->task_id);
 
                 return [
@@ -162,6 +166,7 @@ class ChecklistHistory
                     'verified' => $completion?->verified_at !== null,
                     'verified_by' => $completion?->verifier?->name,
                     'verified_at' => $completion?->verified_at,
+                    'can_verify' => $completion !== null && $viewer !== null && $completion->canBeVerifiedBy($viewer),
                     'remark' => $completion?->remark,
                 ];
             })->all(),

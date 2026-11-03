@@ -15,7 +15,8 @@ use Tests\TestCase;
  *
  * Seed (DatabaseSeeder): B001 Batangas 500 → regraft 100 into B001-R1 (Toledo)
  * → regraft 30 into B001-R1-R1 (Criollo); B002 Trinitario 150; B003 Forastero
- * 100. Seedling Stock In 500 + 300; scion Stock In Criollo 120 + Trinitario 80.
+ * 100. Seedling Stock In 500 + 300; scion Stock In Criollo 120 + Toledo 100 +
+ * Trinitario 80 (Toledo is recorded before the seeded regraft that uses it).
  */
 class StockLedgerNestingTest extends TestCase
 {
@@ -84,8 +85,8 @@ class StockLedgerNestingTest extends TestCase
         $this->assertSame(800, $grid['summary']['seedlings']);
 
         // Before the Phase 7C fix every Stock In row was counted; that total
-        // (980) must NOT be used because it double-counts scion receipts.
-        $this->assertSame(1000, (int) StockIn::query()->sum('quantity'));
+        // must NOT be used because it double-counts scion receipts.
+        $this->assertSame(1100, (int) StockIn::query()->sum('quantity'));
         $this->assertSame(
             800,
             (int) StockIn::query()->whereNull('scion_variety_id')->sum('quantity'),

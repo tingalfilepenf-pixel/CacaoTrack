@@ -7,8 +7,10 @@ use App\Models\Inventory;
 use App\Models\MortalityRecord;
 use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
+use App\Models\StockIn;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\CreatesScionStockIn;
 use Tests\TestCase;
 
 /**
@@ -35,6 +37,7 @@ use Tests\TestCase;
  */
 class InventoryTest extends TestCase
 {
+    use CreatesScionStockIn;
     use RefreshDatabase;
 
     private function createBatch(
@@ -44,8 +47,13 @@ class InventoryTest extends TestCase
         int $available = 100,
         string $varietyName = 'Criollo',
         string $graftedDate = '2026-07-15',
+        bool $receivedInStockIn = true,
     ): Batch {
         $variety = ScionVariety::create(['scion_variety_name' => $varietyName]);
+
+        if ($receivedInStockIn) {
+            $this->createScionStockIn($variety, $user);
+        }
 
         return Batch::create([
             'scion_variety_id' => $variety->scion_variety_id,
@@ -541,6 +549,56 @@ class InventoryTest extends TestCase
             ->assertSee('name="remark"', false)
             ->assertSee('Original: 100 | Stock Out: 0 | Remaining: 100')
             ->assertSee('B001 (Criollo) — 100 regraftable');
+    }
+
+    public function test_inventory_regraft_modal_lists_only_scion_varieties_recorded_in_stock_in(): void
+    {
+        $user = User::factory()->create();
+
+        $received = $this->createBatch($user, 'B001', 100, 100, 'Received Scion');
+        $noReceipt = $this->createBatch($user, 'B002', 100, 100, 'No Receipt Scion', receivedInStockIn: false);
+        $seedlingOnly = ScionVariety::create(['scion_variety_name' => 'Seedling Only Scion']);
+        $archived = $this->createBatch($user, 'B003', 100, 100, 'Archived Scion');
+
+        // A seedling-only Stock In leaves `scion_variety_id` null, so it cannot
+        // make a variety available for regrafting.
+        StockIn::factory()->create([
+            'supplier_id' => null,
+            'scion_variety_id' => null,
+            'user_id' => $user->id,
+        ]);
+
+        $archived->scionVariety->update(['archived_at' => now()]);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('regraftScionVarieties', fn ($varieties) => $varieties
+                ->pluck('scion_variety_id')->all() === [$received->scion_variety_id])
+            // The Add Batch selector is unchanged: it still offers every active
+            // variety, not only the ones recorded in Stock In.
+            ->assertViewHas('scionVarieties', fn ($varieties) => $varieties
+                ->pluck('scion_variety_id')
+                ->contains($noReceipt->scion_variety_id)
+                && $varieties->pluck('scion_variety_id')->contains($seedlingOnly->scion_variety_id))
+            ->assertSee('Replacement Scion Variety')
+            ->assertSee('Select scion variety…')
+            ->assertSee('Available scion quantity: —')
+            ->assertSee('data-available="1000"', false)
+            ->assertDontSee('value="'.$received->scion_variety_id.'" selected', false);
+    }
+
+    public function test_inventory_regraft_modal_shows_the_empty_state_and_disables_save_when_nothing_qualifies(): void
+    {
+        $user = User::factory()->create();
+        $this->createBatch($user, 'B001', 100, 100, 'No Receipt Scion', receivedInStockIn: false);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertSee('No scion has been recorded in Stock In yet. Record a Scion Stock In first.')
+            ->assertSee('id="invRegraftSubmitBtn" disabled', false)
+            ->assertSee(route('inventory.stock-in'), false);
     }
 
     public function test_inventory_row_action_is_hidden_without_record_operations_permission(): void

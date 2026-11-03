@@ -254,10 +254,12 @@ class ActivityLogTest extends TestCase
         ]);
 
         $this->actingAs($user)->post(route('inventory.stock-in.store'), [
-            'supplier_id' => $supplier->supplier_id,
-            'quantity' => 100,
-            'origin' => 'Calinan',
-            'date_received' => '2026-09-12',
+            'seedling' => [
+                'supplier_id' => $supplier->supplier_id,
+                'quantity' => 100,
+                'origin' => 'Calinan',
+                'date_received' => '2026-09-12',
+            ],
         ])->assertRedirect(route('inventory.stock-in'));
 
         // Stock In has no batch, so the audit row is unbound (batch_id NULL).

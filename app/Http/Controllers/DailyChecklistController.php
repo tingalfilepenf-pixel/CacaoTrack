@@ -70,7 +70,7 @@ class DailyChecklistController extends Controller
             $selectedDate = $historyRecords->first()['date']->toDateString();
         }
 
-        $historyRecord = $selectedDate !== null ? ChecklistHistory::record($selectedDate) : null;
+        $historyRecord = $selectedDate !== null ? ChecklistHistory::record($selectedDate, Auth::user()) : null;
 
         $activeTab = ($historyFilters['tab'] ?? null) === 'history' || ($historyFilters['history_date'] ?? null) !== null
             ? 'history'
@@ -206,6 +206,12 @@ class DailyChecklistController extends Controller
             return redirect()
                 ->route('operational.checklist')
                 ->with('error', 'This task has already been verified.');
+        }
+
+        if (! $completion->canBeVerifiedBy(Auth::user())) {
+            return redirect()
+                ->route('operational.checklist')
+                ->with('error', 'A different person must verify this task. You completed it.');
         }
 
         $completion->update([

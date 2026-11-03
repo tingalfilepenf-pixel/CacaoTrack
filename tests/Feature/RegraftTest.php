@@ -3,12 +3,15 @@
 namespace Tests\Feature;
 
 use App\Actions\RegraftBatch;
+use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
 use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
+use App\Models\StockIn;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\CreatesScionStockIn;
 use Tests\TestCase;
 
 /**
@@ -22,11 +25,18 @@ use Tests\TestCase;
  */
 class RegraftTest extends TestCase
 {
+    use CreatesScionStockIn;
     use RefreshDatabase;
 
-    private function variety(string $name = 'Batangas'): ScionVariety
+    private function variety(string $name = 'Batangas', bool $receivedInStockIn = true): ScionVariety
     {
-        return ScionVariety::create(['scion_variety_name' => $name]);
+        $variety = ScionVariety::create(['scion_variety_name' => $name]);
+
+        if ($receivedInStockIn) {
+            $this->createScionStockIn($variety);
+        }
+
+        return $variety;
     }
 
     private function batch(User $user, ScionVariety $variety, int $total = 100): Batch
@@ -178,5 +188,106 @@ class RegraftTest extends TestCase
         $this->assertSame(15, $source->totalRegrafted());
         $this->assertSame(10, $source->regraftDeficit());
         $this->assertSame(15, RegraftRecord::totalRegraftedFromBatch($source->batch_id));
+    }
+
+    public function test_only_active_scion_varieties_recorded_in_stock_in_are_listed(): void
+    {
+        $user = User::factory()->create();
+        $received = $this->variety('Received Scion');
+        $noReceipt = $this->variety('No Receipt Scion', false);
+        $seedlingOnly = $this->variety('Seedling Only Scion', false);
+        $archived = $this->variety('Archived Scion');
+        $archived->update(['archived_at' => now()]);
+
+        // A seedling-only Stock In has no scion variety and must add nothing.
+        StockIn::factory()->create([
+            'supplier_id' => null,
+            'scion_variety_id' => null,
+            'user_id' => $user->id,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('operational.regraft'))
+            ->assertOk()
+            ->assertViewHas('regraftScionVarieties', fn ($varieties) => $varieties
+                ->pluck('scion_variety_id')->all() === [$received->scion_variety_id])
+            ->assertSee('Replacement Scion Variety')
+            ->assertSee('Select scion variety…')
+            ->assertSee('Available scion quantity: —')
+            ->assertSee('data-available="1000"', false)
+            ->assertSee($received->scion_variety_name)
+            ->assertDontSee($noReceipt->scion_variety_name)
+            ->assertDontSee($seedlingOnly->scion_variety_name)
+            ->assertDontSee($archived->scion_variety_name)
+            // No variety is preselected; only an old() choice may restore one.
+            ->assertDontSee('value="'.$received->scion_variety_id.'" selected', false);
+    }
+
+    public function test_a_zero_available_scion_variety_stays_listed_with_zero(): void
+    {
+        $user = User::factory()->create();
+        $variety = ScionVariety::create(['scion_variety_name' => 'Used Up Scion']);
+        $this->createScionStockIn($variety, $user, ['quantity' => 10]);
+
+        $source = $this->batch($user, $this->variety('Source'), 50);
+
+        (new RegraftBatch)->execute(
+            $source,
+            10,
+            (int) $variety->scion_variety_id,
+            now()->subDays(5)->toDateString(),
+            null,
+            (int) $user->id,
+        );
+
+        $this->assertSame(0, $variety->fresh()->availableScionQuantity());
+
+        $this->actingAs($user)
+            ->get(route('operational.regraft'))
+            ->assertOk()
+            ->assertSee('Used Up Scion')
+            ->assertSee('data-available="0"', false);
+    }
+
+    public function test_regraft_modal_shows_the_empty_state_and_disables_save_when_nothing_qualifies(): void
+    {
+        $user = User::factory()->create();
+        $this->batch($user, $this->variety('Source', false));
+
+        $this->actingAs($user)
+            ->get(route('operational.regraft'))
+            ->assertOk()
+            ->assertSee('No scion has been recorded in Stock In yet. Record a Scion Stock In first.')
+            ->assertSee('id="recordRegraftSubmitBtn" disabled', false)
+            ->assertSee(route('inventory.stock-in'), false);
+    }
+
+    public function test_a_variety_without_a_scion_stock_in_is_rejected_and_changes_nothing(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety('Source'), 100);
+        $notReceived = $this->variety('Not Received Scion', false);
+
+        $this->actingAs($user)
+            ->from(route('operational.regraft'))
+            ->post(route('operational.regraft.records.store'), [
+                'batch_id' => $source->batch_id,
+                'quantity' => 10,
+                'scion_variety_id' => $notReceived->scion_variety_id,
+                'regraft_date' => now()->subDays(3)->toDateString(),
+            ])
+            ->assertSessionHasErrors('scion_variety_id', null, 'regraft');
+
+        $this->assertSame(
+            'Select a scion variety that has been recorded in Stock In.',
+            session('errors')->getBag('regraft')->first('scion_variety_id'),
+        );
+
+        $source->refresh();
+        $this->assertSame(100, (int) $source->available_count);
+        $this->assertSame(0, (int) $source->regraft);
+        $this->assertDatabaseCount('batches', 1);
+        $this->assertDatabaseCount('regraft_records', 0);
+        $this->assertSame(0, ActivityLog::count());
     }
 }

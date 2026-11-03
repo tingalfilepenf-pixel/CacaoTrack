@@ -2,14 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Support\AnalyticsMetrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -77,19 +80,23 @@ class StockInTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => $supplier->supplier_id,
-                'quantity' => 30,
-                'origin' => 'Davao del Sur',
-                'date_received' => '2026-09-05',
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 30,
+                    'origin' => 'Davao del Sur',
+                    'date_received' => '2026-09-05',
+                    'notes' => 'Seedling bundle.',
+                ],
             ])
             ->assertRedirect(route('inventory.stock-in'))
-            ->assertSessionHas('success');
+            ->assertSessionHas('success', 'Saved: Seedlings 30.');
 
         $this->assertDatabaseHas('stock_ins', [
             'supplier_id' => $supplier->supplier_id,
             'user_id' => $user->id,
             'quantity' => 30,
             'origin' => 'Davao del Sur',
+            'notes' => 'Seedling bundle.',
             'date_received' => '2026-09-05',
         ]);
 
@@ -111,10 +118,12 @@ class StockInTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => $supplier->supplier_id,
-                'quantity' => 45,
-                'origin' => 'Davao',
-                'date_received' => '2026-09-05',
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 45,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
             ])
             ->assertSessionHasNoErrors();
 
@@ -129,16 +138,18 @@ class StockInTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => $supplier->supplier_id,
-                'scion_variety_id' => $variety->scion_variety_id,
-                'quantity' => 120,
-                'unit_price' => 12.50,
-                'origin' => 'Davao del Sur',
-                'notes' => 'Premium bundle.',
-                'date_received' => '2026-09-05',
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'quantity' => 120,
+                    'unit_price' => 12.50,
+                    'origin' => 'Davao del Sur',
+                    'notes' => 'Premium bundle.',
+                    'date_received' => '2026-09-05',
+                ],
             ])
             ->assertRedirect(route('inventory.stock-in'))
-            ->assertSessionHas('success', 'Scion receiving recorded successfully.');
+            ->assertSessionHas('success', 'Saved: Scion 120.');
 
         $stockIn = StockIn::first();
 
@@ -159,24 +170,114 @@ class StockInTest extends TestCase
         // Scion variety without a unit price.
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => $supplier->supplier_id,
-                'scion_variety_id' => $variety->scion_variety_id,
-                'quantity' => 10,
-                'origin' => 'Davao',
-                'date_received' => '2026-09-05',
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'quantity' => 10,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
             ])
-            ->assertSessionHasErrors(['unit_price'], null, 'stockin');
+            ->assertSessionHasErrors(['scion.unit_price'], null, 'stockin');
 
         // Unit price without a scion variety.
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => $supplier->supplier_id,
-                'quantity' => 10,
-                'unit_price' => 5.00,
-                'origin' => 'Davao',
-                'date_received' => '2026-09-05',
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 10,
+                    'unit_price' => 5.00,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
             ])
-            ->assertSessionHasErrors(['scion_variety_id'], null, 'stockin');
+            ->assertSessionHasErrors(['scion.scion_variety_id'], null, 'stockin');
+
+        $this->assertSame(0, StockIn::count());
+    }
+
+    public function test_stock_in_modal_is_responsive_and_shows_the_scion_amount_preview(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-in'))
+            ->assertOk()
+            ->assertSee('modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down', false)
+            ->assertSee('id="stockInCalculatedAmount"', false)
+            ->assertSee('aria-live="polite"', false)
+            ->assertSee('Calculated Amount');
+    }
+
+    public function test_the_modal_has_exactly_one_save_button_inside_the_footer(): void
+    {
+        $user = User::factory()->create();
+
+        $html = $this->actingAs($user)
+            ->get(route('inventory.stock-in'))
+            ->assertOk()
+            ->getContent();
+
+        preg_match('/<form id="stockInForm".*?<\/form>/s', $html, $matches);
+        $form = $matches[0] ?? '';
+
+        $this->assertNotSame('', $form, 'The New Stock In form was not found.');
+        $this->assertSame(1, substr_count($form, 'type="submit"'));
+        $this->assertSame(1, substr_count($form, 'id="stockInSubmitBtn"'));
+        $this->assertStringNotContainsString('id="stockInScionSubmitBtn"', $form);
+        $this->assertStringContainsString('class="modal-footer', $form);
+        $this->assertGreaterThan(
+            strpos($form, 'id="stockInSaveSummaryBar"'),
+            strpos($form, 'class="modal-footer'),
+        );
+        $this->assertGreaterThan(
+            strpos($form, 'class="modal-footer'),
+            strpos($form, 'id="stockInSubmitBtn"'),
+        );
+    }
+
+    public function test_a_failed_scion_field_reopens_the_scion_tab_without_hiding_the_error(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+
+        // Unit price without a scion variety: the scion tab must reopen so the
+        // specific error is never hidden behind the Seedlings tab.
+        $this->actingAs($user)
+            ->from(route('inventory.stock-in'))
+            ->followingRedirects()
+            ->post(route('inventory.stock-in.store'), [
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 10,
+                    'unit_price' => 5.00,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertOk()
+            ->assertSee('show active" id="scionPane"', false)
+            ->assertSee('Scion tab: select a scion variety.', false);
+    }
+
+    public function test_stock_in_rejects_a_negative_unit_price(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'quantity' => 10,
+                    'unit_price' => -1,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasErrors(['scion.unit_price'], null, 'stockin');
 
         $this->assertSame(0, StockIn::count());
     }
@@ -240,7 +341,9 @@ class StockInTest extends TestCase
             ->get(route('inventory.stock-in'))
             ->assertOk()
             ->assertViewHas('totalReceived', 130)
-            ->assertViewHas('totalReceivedSeedlings', 50);
+            ->assertViewHas('totalReceivedSeedlings', 50)
+            ->assertViewHas('totalReceivedScion', 80)
+            ->assertSee('Total Received (Scion)');
     }
 
     public function test_entry_type_is_derived_and_labelled(): void
@@ -312,8 +415,8 @@ class StockInTest extends TestCase
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [])
             ->assertSessionHasErrors(
-                ['supplier_id', 'quantity', 'origin', 'date_received'],
-                null,
+                ['entries'],
+                'Fill in the Seedlings tab, the Scion tab, or both.',
                 'stockin',
             );
     }
@@ -325,23 +428,27 @@ class StockInTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => 9999,
-                'quantity' => 10,
-                'origin' => 'Davao',
-                'date_received' => '2026-09-05',
+                'seedling' => [
+                    'supplier_id' => 9999,
+                    'quantity' => 10,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
             ])
-            ->assertSessionHasErrors(['supplier_id'], null, 'stockin');
+            ->assertSessionHasErrors(['seedling.supplier_id'], null, 'stockin');
 
         $supplier->update(['archived_at' => now()]);
 
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => $supplier->supplier_id,
-                'quantity' => 10,
-                'origin' => 'Davao',
-                'date_received' => '2026-09-05',
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 10,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
             ])
-            ->assertSessionHasErrors(['supplier_id'], null, 'stockin');
+            ->assertSessionHasErrors(['seedling.supplier_id'], null, 'stockin');
 
         $this->assertSame(0, StockIn::count());
     }
@@ -354,12 +461,14 @@ class StockInTest extends TestCase
         foreach ([0, -5] as $quantity) {
             $this->actingAs($user)
                 ->post(route('inventory.stock-in.store'), [
-                    'supplier_id' => $supplier->supplier_id,
-                    'quantity' => $quantity,
-                    'origin' => 'Davao',
-                    'date_received' => '2026-09-05',
+                    'seedling' => [
+                        'supplier_id' => $supplier->supplier_id,
+                        'quantity' => $quantity,
+                        'origin' => 'Davao',
+                        'date_received' => '2026-09-05',
+                    ],
                 ])
-                ->assertSessionHasErrors(['quantity'], null, 'stockin');
+                ->assertSessionHasErrors(['seedling.quantity'], null, 'stockin');
         }
 
         $this->assertSame(0, StockIn::count());
@@ -372,14 +481,372 @@ class StockInTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('inventory.stock-in.store'), [
-                'supplier_id' => $supplier->supplier_id,
-                'quantity' => 10,
-                'origin' => 'Davao',
-                'date_received' => now()->addDay()->toDateString(),
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 10,
+                    'origin' => 'Davao',
+                    'date_received' => now()->addDay()->toDateString(),
+                ],
             ])
-            ->assertSessionHasErrors(['date_received'], null, 'stockin');
+            ->assertSessionHasErrors(['seedling.date_received'], null, 'stockin');
 
         $this->assertSame(0, StockIn::count());
+    }
+
+    public function test_both_tabs_are_saved_together_in_one_transaction(): void
+    {
+        $user = User::factory()->create();
+        $seedlingSupplier = $this->createSupplier('Seedling Supplier');
+        $scionSupplier = $this->createSupplier('Scion Supplier');
+        $variety = $this->createScionVariety('Criollo');
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'seedling' => [
+                    'supplier_id' => $seedlingSupplier->supplier_id,
+                    'quantity' => 500,
+                    'origin' => 'Seedling Origin',
+                    'notes' => 'Seedling note.',
+                    'date_received' => '2026-09-01',
+                ],
+                'scion' => [
+                    'supplier_id' => $scionSupplier->supplier_id,
+                    'quantity' => 300,
+                    'origin' => 'Scion Origin',
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'unit_price' => 12.50,
+                    'notes' => 'Scion note.',
+                    'date_received' => '2026-09-02',
+                ],
+            ])
+            ->assertRedirect(route('inventory.stock-in'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', 'Saved: Seedlings 500 and Scion 300.');
+
+        $this->assertSame(2, StockIn::count());
+
+        $seedling = StockIn::query()->whereNull('scion_variety_id')->firstOrFail();
+
+        $this->assertSame($seedlingSupplier->supplier_id, (int) $seedling->supplier_id);
+        $this->assertSame(500, (int) $seedling->quantity);
+        $this->assertSame('Seedling Origin', $seedling->origin);
+        $this->assertSame('Seedling note.', $seedling->notes);
+        $this->assertSame('2026-09-01', $seedling->date_received->toDateString());
+        $this->assertNull($seedling->scion_variety_id);
+        $this->assertNull($seedling->unit_price);
+
+        $scion = StockIn::query()->whereNotNull('scion_variety_id')->firstOrFail();
+
+        $this->assertSame($scionSupplier->supplier_id, (int) $scion->supplier_id);
+        $this->assertSame($variety->scion_variety_id, (int) $scion->scion_variety_id);
+        $this->assertSame(300, (int) $scion->quantity);
+        $this->assertSame('12.50', $scion->unit_price);
+        $this->assertSame('Scion Origin', $scion->origin);
+        $this->assertSame('Scion note.', $scion->notes);
+        $this->assertSame('2026-09-02', $scion->date_received->toDateString());
+
+        $logs = ActivityLog::query()
+            ->where('activity_type', ActivityLog::TYPE_STOCK_IN_RECORDED)
+            ->orderBy('activity_id')
+            ->get();
+
+        $this->assertCount(2, $logs);
+        $this->assertSame('Received 500 seedlings from Seedling Supplier (origin: Seedling Origin).', $logs[0]->description);
+        $this->assertSame('Received 300 scion of Criollo from Scion Supplier (origin: Scion Origin).', $logs[1]->description);
+        $this->assertSame('2026-09-01', $logs[0]->activity_date->toDateString());
+        $this->assertSame('2026-09-02', $logs[1]->activity_date->toDateString());
+    }
+
+    public function test_a_scion_only_save_ignores_the_untouched_seedling_tab(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'seedling' => [
+                    'supplier_id' => '',
+                    'quantity' => '',
+                    'origin' => '',
+                    'notes' => '',
+                    'date_received' => '2026-09-05',
+                ],
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 120,
+                    'origin' => 'Davao',
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'unit_price' => 0,
+                    'notes' => '',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', 'Saved: Scion 120.');
+
+        $this->assertSame(1, StockIn::count());
+        $this->assertSame(1, StockIn::query()->whereNotNull('scion_variety_id')->count());
+        $this->assertSame(0, StockIn::query()->whereNull('scion_variety_id')->count());
+    }
+
+    public function test_a_seedlings_only_save_ignores_the_untouched_scion_tab(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 500,
+                    'origin' => 'Davao',
+                    'notes' => '',
+                    'date_received' => '2026-09-05',
+                ],
+                'scion' => [
+                    'supplier_id' => '',
+                    'quantity' => '',
+                    'origin' => '',
+                    'scion_variety_id' => '',
+                    'unit_price' => '',
+                    'notes' => '',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', 'Saved: Seedlings 500.');
+
+        $this->assertSame(1, StockIn::count());
+        $this->assertSame(1, StockIn::query()->whereNull('scion_variety_id')->count());
+        $this->assertNull(StockIn::first()->scion_variety_id);
+        $this->assertNull(StockIn::first()->unit_price);
+    }
+
+    public function test_a_note_only_tab_is_validated_and_nothing_is_saved(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 500,
+                    'origin' => 'Seedling Origin',
+                    'date_received' => '2026-09-05',
+                ],
+                'scion' => [
+                    'supplier_id' => '',
+                    'quantity' => '',
+                    'origin' => '',
+                    'scion_variety_id' => '',
+                    'unit_price' => '',
+                    'notes' => 'Typed a note only.',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasErrors([
+                'scion.supplier_id',
+                'scion.quantity',
+                'scion.origin',
+                'scion.scion_variety_id',
+                'scion.unit_price',
+            ], null, 'stockin');
+
+        $this->assertSame(0, StockIn::count());
+        $this->assertSame(0, ActivityLog::query()->where('activity_type', ActivityLog::TYPE_STOCK_IN_RECORDED)->count());
+    }
+
+    public function test_the_save_is_atomic_when_activity_logging_fails(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        ActivityLog::creating(static function (): void {
+            throw new RuntimeException('forced activity log failure');
+        });
+
+        try {
+            $this->withoutExceptionHandling();
+
+            try {
+                $this->actingAs($user)->post(route('inventory.stock-in.store'), [
+                    'seedling' => [
+                        'supplier_id' => $supplier->supplier_id,
+                        'quantity' => 500,
+                        'origin' => 'Seedling Origin',
+                        'date_received' => '2026-09-05',
+                    ],
+                    'scion' => [
+                        'supplier_id' => $supplier->supplier_id,
+                        'quantity' => 300,
+                        'origin' => 'Scion Origin',
+                        'scion_variety_id' => $variety->scion_variety_id,
+                        'unit_price' => 12.50,
+                        'date_received' => '2026-09-05',
+                    ],
+                ]);
+
+                $this->fail('The forced activity log failure did not abort the save.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame('forced activity log failure', $exception->getMessage());
+            }
+        } finally {
+            ActivityLog::flushEventListeners();
+        }
+
+        $this->assertSame(0, StockIn::count());
+        $this->assertSame(0, ActivityLog::count());
+    }
+
+    public function test_duplicate_submission_is_blocked_even_when_the_other_tab_is_empty(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        $payload = [
+            'scion' => [
+                'supplier_id' => $supplier->supplier_id,
+                'quantity' => 120,
+                'origin' => 'Davao',
+                'scion_variety_id' => $variety->scion_variety_id,
+                'unit_price' => 12.50,
+                'date_received' => '2026-09-05',
+            ],
+        ];
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), $payload)
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), $payload + [
+                'seedling' => [
+                    'supplier_id' => '',
+                    'quantity' => '',
+                    'origin' => '',
+                    'notes' => '',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasErrors(['submission'], null, 'stockin');
+
+        $this->assertSame(1, StockIn::count());
+    }
+
+    public function test_a_user_without_manage_stock_cannot_record_stock_in(): void
+    {
+        $user = User::factory()->role(Role::MANAGER)->create();
+        $supplier = $this->createSupplier();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 500,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertForbidden();
+
+        $this->assertSame(0, StockIn::count());
+    }
+
+    public function test_seedling_totals_ignore_the_scion_entry(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 500,
+                    'origin' => 'Seedling Origin',
+                    'date_received' => '2026-09-05',
+                ],
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 300,
+                    'origin' => 'Scion Origin',
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'unit_price' => 12.50,
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($user)
+            ->get(route('inventory.stock-in'))
+            ->assertOk()
+            ->assertViewHas('totalReceivedSeedlings', 500)
+            ->assertViewHas('totalReceivedScion', 300)
+            ->assertViewHas('totalReceived', 800);
+
+        $this->assertSame(500, AnalyticsMetrics::stockLedgerGrid()['summary']['seedlings']);
+    }
+
+    public function test_the_modal_renders_both_panes_helpers_and_a_single_footer_action(): void
+    {
+        $user = User::factory()->create();
+
+        $html = $this->actingAs($user)
+            ->get(route('inventory.stock-in'))
+            ->assertOk()
+            ->assertSee('id="seedlingsPane"', false)
+            ->assertSee('id="scionPane"', false)
+            ->assertSee('Seedlings are recorded without a variety or price.')
+            ->assertSee('Required when you fill in this tab.')
+            ->assertSee('Clear this entry')
+            ->assertSee('Copy supplier and date from the other tab')
+            ->assertSee('Fill in at least one tab.')
+            ->assertSee('Discard what you entered?')
+            ->assertSee('Keep editing')
+            ->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('/name="seedling\[[^"]+\]"[^>]*\brequired\b/', $html);
+        $this->assertDoesNotMatchRegularExpression('/name="scion\[[^"]+\]"[^>]*\brequired\b/', $html);
+    }
+
+    public function test_old_values_restore_into_both_panes_after_a_failure(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety('Criollo');
+
+        $this->actingAs($user)
+            ->from(route('inventory.stock-in'))
+            ->followingRedirects()
+            ->post(route('inventory.stock-in.store'), [
+                'seedling' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 500,
+                    'origin' => 'Seedling Origin',
+                    'notes' => 'Seedling note.',
+                    'date_received' => '2026-09-01',
+                ],
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 300,
+                    'origin' => 'Scion Origin',
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'unit_price' => -1,
+                    'notes' => 'Scion note.',
+                    'date_received' => '2026-09-02',
+                ],
+            ])
+            ->assertOk()
+            ->assertSee('show active" id="scionPane"', false)
+            ->assertSee('value="Seedling Origin"', false)
+            ->assertSee('value="Scion Origin"', false)
+            ->assertSee('Seedling note.')
+            ->assertSee('Scion note.')
+            ->assertSee('Scion tab: unit price cannot be negative.');
     }
 
     public function test_stock_in_page_lists_real_records(): void

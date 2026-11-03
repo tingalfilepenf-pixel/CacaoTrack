@@ -79,6 +79,42 @@ class DailyChecklistTest extends TestCase
         ]);
     }
 
+    public function test_task_completion_helper_enforces_maker_checker(): void
+    {
+        $completer = User::factory()->create();
+        $other = User::factory()->create();
+        $task = ActivityTask::create(['task_name' => 'Maker checker', 'priority' => 'low']);
+
+        $completion = TaskComplete::create([
+            'task_id' => $task->task_id,
+            'user_id' => $completer->id,
+            'completion_date' => now()->toDateString(),
+        ]);
+
+        $this->assertFalse($completion->canBeVerifiedBy($completer));
+        $this->assertTrue($completion->canBeVerifiedBy($other));
+
+        $completion->update([
+            'verified_by_id' => $other->id,
+            'verified_at' => now(),
+        ]);
+
+        $completion->refresh();
+        $this->assertFalse($completion->canBeVerifiedBy($other));
+        $this->assertFalse($completion->canBeVerifiedBy($completer));
+    }
+
+    public function test_complete_task_modal_explains_that_a_different_person_verifies(): void
+    {
+        $staff = User::factory()->create();
+        ActivityTask::create(['task_name' => 'Complete me', 'priority' => 'low']);
+
+        $this->actingAs($staff)->get(route('operational.checklist'))
+            ->assertOk()
+            ->assertSee('A different person with checklist-management access will verify it afterwards.')
+            ->assertDontSee('A Manager will verify it afterwards.');
+    }
+
     public function test_task_cannot_be_completed_twice_in_the_same_day(): void
     {
         $user = User::factory()->create();

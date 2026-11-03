@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Actions\RegraftBatch;
 use App\Models\Batch;
 use App\Models\ScionVariety;
+use Closure;
 
 class StoreRegraftRecordRequest extends AppFormRequest
 {
@@ -22,7 +23,16 @@ class StoreRegraftRecordRequest extends AppFormRequest
         return [
             'batch_id' => ['required', 'integer', Batch::activeExistsRule('batch_id')],
             'quantity' => ['required', 'integer', 'min:1'],
-            'scion_variety_id' => ['required', 'integer', ScionVariety::activeExistsRule('scion_variety_id')],
+            'scion_variety_id' => [
+                'required',
+                'integer',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! is_numeric($value)
+                        || ! ScionVariety::query()->receivedInStockIn()->whereKey($value)->exists()) {
+                        $fail('Select a scion variety that has been recorded in Stock In.');
+                    }
+                },
+            ],
             'regraft_date' => ['required', 'date', 'before_or_equal:today'],
             'remark' => ['nullable', 'string', 'max:255'],
         ];
@@ -40,7 +50,6 @@ class StoreRegraftRecordRequest extends AppFormRequest
             'quantity.integer' => 'The regraft quantity must be a whole number.',
             'quantity.min' => 'The regraft quantity must be at least 1.',
             'scion_variety_id.required' => 'Please select the scion variety for the new sub-batch.',
-            'scion_variety_id.exists' => 'The selected scion variety is not available.',
             'regraft_date.required' => 'The regraft date is required.',
             'regraft_date.date' => 'The regraft date must be a valid date.',
             'regraft_date.before_or_equal' => 'The regraft date cannot be in the future.',

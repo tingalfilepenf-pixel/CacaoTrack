@@ -10,10 +10,13 @@ use App\Models\Inventory;
 use App\Models\MortalityRecord;
 use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
+use App\Models\StockIn;
 use App\Models\StockOutDetail;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
+use Illuminate\Validation\ValidationException;
+use Tests\Concerns\CreatesScionStockIn;
 use Tests\TestCase;
 
 /**
@@ -27,11 +30,18 @@ use Tests\TestCase;
  */
 class RegraftFlowTest extends TestCase
 {
+    use CreatesScionStockIn;
     use RefreshDatabase;
 
-    private function variety(string $name = 'Batangas'): ScionVariety
+    private function variety(string $name = 'Batangas', bool $receivedInStockIn = true): ScionVariety
     {
-        return ScionVariety::create(['scion_variety_name' => $name]);
+        $variety = ScionVariety::create(['scion_variety_name' => $name]);
+
+        if ($receivedInStockIn) {
+            $this->createScionStockIn($variety);
+        }
+
+        return $variety;
     }
 
     private function batch(User $user, ScionVariety $variety, string $code = 'B001', int $total = 100): Batch
@@ -548,5 +558,344 @@ class RegraftFlowTest extends TestCase
 
         $detail = StockOutDetail::where('batch_id', $sub->batch_id)->firstOrFail();
         $this->assertSame((int) $toledo->scion_variety_id, (int) $detail->scion_variety_id);
+    }
+
+    public function test_a_direct_regraft_batch_call_without_a_stock_in_receipt_fails_and_rolls_back(): void
+    {
+        $user = User::factory()->create();
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 100);
+        $notReceived = $this->variety('Not Received Scion', false);
+
+        try {
+            (new RegraftBatch)->execute(
+                $source,
+                10,
+                (int) $notReceived->scion_variety_id,
+                now()->subDays(5)->toDateString(),
+                'Should roll back.',
+                (int) $user->id,
+            );
+
+            $this->fail('A non-qualifying variety should have aborted the transaction.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                'Select a scion variety that has been recorded in Stock In.',
+                $exception->errors()['scion_variety_id'][0] ?? null,
+            );
+        }
+
+        $source->refresh();
+        $this->assertSame(100, (int) $source->available_count);
+        $this->assertSame(0, (int) $source->regraft);
+        $this->assertDatabaseCount('regraft_records', 0);
+        $this->assertDatabaseMissing('batches', ['batch_code' => 'B001-R1']);
+        $this->assertSame(0, ActivityLog::count());
+    }
+
+    public function test_available_scion_quantity_is_received_minus_regrafted(): void
+    {
+        $user = User::factory()->create();
+        $variety = ScionVariety::create(['scion_variety_name' => 'Measured Scion']);
+        $this->createScionStockIn($variety, $user, ['quantity' => 50]);
+
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 100);
+
+        (new RegraftBatch)->execute(
+            $source,
+            20,
+            (int) $variety->scion_variety_id,
+            now()->subDays(5)->toDateString(),
+            null,
+            (int) $user->id,
+        );
+
+        $variety->refresh();
+        $this->assertSame(50, $variety->receivedScionQuantity());
+        $this->assertSame(20, $variety->usedScionQuantity());
+        $this->assertSame(30, $variety->availableScionQuantity());
+    }
+
+    public function test_regraft_quantity_cannot_exceed_the_available_scion_quantity(): void
+    {
+        $user = User::factory()->create();
+        $limited = ScionVariety::create(['scion_variety_name' => 'Limited Scion']);
+        $this->createScionStockIn($limited, $user, ['quantity' => 10]);
+
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 100);
+
+        $this->postRegraft($user, $source, 11, $limited)
+            ->assertSessionHasErrors('quantity', null, 'regraft');
+
+        $this->assertSame(
+            'Regraft quantity cannot exceed the 10 scions available for Limited Scion.',
+            session('errors')->getBag('regraft')->first('quantity'),
+        );
+
+        $source->refresh();
+        $this->assertSame(100, (int) $source->available_count);
+        $this->assertSame(0, (int) $source->regraft);
+        $this->assertDatabaseCount('batches', 1);
+        $this->assertDatabaseCount('regraft_records', 0);
+        $this->assertSame(0, ActivityLog::count());
+
+        // Exactly the available quantity is allowed.
+        $this->postRegraft($user, $source, 10, $limited)->assertSessionHas('success');
+
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+        $this->assertSame($limited->scion_variety_id, (int) $sub->scion_variety_id);
+        $this->assertSame(0, $limited->fresh()->availableScionQuantity());
+
+        // A fully used variety stays listed but cannot supply another regraft.
+        $secondSource = $this->batch($user, $this->variety('Second Source'), 'B002', 100);
+
+        $this->postRegraft($user, $secondSource, 1, $limited)
+            ->assertSessionHasErrors('quantity', null, 'regraft');
+
+        $this->assertSame(
+            'No scions are currently available for this variety. Record new scion stock through Stock In before proceeding.',
+            session('errors')->getBag('regraft')->first('quantity'),
+        );
+        $this->assertDatabaseCount('batches', 3);
+        $this->assertDatabaseCount('regraft_records', 1);
+        $this->assertSame(1, ActivityLog::count());
+    }
+
+    public function test_a_direct_regraft_batch_call_cannot_exceed_available_scions_and_rolls_back(): void
+    {
+        $user = User::factory()->create();
+        $limited = ScionVariety::create(['scion_variety_name' => 'Limited Direct Scion']);
+        $this->createScionStockIn($limited, $user, ['quantity' => 10]);
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 100);
+
+        try {
+            (new RegraftBatch)->execute(
+                $source,
+                11,
+                (int) $limited->scion_variety_id,
+                now()->subDays(5)->toDateString(),
+                'Should roll back.',
+                (int) $user->id,
+            );
+
+            $this->fail('A quantity above the scion stock should have aborted the transaction.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                'Regraft quantity cannot exceed the 10 scions available for Limited Direct Scion.',
+                $exception->errors()['quantity'][0] ?? null,
+            );
+        }
+
+        $source->refresh();
+        $this->assertSame(100, (int) $source->available_count);
+        $this->assertSame(0, (int) $source->regraft);
+        $this->assertDatabaseCount('regraft_records', 0);
+        $this->assertDatabaseMissing('batches', ['batch_code' => 'B001-R1']);
+        $this->assertSame(0, ActivityLog::count());
+    }
+
+    public function test_pending_regraft_quantity_is_processed_as_new_scions_arrive(): void
+    {
+        $user = User::factory()->create();
+        $variety = ScionVariety::create(['scion_variety_name' => 'Pending Scion']);
+        $this->createScionStockIn($variety, $user, ['quantity' => 250]);
+
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 280);
+
+        // Initial state: 250 scions available, 280 plants pending regraft.
+        $this->assertSame(250, $variety->fresh()->availableScionQuantity());
+        $this->assertSame(280, $source->fresh()->survivingQuantity());
+
+        $this->actingAs($user)
+            ->get(route('operational.regraft'))
+            ->assertOk()
+            ->assertSee('PENDING REGRAFT')
+            ->assertViewHas('summaries', fn ($summaries) => $summaries
+                ->first(fn (array $summary) => $summary['batch']->batch_id === $source->batch_id)['regraftable'] === 280);
+
+        // Regraft as many as the scion stock allows: 250, leaving 30 pending.
+        $this->postRegraft($user, $source, 250, $variety)
+            ->assertSessionHas('success');
+
+        $source->refresh();
+        $this->assertSame(30, (int) $source->available_count);
+        $this->assertSame(250, (int) $source->regraft);
+        $this->assertSame(30, $source->survivingQuantity());
+        $this->assertSame(0, $variety->fresh()->availableScionQuantity());
+
+        // The remaining pending quantity cannot be processed without stock.
+        $this->postRegraft($user, $source, 1, $variety)
+            ->assertSessionHasErrors('quantity', null, 'regraft');
+
+        $this->assertSame(0, $variety->fresh()->availableScionQuantity());
+        $this->assertDatabaseCount('regraft_records', 1);
+
+        // The pending column reflects the remaining 30, and the form explains
+        // that the quantity will stay pending until scions arrive.
+        $this->actingAs($user)
+            ->get(route('operational.regraft'))
+            ->assertOk()
+            ->assertViewHas('summaries', fn ($summaries) => $summaries
+                ->first(fn (array $summary) => $summary['batch']->batch_id === $source->batch_id)['regraftable'] === 30)
+            ->assertSee('will stay pending');
+
+        // Receiving 20 new scions makes the pending work eligible again.
+        $this->createScionStockIn($variety, $user, ['quantity' => 20]);
+        $this->assertSame(20, $variety->fresh()->availableScionQuantity());
+        $this->assertSame(30, $source->fresh()->survivingQuantity());
+
+        $this->postRegraft($user, $source, 20, $variety)->assertSessionHas('success');
+        $this->assertSame(10, $source->fresh()->survivingQuantity());
+        $this->assertSame(0, $variety->fresh()->availableScionQuantity());
+
+        // Receive the final 10 and clear the pending quantity.
+        $this->createScionStockIn($variety, $user, ['quantity' => 10]);
+        $this->postRegraft($user, $source, 10, $variety)->assertSessionHas('success');
+
+        $source->refresh();
+        $this->assertSame(0, (int) $source->available_count);
+        $this->assertSame(280, (int) $source->regraft);
+        $this->assertSame(0, $source->survivingQuantity());
+        $this->assertSame(0, $variety->fresh()->availableScionQuantity());
+        $this->assertSame(280, $variety->fresh()->usedScionQuantity());
+        $this->assertSame(280, $variety->fresh()->receivedScionQuantity());
+
+        // Each partial regraft created exactly one sub-batch and one record.
+        $this->assertSame(3, Batch::where('parent_batch_id', $source->batch_id)->count());
+        $this->assertSame(3, RegraftRecord::where('parent_batch_id', $source->batch_id)->count());
+
+        // The 21-day cycle is still derived from the regraft date.
+        $sub = Batch::where('batch_code', 'B001-R1')->firstOrFail();
+        $this->assertSame(
+            $sub->grafted_date->copy()->addDays(Batch::CYCLE_DAYS)->toDateString(),
+            $sub->cycleReadyDate()->toDateString(),
+        );
+    }
+
+    public function test_scion_variety_balances_are_independent(): void
+    {
+        $user = User::factory()->create();
+        $criollo = ScionVariety::create(['scion_variety_name' => 'Criollo']);
+        $toledo = ScionVariety::create(['scion_variety_name' => 'Toledo']);
+        $this->createScionStockIn($criollo, $user, ['quantity' => 100]);
+        $this->createScionStockIn($toledo, $user, ['quantity' => 60]);
+
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 300);
+
+        $this->postRegraft($user, $source, 40, $criollo)->assertSessionHas('success');
+        $this->assertSame(60, $criollo->fresh()->availableScionQuantity());
+        $this->assertSame(60, $toledo->fresh()->availableScionQuantity());
+
+        $this->postRegraft($user, $source, 30, $toledo)->assertSessionHas('success');
+        $this->assertSame(60, $criollo->fresh()->availableScionQuantity());
+        $this->assertSame(30, $toledo->fresh()->availableScionQuantity());
+
+        $source->refresh();
+        $this->assertSame(230, (int) $source->available_count);
+        $this->assertSame(70, (int) $source->regraft);
+    }
+
+    public function test_seedling_stock_is_never_consumed_as_scion_stock(): void
+    {
+        $user = User::factory()->create();
+        $variety = ScionVariety::create(['scion_variety_name' => 'Scion Only']);
+        $this->createScionStockIn($variety, $user, ['quantity' => 100]);
+
+        $seedlings = StockIn::factory()->create([
+            'supplier_id' => null,
+            'scion_variety_id' => null,
+            'user_id' => $user->id,
+            'quantity' => 500,
+        ]);
+
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 100);
+
+        $this->postRegraft($user, $source, 30, $variety)->assertSessionHas('success');
+
+        $this->assertSame(100, $variety->fresh()->receivedScionQuantity());
+        $this->assertSame(30, $variety->fresh()->usedScionQuantity());
+        $this->assertSame(70, $variety->fresh()->availableScionQuantity());
+
+        // The seedling receipt is untouched and never enters scion accounting.
+        $this->assertSame(500, (int) $seedlings->fresh()->quantity);
+        $this->assertSame(
+            500,
+            (int) StockIn::query()->whereNull('scion_variety_id')->sum('quantity'),
+        );
+
+        $source->refresh();
+        $this->assertSame(70, (int) $source->available_count);
+        $this->assertSame(30, (int) $source->regraft);
+    }
+
+    public function test_failed_validation_does_not_deduct_scion_stock(): void
+    {
+        $user = User::factory()->create();
+        $variety = ScionVariety::create(['scion_variety_name' => 'Protected Scion']);
+        $this->createScionStockIn($variety, $user, ['quantity' => 10]);
+
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 100);
+
+        // A rejected date still fails before any stock is consumed.
+        $this->postRegraft($user, $source, 5, $variety, now()->addDay()->toDateString())
+            ->assertSessionHasErrors('regraft_date', null, 'regraft');
+
+        $this->assertSame(10, $variety->fresh()->availableScionQuantity());
+        $this->assertSame(0, $variety->fresh()->usedScionQuantity());
+
+        // A quantity above the available scions is rejected too.
+        $this->postRegraft($user, $source, 11, $variety)
+            ->assertSessionHasErrors('quantity', null, 'regraft');
+
+        $this->assertSame(10, $variety->fresh()->availableScionQuantity());
+        $this->assertSame(0, $variety->fresh()->usedScionQuantity());
+
+        $source->refresh();
+        $this->assertSame(100, (int) $source->available_count);
+        $this->assertSame(0, (int) $source->regraft);
+        $this->assertDatabaseCount('regraft_records', 0);
+    }
+
+    public function test_repeated_consumption_cannot_make_scion_stock_negative(): void
+    {
+        $user = User::factory()->create();
+        $variety = ScionVariety::create(['scion_variety_name' => 'Exhausted Scion']);
+        $this->createScionStockIn($variety, $user, ['quantity' => 10]);
+        $source = $this->batch($user, $this->variety('Source'), 'B001', 100);
+
+        (new RegraftBatch)->execute(
+            $source,
+            10,
+            (int) $variety->scion_variety_id,
+            now()->subDays(5)->toDateString(),
+            null,
+            (int) $user->id,
+        );
+
+        $this->assertSame(0, $variety->fresh()->availableScionQuantity());
+
+        // A repeated call cannot consume the same scions twice.
+        try {
+            (new RegraftBatch)->execute(
+                $source->fresh(),
+                1,
+                (int) $variety->scion_variety_id,
+                now()->subDays(5)->toDateString(),
+                null,
+                (int) $user->id,
+            );
+
+            $this->fail('A fully consumed variety must not supply another regraft.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                'No scions are currently available for this variety. Record new scion stock through Stock In before proceeding.',
+                $exception->errors()['quantity'][0] ?? null,
+            );
+        }
+
+        $this->assertSame(10, $variety->fresh()->receivedScionQuantity());
+        $this->assertSame(10, $variety->fresh()->usedScionQuantity());
+        $this->assertSame(0, $variety->fresh()->availableScionQuantity());
+        $this->assertDatabaseCount('regraft_records', 1);
+        $this->assertSame(1, Batch::where('parent_batch_id', $source->batch_id)->count());
     }
 }

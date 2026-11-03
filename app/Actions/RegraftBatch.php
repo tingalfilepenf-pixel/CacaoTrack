@@ -33,7 +33,12 @@ use Illuminate\Validation\ValidationException;
  *  - the sub-batch code is `Batch::nextSubBatchCode()` (`B001` → `B001-R1`);
  *  - the {@see RegraftRecord} stores `batch_id` = the new sub-batch and
  *    `parent_batch_id` = the source batch;
- *  - `batches.regraft` is the authoritative per-batch regrafted total.
+ *  - `batches.regraft` is the authoritative per-batch regrafted total;
+ *  - scion consumption is DERIVED, never stored: the new record makes the
+ *    sub-batch's variety count under `ScionVariety::availableScionQuantity()`
+ *    (received scion Stock In minus regraft records), so the available balance
+ *    drops in the same transaction. A rejected regraft creates no record and
+ *    therefore deducts nothing.
  */
 class RegraftBatch
 {
@@ -66,22 +71,44 @@ class RegraftBatch
                 ]);
             }
 
-            $regraftable = $locked->survivingQuantity();
+            // Lock the variety row FIRST with the shared deterministic locking
+            // helper (no relation subquery), so no consistent-read snapshot can
+            // be established before the lock is held. Two regrafts from
+            // different source batches therefore serialize on this row, and a
+            // waiting transaction reads the committed regraft that released
+            // the lock.
+            $scionVariety = ScionVariety::lockForScionStock([$scionVarietyId])
+                ->get($scionVarietyId);
 
-            if ($quantity < 1 || $quantity > $regraftable) {
+            // Qualify only after the lock: active and recorded in Stock In.
+            if ($scionVariety === null
+                || $scionVariety->isArchived()
+                || ! $scionVariety->stockIns()->exists()) {
                 $this->fail([
-                    'quantity' => "Regraft quantity cannot exceed the {$regraftable} available for regrafting in {$locked->batch_code}.",
+                    'scion_variety_id' => 'Select a scion variety that has been recorded in Stock In.',
                 ]);
             }
 
-            $scionVariety = ScionVariety::query()
-                ->whereKey($scionVarietyId)
-                ->whereNull('archived_at')
-                ->first();
+            $regraftable = $locked->survivingQuantity();
+            $availableScions = $scionVariety->availableScionQuantity();
 
-            if ($scionVariety === null) {
+            if ($quantity < 1) {
                 $this->fail([
-                    'scion_variety_id' => 'The selected scion variety is not available.',
+                    'quantity' => 'Regraft quantity must be at least 1.',
+                ]);
+            }
+
+            if ($quantity > $availableScions) {
+                $this->fail([
+                    'quantity' => $availableScions === 0
+                        ? 'No scions are currently available for this variety. Record new scion stock through Stock In before proceeding.'
+                        : "Regraft quantity cannot exceed the {$availableScions} scions available for {$scionVariety->scion_variety_name}.",
+                ]);
+            }
+
+            if ($quantity > $regraftable) {
+                $this->fail([
+                    'quantity' => "Regraft quantity cannot exceed the {$regraftable} available for regrafting in {$locked->batch_code}.",
                 ]);
             }
 

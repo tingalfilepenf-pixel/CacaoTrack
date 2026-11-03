@@ -186,7 +186,11 @@ class InventoryController extends Controller
             'activeBatches' => $activeBatches,
             'activeBatchBreakdowns' => $activeBatchBreakdowns,
             'regraftableBatches' => $regraftableBatches,
-            'activeScionVarieties' => ScionVariety::active()->orderBy('scion_variety_name')->get(),
+            'regraftScionVarieties' => ScionVariety::query()
+                ->receivedInStockIn()
+                ->withScionAvailability()
+                ->orderBy('scion_variety_name')
+                ->get(),
             'filters' => $filters,
             // Summary cards (owner-directed; filter-aware like the listing).
             // Every figure aggregates the same per-batch values the rows render:

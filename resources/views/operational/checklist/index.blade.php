@@ -160,12 +160,16 @@
                                                 </button>
                                             @endif
                                         @else
-                                            @if (! $completion->verified_at && $canManageChecklist)
-                                                <button class="btn btn-sm btn-outline-success me-1" data-bs-toggle="modal" data-bs-target="#verifyTaskModal"
-                                                    data-verify-url="{{ route('operational.checklist.completions.verify', $completion) }}"
-                                                    data-task-name="{{ $task->task_name }}" title="Verify completion">
-                                                    <i class="bi bi-patch-check"></i>
-                                                </button>
+                                            @if ($canManageChecklist)
+                                                @if ($completion->canBeVerifiedBy(auth()->user()))
+                                                    <button class="btn btn-sm btn-outline-success me-1" data-bs-toggle="modal" data-bs-target="#verifyTaskModal"
+                                                        data-verify-url="{{ route('operational.checklist.completions.verify', $completion) }}"
+                                                        data-task-name="{{ $task->task_name }}" title="Verify completion">
+                                                        <i class="bi bi-patch-check"></i>
+                                                    </button>
+                                                @elseif (! $completion->verified_at)
+                                                    <span class="text-muted small d-inline-block">Another person must verify this.</span>
+                                                @endif
                                             @endif
                                         @endunless
                                         @if ($canManageChecklist)
@@ -386,12 +390,14 @@
                                                                 @if ($row['verified_by'])
                                                                     <div class="text-muted small">{{ $row['verified_by'] }}</div>
                                                                 @endif
-                                                            @else
+                                                            @elseif ($row['can_verify'])
                                                                 <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#verifyTaskModal"
                                                                     data-verify-url="{{ route('operational.checklist.completions.verify', $row['completion_id']) }}"
                                                                     data-task-name="{{ $row['task']->task_name }}" title="Verify completion">
                                                                     <i class="bi bi-patch-check me-1"></i>Verify
                                                                 </button>
+                                                            @else
+                                                                <span class="text-muted small d-inline-block">Another person must verify this.</span>
                                                             @endif
                                                         @else
                                                             <span class="text-muted">—</span>
@@ -452,7 +458,7 @@
                         <textarea class="form-control" id="completeTaskRemark" name="remark" rows="3" maxlength="1000" placeholder="Enter any observations or remarks..."></textarea>
                     </div>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>Your account is recorded as the staff member who completed this task. A Manager will verify it afterwards.
+                        <i class="bi bi-info-circle me-1"></i>Your account is recorded as the staff member who completed this task. A different person with checklist-management access will verify it afterwards.
                     </p>
                 </div>
                 <div class="modal-footer">

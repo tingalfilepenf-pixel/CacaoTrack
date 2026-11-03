@@ -89,6 +89,22 @@ class Role
     ];
 
     /**
+     * One-line plain-language description of each built-in role.
+     *
+     * The Can and Cannot lists shown in User Management are generated from
+     * {@see PERMISSIONS}, {@see PERMISSION_DESCRIPTIONS} and
+     * {@see DEFAULT_PERMISSIONS_BY_ROLE}; only these role descriptions are new
+     * role text (RULE 6).
+     *
+     * @var array<string, string>
+     */
+    public const ROLE_DESCRIPTIONS = [
+        self::ADMINISTRATOR => 'Full access to the system, including user accounts, master data, stock, operations, the Daily Checklist and analytics.',
+        self::MANAGER => 'Keeps master data current, manages and verifies the Daily Checklist, and reviews analytics, reports and activity history.',
+        self::STAFF => 'Records operational entries and stock movements, and completes assigned Daily Checklist tasks.',
+    ];
+
+    /**
      * Default access restrictions for the built-in roles.
      *
      * provisional — pending panel confirmation
@@ -153,6 +169,60 @@ class Role
     public static function defaultPermissionsFor(string $roleName): array
     {
         return self::DEFAULT_PERMISSIONS_BY_ROLE[$roleName] ?? [];
+    }
+
+    /**
+     * Plain-language description for a built-in role; null for a custom role.
+     */
+    public static function descriptionFor(string $roleName): ?string
+    {
+        return self::ROLE_DESCRIPTIONS[$roleName] ?? null;
+    }
+
+    /**
+     * Access restrictions a built-in role's template grants, in catalog order.
+     *
+     * @return list<array{key: string, label: string, description: string}>
+     */
+    public static function canDo(string $roleName): array
+    {
+        $defaults = self::defaultPermissionsFor($roleName);
+
+        return self::permissionDetails(array_filter(
+            array_keys(self::PERMISSIONS),
+            fn (string $key): bool => in_array($key, $defaults, true),
+        ));
+    }
+
+    /**
+     * Access restrictions outside a built-in role's template, in catalog order.
+     *
+     * @return list<array{key: string, label: string, description: string}>
+     */
+    public static function cannotDo(string $roleName): array
+    {
+        $defaults = self::defaultPermissionsFor($roleName);
+
+        return self::permissionDetails(array_filter(
+            array_keys(self::PERMISSIONS),
+            fn (string $key): bool => ! in_array($key, $defaults, true),
+        ));
+    }
+
+    /**
+     * @param  array<int, string>  $keys
+     * @return list<array{key: string, label: string, description: string}>
+     */
+    private static function permissionDetails(array $keys): array
+    {
+        return array_values(array_map(
+            fn (string $key): array => [
+                'key' => $key,
+                'label' => self::PERMISSIONS[$key],
+                'description' => self::PERMISSION_DESCRIPTIONS[$key] ?? '',
+            ],
+            $keys,
+        ));
     }
 
     /**

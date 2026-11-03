@@ -72,6 +72,7 @@ class StockInController extends Controller
             'filters' => $filters,
             'totalReceived' => (int) (clone $base)->sum('quantity'),
             'totalReceivedSeedlings' => (int) (clone $base)->whereNull('scion_variety_id')->sum('quantity'),
+            'totalReceivedScion' => (int) (clone $base)->whereNotNull('scion_variety_id')->sum('quantity'),
             'totalTransactions' => (clone $base)->count(),
             'totalSuppliers' => (clone $base)->distinct()->count('supplier_id'),
         ]);
@@ -80,48 +81,56 @@ class StockInController extends Controller
     public function store(StoreStockInRequest $request): RedirectResponse
     {
         $validated = $request->validated();
+        $seedling = $validated['seedling'] ?? null;
+        $scion = $validated['scion'] ?? null;
 
-        // A row includes scion when `scion_variety_id` is present (there is no
-        // "type" column). The received `quantity` is recorded immediately for
-        // both kinds of receiving — there is no five-day viability recount.
-        $isScion = ! empty($validated['scion_variety_id']);
-
-        $fingerprint = DuplicateSubmissionGuard::assertFresh('stock_in', $validated, 'stockin');
+        // Fingerprint only the filled entries, without blank values or the
+        // prefilled date, so an untouched tab can never change the fingerprint.
+        $fingerprint = DuplicateSubmissionGuard::assertFresh(
+            'stock_in',
+            $request->duplicateFingerprintPayload(),
+            'stockin',
+        );
 
         try {
-            DB::transaction(function () use ($validated, $isScion): void {
-                StockIn::create([
-                    'supplier_id' => $validated['supplier_id'],
-                    'scion_variety_id' => $validated['scion_variety_id'] ?? null,
-                    'user_id' => Auth::id(),
-                    'quantity' => $validated['quantity'],
-                    'unit_price' => $validated['unit_price'] ?? null,
-                    'origin' => $validated['origin'],
-                    'notes' => $validated['notes'] ?? null,
-                    'date_received' => $validated['date_received'],
-                ]);
+            $saved = DB::transaction(function () use ($seedling, $scion): array {
+                $saved = [];
 
-                $supplier = Supplier::find($validated['supplier_id']);
+                if (is_array($seedling)) {
+                    $record = StockIn::create([
+                        'supplier_id' => $seedling['supplier_id'],
+                        'scion_variety_id' => null,
+                        'user_id' => Auth::id(),
+                        'quantity' => $seedling['quantity'],
+                        'unit_price' => null,
+                        'origin' => $seedling['origin'],
+                        'notes' => $seedling['notes'] ?? null,
+                        'date_received' => $seedling['date_received'],
+                    ]);
 
-                if ($isScion) {
-                    $scionVariety = ScionVariety::find($validated['scion_variety_id']);
-                    $description = "Received {$validated['quantity']} scion of "
-                        .($scionVariety?->scion_variety_name ?? 'scion variety')
-                        .' from '.($supplier?->supplier_name ?? 'supplier')
-                        ." (origin: {$validated['origin']}).";
-                } else {
-                    $description = "Received {$validated['quantity']} seedlings from "
-                        .($supplier?->supplier_name ?? 'supplier')
-                        ." (origin: {$validated['origin']}).";
+                    $this->recordReceiving($record, $seedling, false);
+
+                    $saved['seedlings'] = (int) $record->quantity;
                 }
 
-                ActivityLog::record(
-                    null,
-                    ActivityLog::TYPE_STOCK_IN_RECORDED,
-                    $description,
-                    null,
-                    $validated['date_received'],
-                );
+                if (is_array($scion)) {
+                    $record = StockIn::create([
+                        'supplier_id' => $scion['supplier_id'],
+                        'scion_variety_id' => $scion['scion_variety_id'],
+                        'user_id' => Auth::id(),
+                        'quantity' => $scion['quantity'],
+                        'unit_price' => $scion['unit_price'],
+                        'origin' => $scion['origin'],
+                        'notes' => $scion['notes'] ?? null,
+                        'date_received' => $scion['date_received'],
+                    ]);
+
+                    $this->recordReceiving($record, $scion, true);
+
+                    $saved['scion'] = (int) $record->quantity;
+                }
+
+                return $saved;
             });
         } catch (\Throwable $exception) {
             DuplicateSubmissionGuard::release('stock_in', $fingerprint);
@@ -129,13 +138,51 @@ class StockInController extends Controller
             throw $exception;
         }
 
-        $message = $isScion
-            ? 'Scion receiving recorded successfully.'
-            : 'Stock-in transaction recorded successfully.';
+        $parts = [];
+
+        if (isset($saved['seedlings'])) {
+            $parts[] = 'Seedlings '.$saved['seedlings'];
+        }
+
+        if (isset($saved['scion'])) {
+            $parts[] = 'Scion '.$saved['scion'];
+        }
 
         return redirect()
             ->route('inventory.stock-in')
-            ->with('success', $message);
+            ->with('success', 'Saved: '.implode(' and ', $parts).'.');
+    }
+
+    /**
+     * Write the single centralized Activity_Log row for one receiving. The
+     * wording matches the pre-grouping message so Activity History stays
+     * consistent.
+     *
+     * @param  array<string, mixed>  $entry
+     */
+    private function recordReceiving(StockIn $record, array $entry, bool $isScion): void
+    {
+        $supplier = Supplier::find($entry['supplier_id']);
+
+        if ($isScion) {
+            $scionVariety = ScionVariety::find($entry['scion_variety_id']);
+            $description = "Received {$record->quantity} scion of "
+                .($scionVariety?->scion_variety_name ?? 'scion variety')
+                .' from '.($supplier?->supplier_name ?? 'supplier')
+                ." (origin: {$record->origin}).";
+        } else {
+            $description = "Received {$record->quantity} seedlings from "
+                .($supplier?->supplier_name ?? 'supplier')
+                ." (origin: {$record->origin}).";
+        }
+
+        ActivityLog::record(
+            null,
+            ActivityLog::TYPE_STOCK_IN_RECORDED,
+            $description,
+            null,
+            $entry['date_received'],
+        );
     }
 
     public function storeSupplier(StoreSupplierRequest $request): RedirectResponse
