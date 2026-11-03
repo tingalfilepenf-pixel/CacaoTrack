@@ -21,8 +21,8 @@ use Illuminate\Support\Facades\DB;
  * Every dashboard/report/chart value must trace back to actual database rows
  * through one of these definitions (RULE 12). Formulas that already exist on
  * the models are reused rather than re-implemented:
- *  - Total Active Inventory  -> SUM(batches.available_count) of ACTIVE batches
- *  - Total Archived Inventory -> SUM(batches.available_count) of archived batches
+ *  - Total Active Inventory  -> SUM(Batch::survivingQuantity()) of ACTIVE batches
+ *  - Total Archived Inventory -> SUM(Batch::survivingQuantity()) of archived batches
  *  - Regraft Deficit         -> Batch::regraftDeficit()
  *  - Effective mortality     -> MortalityRecord::effectiveQuantity()
  *
@@ -79,28 +79,51 @@ class AnalyticsMetrics
 
     /**
      * Total Active Inventory (the dashboard "Current Inventory" KPI, PRD §10):
-     * the live available balance summed across ACTIVE batches only.
+     * the EFFECTIVE available balance summed across ACTIVE batches only.
+     *
+     * `batches.available_count` is the raw live balance and is never decremented
+     * by mortality, so summing it over-states what is actually on hand. Each
+     * batch therefore contributes its own {@see Batch::survivingQuantity()}
+     * (`available_count − effective mortality`) — the same one definition the
+     * Inventory page renders in its AVAILABLE column and summary card (RULE 6).
+     * A parent and each sub-batch are independent rows evaluated against their
+     * own mortality, so no batch is counted twice and no family rollup is used.
      *
      * Archived batches (`archived_at IS NOT NULL`) are EXCLUDED so an archived
      * batch no longer inflates the live figure; the archived portion is reported
      * separately by {@see self::totalArchivedInventory()}. Together the two
-     * figures equal the gross `SUM(batches.available_count)` across every batch.
+     * figures equal the sum of every batch's effective surviving quantity.
      * Replaces the removed `Inventory::totalActiveQuantity()`.
      */
     public static function totalActiveInventory(): int
     {
-        return (int) Batch::query()->active()->sum('available_count');
+        return self::survivingInventoryTotal(archived: false);
     }
 
     /**
-     * Total Archived Inventory: the live available balance held by archived
-     * batches (`archived_at IS NOT NULL`). This is the counterpart of
+     * Total Archived Inventory: the effective available balance held by
+     * archived batches (`archived_at IS NOT NULL`). This is the counterpart of
      * {@see self::totalActiveInventory()} — it is shown beside the active figure
      * so nothing silently disappears when a batch is archived.
      */
     public static function totalArchivedInventory(): int
     {
-        return (int) Batch::query()->archived()->sum('available_count');
+        return self::survivingInventoryTotal(archived: true);
+    }
+
+    /**
+     * Sum each batch's effective surviving quantity for the active or archived
+     * population. One aggregate query loads every batch's own mortality sum, so
+     * this is never an N+1; the per-batch value still comes from the single
+     * {@see Batch::survivingQuantity()} definition.
+     */
+    protected static function survivingInventoryTotal(bool $archived): int
+    {
+        return (int) Batch::query()
+            ->when($archived, fn (Builder $query) => $query->archived(), fn (Builder $query) => $query->active())
+            ->withSum('mortalityRecords as mortality_sum', 'quantity')
+            ->get()
+            ->sum(fn (Batch $batch): int => $batch->survivingQuantity((int) ($batch->mortality_sum ?? 0)));
     }
 
     /**

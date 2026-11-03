@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Batch;
 use App\Models\Inventory;
+use App\Models\MortalityRecord;
 use App\Models\RegraftRecord;
 use App\Models\User;
 use App\Support\AnalyticsMetrics;
@@ -32,19 +33,29 @@ class SeededFamilyKpiTest extends TestCase
         $this->seed();
     }
 
-    public function test_total_active_inventory_equals_the_sum_of_available_count(): void
+    public function test_total_active_inventory_equals_the_sum_of_each_batch_surviving_quantity(): void
     {
+        // The stored balance still sums to 730, but mortality never mutates
+        // `available_count`; the KPI subtracts each batch's own effective
+        // mortality: 375 + 45 + 30 + 135 + 90 = 675.
         $this->assertSame(730, (int) Batch::query()->sum('available_count'));
-        $this->assertSame(
-            (int) Batch::query()->sum('available_count'),
-            AnalyticsMetrics::totalActiveInventory(),
+
+        $expected = (int) Batch::query()->active()->get()->sum(
+            fn (Batch $batch): int => max(
+                0,
+                (int) $batch->available_count - MortalityRecord::effectiveQuantityForBatch($batch->batch_id),
+            ),
         );
+
+        $this->assertSame(675, $expected);
+        $this->assertSame($expected, AnalyticsMetrics::totalActiveInventory());
     }
 
     /**
-     * The Inventory summary cards read the same seeded live values as the
-     * operational KPIs: mortality 55, regrafted 130, active inventory 730,
-     * 5 batches.
+     * The Inventory summary cards read the same seeded live values as the rows:
+     * mortality 55, regrafted 130, remaining available 675, 5 batches. The
+     * Available figure deducts each batch's own effective mortality through
+     * `Batch::survivingQuantity()`.
      */
     public function test_inventory_summary_cards_match_the_seeded_live_kpis(): void
     {
@@ -52,46 +63,82 @@ class SeededFamilyKpiTest extends TestCase
             ->get(route('inventory.index'))
             ->assertOk()
             // Mortality: 25 + 5 + 15 + 10 = 55. Regrafted: B001 100 +
-            // B001-R1 30 = 130. Active inventory: 400 + 50 + 30 + 150 + 100 =
-            // 730. Batches: B001, B001-R1, B001-R1-R1, B002, B003.
+            // B001-R1 30 = 130. Remaining available: (400−25) + (50−5) +
+            // 30 + (150−15) + (100−10) = 375 + 45 + 30 + 135 + 90 = 675.
+            // Batches: B001, B001-R1, B001-R1-R1, B002, B003. The Dashboard /
+            // Analytics `AnalyticsMetrics::totalActiveInventory()` KPI uses the
+            // same effective definition, so it also reads 675.
             ->assertViewHas('totalMortality', 55)
             ->assertViewHas('totalRegrafted', 130)
-            ->assertViewHas('totalActiveInventory', 730)
+            ->assertViewHas('totalActiveInventory', 675)
             ->assertViewHas('totalBatches', 5);
+
+        $this->assertSame(675, AnalyticsMetrics::totalActiveInventory());
+    }
+
+    /**
+     * The Inventory card, Dashboard KPI and Analytics KPI must all read the same
+     * effective available figure (seeded 675) — one definition, one number.
+     */
+    public function test_dashboard_and_analytics_inventory_kpi_match_the_inventory_card(): void
+    {
+        $admin = User::where('email', 'admin@cacaotrack.test')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertViewHas('totalActiveInventory', 675);
+
+        $this->actingAs($admin)
+            ->get(route('analytics.index'))
+            ->assertOk()
+            ->assertViewHas('totalActiveInventory', 675);
+
+        $this->actingAs($admin)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('totalActiveInventory', 675);
+
+        $this->assertSame(675, AnalyticsMetrics::totalActiveInventory());
     }
 
     /**
      * An archived batch (legacy state — the archive route was replaced by a
-     * guarded Delete) must move its available balance out of the active KPI and
-     * into the archived KPI, so the two add back up to the gross all-batch total.
+     * guarded Delete) must move its effective available balance out of the
+     * active KPI and into the archived KPI, so the two add back up to the
+     * all-batch effective total.
      */
     public function test_archiving_a_batch_moves_its_inventory_from_active_to_archived(): void
     {
         $batch = Batch::where('batch_code', 'B003')->firstOrFail();
 
         // Baseline: every seeded batch is active, so the archived KPI is 0 and
-        // the active KPI is the full 730.
+        // the active KPI is the full effective 675.
         $this->assertNull($batch->archived_at);
-        $this->assertSame(730, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame(675, AnalyticsMetrics::totalActiveInventory());
         $this->assertSame(0, AnalyticsMetrics::totalArchivedInventory());
 
         $batch->update(['archived_at' => now()]);
         $batch->refresh();
         $this->assertNotNull($batch->archived_at);
 
-        $moved = (int) $batch->available_count;
-        $this->assertSame(100, $moved);
+        // B003 effective surviving quantity: 100 available − 10 mortality = 90.
+        $moved = (int) $batch->available_count - $batch->effectiveMortalityQuantity();
+        $this->assertSame(90, $moved);
 
-        // The active figure drops by exactly this batch's available balance and
+        // The active figure drops by exactly this batch's effective balance and
         // the archived figure rises by the same amount.
-        $this->assertSame(730 - $moved, AnalyticsMetrics::totalActiveInventory());
-        $this->assertSame(630, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame(675 - $moved, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame(585, AnalyticsMetrics::totalActiveInventory());
         $this->assertSame($moved, AnalyticsMetrics::totalArchivedInventory());
-        $this->assertSame(100, AnalyticsMetrics::totalArchivedInventory());
+        $this->assertSame(90, AnalyticsMetrics::totalArchivedInventory());
 
-        // Conservation: active + archived still equals the gross all-batch sum.
+        // Conservation: active + archived equals the sum of every batch's
+        // effective surviving quantity.
         $this->assertSame(
-            (int) Batch::query()->sum('available_count'),
+            (int) Batch::query()->get()->sum(
+                fn (Batch $batch): int => $batch->survivingQuantity(),
+            ),
             AnalyticsMetrics::totalActiveInventory() + AnalyticsMetrics::totalArchivedInventory(),
         );
     }

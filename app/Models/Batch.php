@@ -171,17 +171,24 @@ class Batch extends Model
      * display mapping; the stored `status` column is left untouched):
      *
      *  - `cancelled`  : invalidated record — stored `inactive` or archived.
-     *  - `completed`  : no remaining available quantity (fully stocked out).
+     *  - `completed`  : no effective surviving quantity — the live balance net
+     *                   of the batch's own effective mortality
+     *                   ({@see survivingQuantity()}); also covers a fully
+     *                   stocked-out batch.
      *  - `ready`      : the 21-day cycle has been reached.
      *  - `growing`    : still inside the 21-day cycle.
+     *
+     * The optional `$mortalityQuantity` lets a caller that has already summed
+     * the batch's mortality reuse it instead of issuing a second query — the
+     * same pattern as {@see survivingQuantity()}.
      */
-    public function lifecycleStatus(): string
+    public function lifecycleStatus(?int $mortalityQuantity = null): string
     {
         if ($this->status === self::STATUS_INACTIVE || $this->isArchived()) {
             return self::LIFECYCLE_CANCELLED;
         }
 
-        if ((int) $this->available_count <= 0) {
+        if ($this->survivingQuantity($mortalityQuantity) <= 0) {
             return self::LIFECYCLE_COMPLETED;
         }
 
@@ -209,13 +216,34 @@ class Batch extends Model
     }
 
     /**
-     * Query equivalent of {@see lifecycleStatus()} (same precedence) so the
-     * Inventory status filter returns exactly the rows whose badge shows the
-     * selected status.
+     * SQL counterpart of {@see survivingQuantity()} for query filters: the
+     * live balance net of the batch's own effective mortality. Adjustments were
+     * removed with the revised model, so effective mortality is the raw
+     * `SUM(mortality_records.quantity)` correlated to this batch.
+     *
+     * @return array{0:string,1:array<int,mixed>}
+     */
+    protected static function survivingQuantitySql(): array
+    {
+        $mortality = MortalityRecord::query()
+            ->selectRaw('COALESCE(SUM(quantity), 0)')
+            ->whereColumn('batch_id', 'batches.batch_id');
+
+        return [
+            '(batches.available_count - ('.$mortality->toSql().'))',
+            $mortality->getBindings(),
+        ];
+    }
+
+    /**
+     * Query equivalent of {@see lifecycleStatus()} (same precedence and the
+     * same effective surviving quantity) so the Inventory status filter returns
+     * exactly the rows whose badge shows the selected status.
      */
     public function scopeWhereLifecycleStatus(Builder $query, string $status): Builder
     {
         $readyCutoff = now()->startOfDay()->subDays(self::CYCLE_DAYS)->toDateString();
+        [$surviving, $survivingBindings] = self::survivingQuantitySql();
 
         return match ($status) {
             self::LIFECYCLE_CANCELLED => $query->where(fn (Builder $query) => $query
@@ -223,14 +251,14 @@ class Batch extends Model
                 ->orWhereNotNull('archived_at')),
             self::LIFECYCLE_COMPLETED => $query->where('status', self::STATUS_ACTIVE)
                 ->whereNull('archived_at')
-                ->where('available_count', '<=', 0),
+                ->whereRaw($surviving.' <= 0', $survivingBindings),
             self::LIFECYCLE_READY => $query->where('status', self::STATUS_ACTIVE)
                 ->whereNull('archived_at')
-                ->where('available_count', '>', 0)
+                ->whereRaw($surviving.' > 0', $survivingBindings)
                 ->whereDate('grafted_date', '<=', $readyCutoff),
             self::LIFECYCLE_GROWING => $query->where('status', self::STATUS_ACTIVE)
                 ->whereNull('archived_at')
-                ->where('available_count', '>', 0)
+                ->whereRaw($surviving.' > 0', $survivingBindings)
                 ->whereDate('grafted_date', '>', $readyCutoff),
             default => $query,
         };
@@ -526,8 +554,9 @@ class Batch extends Model
      * batches, archived included. This replaces the old
      * `Inventory::totalActiveQuantity()`. NOTE: the "Total Active Inventory" KPI
      * does NOT use this gross sum — `AnalyticsMetrics::totalActiveInventory()`
-     * applies the `active()` scope (archived batches excluded) and reports the
-     * archived portion separately via `AnalyticsMetrics::totalArchivedInventory()`.
+     * applies the `active()` scope (archived batches excluded) and sums each
+     * batch's effective {@see survivingQuantity()}, reporting the archived
+     * portion separately via `AnalyticsMetrics::totalArchivedInventory()`.
      */
     public static function totalAvailableQuantity(): int
     {

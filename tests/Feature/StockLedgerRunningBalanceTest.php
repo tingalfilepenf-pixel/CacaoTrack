@@ -195,7 +195,8 @@ class StockLedgerRunningBalanceTest extends TestCase
 
     /**
      * The three cross-batch totals and the headline KPIs from today's work are
-     * unchanged: 750 / 750 / 750, rate 7.33%, inventory 730.
+     * unchanged: 750 / 750 / 750, rate 7.33%. Effective active inventory is 675
+     * (the stored balance 730 net of each batch's own effective mortality).
      */
     public function test_cross_batch_totals_and_crude_mortality_rate_are_unchanged(): void
     {
@@ -211,7 +212,7 @@ class StockLedgerRunningBalanceTest extends TestCase
         $this->assertSame(750, $components['denominator']);
         $this->assertSame(7.33, AnalyticsMetrics::crudeMortalityRate());
 
-        $this->assertSame(730, AnalyticsMetrics::totalActiveInventory());
+        $this->assertSame(675, AnalyticsMetrics::totalActiveInventory());
     }
 
     /**

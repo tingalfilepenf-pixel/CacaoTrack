@@ -133,7 +133,10 @@ class AnalyticsTest extends TestCase
             ->assertSee('Operational Analytics')
             ->assertSee('Total Grafted')
             ->assertViewHas('totalGrafted', 285)
-            ->assertSee('285')    // total active inventory (185 + 100)
+            ->assertSee('285')
+            // Effective active inventory: (185 − 25) + (100 − 10) = 250.
+            ->assertViewHas('totalActiveInventory', 250)
+            ->assertSee('250')
             ->assertSee('12.28')  // crude mortality rate = 35 / (200-15 + 100) = 35/285
             // The unconfirmed Regraft Deficit KPI/chart were removed (owner-directed).
             ->assertDontSee('Regraft Deficit');
@@ -164,6 +167,8 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Total Active Inventory', $content);
         $this->assertStringContainsString('Total Archived Inventory', $content);
         $this->assertStringContainsString('285', $content);
+        // Effective active inventory: (185 − 25) + (100 − 10) = 250.
+        $this->assertStringContainsString('250', $content);
         $this->assertStringContainsString('Crude Mortality Rate', $content);
         $this->assertStringContainsString('12.28%', $content);
         $this->assertStringNotContainsString('Regraft Deficit', $content);
@@ -189,6 +194,7 @@ class AnalyticsTest extends TestCase
         $this->assertStringContainsString('Key Performance Indicators', $csv);
         $this->assertStringContainsString('"Total Grafted",285', $csv);
         $this->assertStringContainsString('Total Archived Inventory', $csv);
+        $this->assertStringContainsString('"Total Active Inventory",250', $csv);
         $this->assertStringContainsString('Crude Mortality Rate', $csv);
         $this->assertStringContainsString('12.28%', $csv);
         $this->assertStringContainsString('Mortality Trend (Last 6 Months)', $csv);
@@ -201,7 +207,8 @@ class AnalyticsTest extends TestCase
 
     public function test_centralized_metrics_return_real_values(): void
     {
-        $this->assertSame(285, AnalyticsMetrics::totalActiveInventory());
+        // Effective active inventory: B001 185 − 25 + B002 100 − 10 = 250.
+        $this->assertSame(250, AnalyticsMetrics::totalActiveInventory());
         $this->assertSame(0, AnalyticsMetrics::totalArchivedInventory());
         $this->assertSame(20, AnalyticsMetrics::totalRegraftDeficit());
         // Denominator = SUM(total_grafted - regraft) = (200-15) + 100 = 285;
@@ -655,7 +662,7 @@ class AnalyticsTest extends TestCase
         $this->assertSame($this->user->id, $report->user_id);
         $this->assertSame('operational', $report->analysis_type);
         $this->assertSame('2026-09-01 to 2026-09-30', $report->analysis_period);
-        $this->assertSame(285, $report->result_summary['total_active_inventory']);
+        $this->assertSame(250, $report->result_summary['total_active_inventory']);
     }
 
     public function test_generate_report_rejects_unknown_analysis_type(): void

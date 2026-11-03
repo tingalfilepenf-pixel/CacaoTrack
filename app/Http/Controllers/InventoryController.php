@@ -110,7 +110,7 @@ class InventoryController extends Controller
 
         $summaries = $filtered->mapWithKeys(function (Batch $batch) use ($mortalityCauses): array {
             $mortality = (int) ($batch->mortality_sum ?? 0);
-            $lifecycle = $batch->lifecycleStatus();
+            $lifecycle = $batch->lifecycleStatus($mortality);
 
             return [$batch->batch_id => [
                 'total_grafted' => (int) $batch->total_grafted,
@@ -124,7 +124,17 @@ class InventoryController extends Controller
                 // The recorded causes behind the mortality figure (cause =>
                 // quantity, ordered by quantity), shown in the View modal.
                 'mortality_causes' => $mortalityCauses->get($batch->batch_id, collect())->all(),
-                'available' => (int) $batch->available_count,
+                // Remaining plant quantity: the live balance net of the
+                // batch's OWN effective mortality. Mortality is stored as
+                // separate records and deliberately never mutates
+                // `available_count`, so the raw balance over-states what is
+                // actually left. This reuses the one centralized
+                // surviving-quantity definition (RULE 6), with the
+                // eager-loaded per-batch sum to avoid an N+1 query. A parent
+                // and each sub-batch are evaluated only against their own
+                // mortality records, so family mortality is never
+                // double-counted.
+                'available' => $batch->survivingQuantity($mortality),
                 // The row's Regraft action needs the same live cap the regraft
                 // flow enforces, so the modal button is only offered when the
                 // batch actually has a surviving quantity.
@@ -198,9 +208,12 @@ class InventoryController extends Controller
             //    incrementing per batch (PRD §2.5/§11, ERD §3.10).
             //  - Total Regrafted: the cached `batches.regraft` counter
             //    (OD-12), reconciled against `regraft_records` by cacao:health.
-            //  - Total Active Inventory: SUM(available_count) of ACTIVE batches
-            //    only — the AnalyticsMetrics::totalActiveInventory() definition
-            //    (archived excluded) applied to the filtered set.
+            //  - Total Active Inventory: SUM of the rows' remaining Available
+            //    (the live balance net of each batch's own effective
+            //    mortality), ACTIVE batches only (archived excluded), applied
+            //    to the filtered set. It aggregates exactly the value the
+            //    AVAILABLE column renders, so the card cannot disagree with
+            //    the table.
             //  - Total Batches: count of the listed (filtered) batches.
             'totalMortality' => (int) $summaries->sum('mortality'),
             'totalRegrafted' => (int) $summaries->sum('regraft'),

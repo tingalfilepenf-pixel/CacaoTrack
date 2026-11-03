@@ -17,8 +17,9 @@ use Tests\TestCase;
  * Inventory listing (revised ERD §3.12 / PRD FR-08): the owner-directed
  * per-batch template shows the live counts derived from actual Batch,
  * Mortality and Regraft records, plus the derived lifecycle Status column
- * (Growing < 21 days / Ready ≥ 21 days / Completed = no available balance /
- * Cancelled-Void = invalidated record — `Batch::lifecycleStatus()`).
+ * (Growing < 21 days / Ready ≥ 21 days / Completed = no effective surviving
+ * quantity (available net of that batch's own mortality) / Cancelled-Void =
+ * invalidated record — `Batch::lifecycleStatus()`).
  * The row action is `[View] [More ▾]`: View opens a read-only Batch Details
  * modal (including the recorded mortality causes behind the batch's mortality
  * figure, grouped from the real Mortality_Record rows); More groups the record
@@ -33,7 +34,11 @@ use Tests\TestCase;
  *
  * The summary cards (owner-directed) aggregate the same live per-batch values
  * over the filtered set: Total Mortality, Total Regrafted,
- * Total Active Inventory (active batches only) and Total Batches.
+ * Total Active Inventory (active batches only) and Total Batches. The
+ * AVAILABLE column is the remaining plant quantity — the live
+ * `available_count` net of that batch's own effective mortality through the
+ * centralized `Batch::survivingQuantity()`, because mortality records never
+ * mutate the stored balance.
  */
 class InventoryTest extends TestCase
 {
@@ -253,9 +258,10 @@ class InventoryTest extends TestCase
             ->assertOk()
             ->assertViewHas('totalMortality', 30)
             ->assertViewHas('totalRegrafted', 10)
+            // B001: 60 live balance − 30 mortality = 30 remaining; B002: 50.
             // Archived batches leave the "active" inventory card but stay in the
             // listed batch count.
-            ->assertViewHas('totalActiveInventory', 110)
+            ->assertViewHas('totalActiveInventory', 80)
             ->assertViewHas('totalBatches', 3)
             ->assertSee('Total plants recorded as dead')
             ->assertSee('Total plants regrafted')
@@ -290,7 +296,8 @@ class InventoryTest extends TestCase
             ->assertOk()
             ->assertViewHas('totalMortality', 30)
             ->assertViewHas('totalRegrafted', 10)
-            ->assertViewHas('totalActiveInventory', 60)
+            // B001: 60 live balance − 30 effective mortality = 30 remaining.
+            ->assertViewHas('totalActiveInventory', 30)
             ->assertViewHas('totalBatches', 1);
     }
 
@@ -356,9 +363,153 @@ class InventoryTest extends TestCase
                     && $summary['total_grafted'] === 100
                     && $summary['regraft'] === 10
                     && $summary['mortality'] === 30
-                    && $summary['available'] === 60
+                    // The raw live balance (60) remains unchanged — mortality
+                    // is deducted only for the displayed remaining quantity.
+                    && (int) $batch->fresh()->available_count === 60
+                    && $summary['available'] === 30
                     && ! array_key_exists('deficit', $summary);
             });
+    }
+
+    public function test_inventory_available_deducts_recorded_mortality_from_the_live_balance(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, 'B005', 50, 50);
+
+        MortalityRecord::create([
+            'batch_id' => $batch->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 20,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', function ($summaries) use ($batch) {
+                $summary = $summaries[$batch->batch_id] ?? null;
+
+                return $summary !== null
+                    && $summary['total_grafted'] === 50
+                    && $summary['regraft'] === 0
+                    && $summary['mortality'] === 20
+                    && $summary['available'] === 30
+                    // Mortality never mutates the stored live balance.
+                    && (int) $batch->fresh()->available_count === 50;
+            })
+            ->assertViewHas('totalActiveInventory', 30);
+    }
+
+    public function test_inventory_available_equals_the_live_balance_when_mortality_is_zero(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, 'B005', 50, 50);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', fn ($summaries) => $summaries[$batch->batch_id]['mortality'] === 0
+                && $summaries[$batch->batch_id]['available'] === 50)
+            ->assertViewHas('totalActiveInventory', 50);
+    }
+
+    public function test_inventory_available_deducts_multiple_mortality_records_once(): void
+    {
+        $user = User::factory()->create();
+        $batch = $this->createBatch($user, 'B005', 100, 100);
+
+        foreach ([5, 7, 3] as $quantity) {
+            MortalityRecord::create([
+                'batch_id' => $batch->batch_id,
+                'user_id' => $user->id,
+                'quantity' => $quantity,
+                'cause' => 'Disease',
+                'recorded_at' => '2026-09-01',
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', fn ($summaries) => $summaries[$batch->batch_id]['mortality'] === 15
+                && $summaries[$batch->batch_id]['available'] === 85)
+            ->assertViewHas('totalActiveInventory', 85);
+    }
+
+    public function test_inventory_available_uses_each_batch_own_mortality_without_double_counting_the_family(): void
+    {
+        $user = User::factory()->create();
+        $parent = $this->createBatch($user, 'B001', 100, 100);
+
+        $sub = Batch::create([
+            'scion_variety_id' => $parent->scion_variety_id,
+            'parent_batch_id' => $parent->batch_id,
+            'user_id' => $user->id,
+            'batch_code' => 'B001-R1',
+            'total_grafted' => 50,
+            'regraft' => 0,
+            'available_count' => 50,
+            'grafted_date' => '2026-09-05',
+            'created_at' => now(),
+            'status' => Batch::STATUS_ACTIVE,
+        ]);
+
+        foreach ([[$parent, 20], [$sub, 5]] as [$batch, $quantity]) {
+            MortalityRecord::create([
+                'batch_id' => $batch->batch_id,
+                'user_id' => $user->id,
+                'quantity' => $quantity,
+                'cause' => 'Disease',
+                'recorded_at' => '2026-09-01',
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', function ($summaries) use ($parent, $sub) {
+                return $summaries[$parent->batch_id]['mortality'] === 20
+                    && $summaries[$parent->batch_id]['available'] === 80
+                    && $summaries[$sub->batch_id]['mortality'] === 5
+                    && $summaries[$sub->batch_id]['available'] === 45;
+            })
+            // 80 + 45: each batch's own mortality is deducted exactly once.
+            ->assertViewHas('totalActiveInventory', 125);
+    }
+
+    public function test_inventory_available_reflects_a_corrected_mortality_quantity(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $batch = $this->createBatch($admin, 'B005', 50, 50);
+
+        $record = MortalityRecord::create([
+            'batch_id' => $batch->batch_id,
+            'user_id' => $admin->id,
+            'quantity' => 20,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', fn ($summaries) => $summaries[$batch->batch_id]['available'] === 30);
+
+        $this->actingAs($admin)
+            ->post(route('corrections.mortality', $record), [
+                'quantity' => 15,
+                'cause' => 'Pest',
+                'recorded_at' => '2026-09-01',
+            ])
+            ->assertRedirect(route('operational.mortality'))
+            ->assertSessionHas('success');
+
+        $this->actingAs($admin)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', fn ($summaries) => $summaries[$batch->batch_id]['mortality'] === 15
+                && $summaries[$batch->batch_id]['available'] === 35);
     }
 
     public function test_inventory_page_no_longer_shows_the_unconfirmed_deficit(): void
@@ -790,6 +941,197 @@ class InventoryTest extends TestCase
                 ->assertViewHas('batches', fn ($batches) => $batches->total() === 1
                     && $batches->first()->batch_id === $expected->batch_id);
         }
+    }
+
+    public function test_inventory_lifecycle_status_uses_the_effective_surviving_quantity(): void
+    {
+        $user = User::factory()->create();
+        $readyDate = now()->subDays(Batch::CYCLE_DAYS)->toDateString();
+        $growingDate = now()->subDays(Batch::CYCLE_DAYS - 1)->toDateString();
+
+        $noMortality = $this->createBatch($user, 'B001', 100, 100, 'Criollo', $readyDate, false);
+        $partial = $this->createBatch($user, 'B002', 100, 100, 'Trinitario', $growingDate, false);
+        $exhausted = $this->createBatch($user, 'B003', 100, 100, 'Forastero', $readyDate, false);
+
+        MortalityRecord::create([
+            'batch_id' => $partial->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 40,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        MortalityRecord::create([
+            'batch_id' => $exhausted->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 100,
+            'cause' => 'Pest',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', function ($summaries) use ($noMortality, $partial, $exhausted) {
+                return
+                    // No mortality: the stored balance is the surviving quantity.
+                    $summaries[$noMortality->batch_id]['available'] === 100
+                    && $summaries[$noMortality->batch_id]['lifecycle_status'] === Batch::LIFECYCLE_READY
+                    // Partial mortality: still alive, but the displayed and judged
+                    // quantity is 100 − 40 = 60.
+                    && $summaries[$partial->batch_id]['available'] === 60
+                    && $summaries[$partial->batch_id]['lifecycle_status'] === Batch::LIFECYCLE_GROWING
+                    // Mortality equals the remaining quantity: zero surviving
+                    // plants, so the batch is Completed even though the stored
+                    // `available_count` is still 100.
+                    && $summaries[$exhausted->batch_id]['available'] === 0
+                    && $summaries[$exhausted->batch_id]['lifecycle_status'] === Batch::LIFECYCLE_COMPLETED
+                    && (int) $exhausted->fresh()->available_count === 100;
+            });
+    }
+
+    public function test_inventory_completed_filter_uses_the_effective_surviving_quantity(): void
+    {
+        $user = User::factory()->create();
+        $readyDate = now()->subDays(Batch::CYCLE_DAYS)->toDateString();
+
+        $exhausted = $this->createBatch($user, 'B001', 100, 100, 'Criollo', $readyDate, false);
+        $partial = $this->createBatch($user, 'B002', 100, 100, 'Trinitario', $readyDate, false);
+
+        MortalityRecord::create([
+            'batch_id' => $exhausted->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 100,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        MortalityRecord::create([
+            'batch_id' => $partial->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 40,
+            'cause' => 'Pest',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index', ['status' => Batch::LIFECYCLE_COMPLETED]))
+            ->assertOk()
+            ->assertViewHas('batches', fn ($batches) => $batches->total() === 1
+                && $batches->first()->batch_id === $exhausted->batch_id);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index', ['status' => Batch::LIFECYCLE_READY]))
+            ->assertOk()
+            ->assertViewHas('batches', fn ($batches) => $batches->total() === 1
+                && $batches->first()->batch_id === $partial->batch_id);
+    }
+
+    public function test_parent_with_regrafted_sub_batches_is_judged_on_its_own_surviving_quantity(): void
+    {
+        $user = User::factory()->create();
+        $readyDate = now()->subDays(Batch::CYCLE_DAYS)->toDateString();
+
+        // Parent: 100 grafted, 40 regrafted out (available 60), then 60 death.
+        // Its own effective surviving quantity is 0 and it does not inherit the
+        // sub-batch's population.
+        $parent = $this->createBatch($user, 'B001', 100, 60, 'Criollo', $readyDate, false);
+        $parent->update(['regraft' => 40]);
+
+        MortalityRecord::create([
+            'batch_id' => $parent->batch_id,
+            'user_id' => $user->id,
+            'quantity' => 60,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        $sub = Batch::create([
+            'scion_variety_id' => $parent->scion_variety_id,
+            'parent_batch_id' => $parent->batch_id,
+            'user_id' => $user->id,
+            'batch_code' => 'B001-R1',
+            'total_grafted' => 40,
+            'regraft' => 0,
+            'available_count' => 40,
+            'grafted_date' => now()->subDays(5)->toDateString(),
+            'created_at' => now(),
+            'status' => Batch::STATUS_ACTIVE,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', fn ($summaries) => $summaries[$parent->batch_id]['available'] === 0
+                && $summaries[$parent->batch_id]['lifecycle_status'] === Batch::LIFECYCLE_COMPLETED
+                && $summaries[$sub->batch_id]['available'] === 40
+                && $summaries[$sub->batch_id]['lifecycle_status'] === Batch::LIFECYCLE_GROWING);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index', ['status' => Batch::LIFECYCLE_COMPLETED]))
+            ->assertOk()
+            ->assertViewHas('batches', fn ($batches) => $batches->total() === 1
+                && $batches->first()->batch_id === $parent->batch_id);
+
+        $this->actingAs($user)
+            ->get(route('inventory.index', ['status' => Batch::LIFECYCLE_GROWING]))
+            ->assertOk()
+            ->assertViewHas('batches', fn ($batches) => $batches->total() === 1
+                && $batches->first()->batch_id === $sub->batch_id);
+    }
+
+    public function test_corrected_mortality_restores_a_completed_batch_and_its_filter(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $batch = $this->createBatch(
+            $admin,
+            'B001',
+            100,
+            100,
+            'Criollo',
+            now()->subDays(Batch::CYCLE_DAYS)->toDateString(),
+            false,
+        );
+
+        $record = MortalityRecord::create([
+            'batch_id' => $batch->batch_id,
+            'user_id' => $admin->id,
+            'quantity' => 100,
+            'cause' => 'Disease',
+            'recorded_at' => '2026-09-01',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', fn ($summaries) => $summaries[$batch->batch_id]['available'] === 0
+                && $summaries[$batch->batch_id]['lifecycle_status'] === Batch::LIFECYCLE_COMPLETED);
+
+        $this->actingAs($admin)
+            ->post(route('corrections.mortality', $record), [
+                'quantity' => 40,
+                'cause' => 'Pest',
+                'recorded_at' => '2026-09-01',
+            ])
+            ->assertRedirect(route('operational.mortality'))
+            ->assertSessionHas('success');
+
+        $this->actingAs($admin)
+            ->get(route('inventory.index'))
+            ->assertOk()
+            ->assertViewHas('summaries', fn ($summaries) => $summaries[$batch->batch_id]['available'] === 60
+                && $summaries[$batch->batch_id]['lifecycle_status'] === Batch::LIFECYCLE_READY);
+
+        $this->actingAs($admin)
+            ->get(route('inventory.index', ['status' => Batch::LIFECYCLE_COMPLETED]))
+            ->assertOk()
+            ->assertViewHas('batches', fn ($batches) => $batches->total() === 0);
+
+        $this->actingAs($admin)
+            ->get(route('inventory.index', ['status' => Batch::LIFECYCLE_READY]))
+            ->assertOk()
+            ->assertViewHas('batches', fn ($batches) => $batches->total() === 1
+                && $batches->first()->batch_id === $batch->batch_id);
     }
 
     public function test_inventory_view_action_exposes_the_read_only_batch_details_modal(): void

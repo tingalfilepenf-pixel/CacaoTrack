@@ -112,7 +112,7 @@
             </div>
             <div class="col-md-2">
                 <label for="filterStatus" class="form-label text-muted small fw-bold mb-1">Status</label>
-                <select class="form-select form-select-sm" id="filterStatus" name="status" title="Derived from the 21-day cycle and the live available balance">
+                <select class="form-select form-select-sm" id="filterStatus" name="status" title="Derived from the 21-day cycle and the effective available quantity (net of mortality)">
                     <option value="">All Statuses</option>
                     @foreach (\App\Models\Batch::lifecycleLabels() as $lifecycleValue => $lifecycleLabel)
                         <option value="{{ $lifecycleValue }}" @selected(($filters['status'] ?? null) === $lifecycleValue)>{{ $lifecycleLabel }}</option>
