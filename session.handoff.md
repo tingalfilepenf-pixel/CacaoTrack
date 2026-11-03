@@ -1,6 +1,484 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Session EH — **working-tree suite GREEN 428/2217; live `db_capstone` unchanged; awaiting approval to commit and grant checklist permissions**)
+> ### ▶ Continue here (latest: Session EX — **STAGE 1 DONE — role descriptions/catalog + maker–checker checklist verification implemented and tested; no migration or live-DB change; full suite 481 passed / 2,680 assertions; 30 modified + 2 untracked dirs, HEAD `6957c4a`, nothing committed/pushed; Stage 2 and Stage 3 await explicit owner approval**)
+>
+> ### ▶ CONTINUATION SNAPSHOT (2026-11-03, Session EX — Stage 1 implemented; awaiting Stage 2/3 approval)
+> - **Git:** HEAD `6957c4a`, branch `master`, **synchronized with `origin/master`**; **30 modified, 0 staged, 2 untracked directories** (`resources/views/users/partials/`, `tests/Concerns/`). Nothing committed or pushed. The tree stacks the uncommitted Sessions EP–EW (Stock In refinements/revert, ET, EU, EV, EW) plus this Session EX Stage 1 work on top of `6957c4a`.
+> - **Stage 1 delivered (owner-approved "continue"):**
+>   - **Maker–checker, one definition:** `TaskComplete::canBeVerifiedBy(User $user)` = `verified_at === null && user_id !== $user->getKey()`. `DailyChecklistController::verifyCompletion()` keeps the already-verified rejection, then rejects a same-user verification with "A different person must verify this task. You completed it."; the Today tab and History tab both hide the Verify button through the same helper (History receives `can_verify` from `ChecklistHistory::record($date, Auth::user())`). The rule is not retyped in Blade.
+>   - **Copy:** the complete-task modal now says "A different person with checklist-management access will verify it afterwards." (was "A Manager will verify it afterwards."); the History tab shows "Another person must verify this." where the Verify button is hidden.
+>   - **Role catalog:** `Role::ROLE_DESCRIPTIONS` adds only the three role descriptions; `Role::descriptionFor()`, `Role::canDo()` and `Role::cannotDo()` derive the Can/Cannot lists from `PERMISSIONS`, `PERMISSION_DESCRIPTIONS` and `DEFAULT_PERMISSIONS_BY_ROLE` (RULE 6). No "approve staff records" line was added; Manager remains provisional checklist verification only. User Management now renders ROLE / CAN / CANNOT, the Add/Edit modals show a role guide via new `resources/views/users/partials/role-guide.blade.php`, and custom names show "Custom role: permissions chosen for this user."
+>   - **Tests:** +8 tests (2 in `DailyChecklistTest`, 6 in `RolePermissionAccessTest`): helper maker/checker, Staff/Manager/Administrator same-user rejection, different `manage_checklist` holder success, already-verified rejection, note/hidden-button rendering on both tabs, role catalog one-source + custom-role text. Existing tests were left unchanged — no existing route test self-verified, and the Staff verify → 403 test was kept.
+> - **Changed files (this session):** `app/Models/{TaskComplete,Role}.php`, `app/Http/Controllers/DailyChecklistController.php`, `app/Support/ChecklistHistory.php`, `resources/views/operational/checklist/index.blade.php`, `resources/views/users/index.blade.php`, **new** `resources/views/users/partials/role-guide.blade.php`, `tests/Feature/{RolePermissionAccessTest,DailyChecklistTest}.php`, plus this handoff.
+> - **Verified:** connected DB printed `db_capstone_test`; focused `RolePermissionAccessTest|DailyChecklistTest` **49 passed / 450 assertions**; full MySQL suite **481 passed / 2,680 assertions**; `vendor\bin\pint` and `--test` passed; `php -l` clean on all changed PHP files; `php artisan view:cache` clean; `git diff --check` clean (only a pre-existing CRLF warning on unrelated `resources/views/inventory/index.blade.php`). No live `db_capstone` access/write; **no migration, schema, route, permission/default, seeder or `_UPDATED` doc change.**
+> - **Constraints still in force:** no migrations/tables/columns; no live `db_capstone` SQL/seeding/migrate; tests only on `db_capstone_test` (print the connected DB first); never edit `docs/*_UPDATED.md`; no `--no-verify`; do not stage or commit without approval; leave all other uncommitted work alone.
+> - **Still outstanding:** the live Administrator `manage_checklist` + `complete_checklist` grant — §5a SQL remains **NOT EXECUTED**; tick only those two in `/users` and **do not use Apply role defaults**.
+> - **Next (each needs explicit owner approval):** **Stage 2** = report-only plan for Manager read-only operational views; **Stage 3** = docs (`docs/CacaoTrack_PRD.md` FR-02, byte-identical `_REVISED`, `AGENTS.md`, this handoff); optionally browser-smoke the checklist maker–checker UI; then propose commit messages/handoff draft. Do **not** run live SQL/reseeds, change permissions, stage/commit/push, or touch the stale `Capstone\capstone\` checkout.
+>
+> ### ▶ Previous snapshot (2026-11-03, Session EX — Stage 0 inspection only; superseded by the Stage 1 snapshot above)
+> - **Git:** unchanged by this session. HEAD `6957c4a`, branch `master`, synchronized with `origin/master`; **22 modified, 0 staged, 1 untracked directory** (`tests/Concerns/`). Nothing committed or pushed. This session made **no code, test, route, migration, permission or live-DB change** — only this handoff entry.
+> - **Scope (owner-directed, staged):** align the system and docs with standard access-control terms — one catalog of role descriptions, separation of duties on Daily Checklist verification, and a documented model. **Stage 1** = role descriptions + maker–checker + tests; **Stage 2** = report-only plan for Manager read-only operational views; **Stage 3** = docs (`docs/CacaoTrack_PRD.md` FR-02, byte-identical `_REVISED`, `AGENTS.md`, this handoff). Build only what the brief lists.
+> - **Stage 0 findings (inspection only — no edits):**
+>   - `app/Models/Role.php`: 10-key `PERMISSIONS` + `PERMISSION_DESCRIPTIONS`; `DEFAULT_PERMISSIONS_BY_ROLE` (Administrator all 10; Manager 5; Staff 3; docblock **provisional — pending panel confirmation**); `defaultPermissionsFor()` returns `[]` for custom role names; `templateRoleNames()` = built-ins + `Blank`. **No role-description / Can / Cannot catalog exists yet.**
+>   - `resources/views/users/index.blade.php`: "What each role can do" table at :130-169 loops `Role::ROLES` + `$roleDefaults` and renders permission-label badges with description tooltips; template JS at :620-642 only ticks checkboxes and writes the role name — **no role description is displayed anywhere**.
+>   - Checklist verify: `POST /checklist/completions/{completion}/verify` (`routes/web.php:54`) sits in the `permission:manage_checklist` group; `DailyChecklistController::verifyCompletion()` (:203-219) only rejects an already-verified record and sets `verified_by_id = Auth::id()` / `verified_at = now()` — **no same-user check**. `completeTask()` (:145-194) stores `verified_by_id`/`verified_at` null.
+>   - View `resources/views/operational/checklist/index.blade.php`: today Verify button at :163-169 and history Verify button at :381-400 render only when `!verified_at && $canManageChecklist`; verify modal at :468-496; completion modal note at :455. **No own-completion note and no own-completion button hiding.**
+>   - Tests: `RolePermissionAccessTest` manager verifies a different user's completion (:156-157, :337-372), staff verify → 403 (:126, :331), Administrator matrix completes but never verifies (:204); `DailyChecklistTest::test_staff_can_complete_a_task_without_self_verification` (:63-80) asserts null verification fields; other `DailyChecklistTest` rows are pre-verified via `TaskComplete::create()` for history/PDF. **No same-user verify test and no own-completion note/hidden-button test exists.**
+>   - Docs: `docs/CacaoTrack_PRD.md` FR-02 / FR-02.1 at :274-331 (10-key permission matrix, provisional markers, checklist complete-vs-verify split, Monthly Inventory view-vs-record). `docs/CacaoTrack_PRD_REVISED.md` is **byte-identical** — both SHA-256 `6851FBA6829950413EABBE2C7091BAF45356A0B394F673A6CAA8A8B07ACE7D32`. `_UPDATED` files were not touched.
+> - **STOPPED at Stage 0** — awaiting the owner's exact "continue" before Stage 1. Stage 1 planned: (A) role descriptions with Standard name + one-line description + Can/Cannot lists in `Role.php`, shown in User Management and under the role field when a template is chosen, with "Custom role: permissions chosen for this user." for custom names; (B) server-side maker–checker in `verifyCompletion()` (message: "A different person must verify this task. You completed it.") plus hide the own-completion Verify button and show "Another person must verify this."; (C) tests for Staff/Manager/Administrator same-user rejection, different `manage_checklist` holder success, already-verified rejection, note/hidden button rendering, role catalog + custom-role text, and one-source assertion; (D) stop/report.
+> - **Constraints still in force:** no migrations/tables/columns, no live `db_capstone` SQL/seeding/migrate, tests only on `db_capstone_test` (print the connected DB first), never edit `docs/*_UPDATED.md`, no `--no-verify`, do not stage or commit, leave all other uncommitted work alone. Stage 1 must not change the provisional permission defaults.
+> - **Next session:** run **Stage 1 only after explicit "continue"**; then focused + full suite, Pint on changed files, `php -l`, `php artisan view:cache`, changed-file list, and confirmation `db_capstone` was not touched; propose commit messages/handoff draft; do not commit.
+>
+> ### ▶ Previous snapshot (2026-10-31, end of Session EW)
+> - **Git:** HEAD `6957c4a`, branch `master`, **synchronized with `origin/master`**; **22 modified, 0 staged, 1 untracked directory** (`tests/Concerns/`). Nothing committed or pushed. The tree stacks the uncommitted Sessions EP–EW (Stock In refinements/revert, ET, EU, EV, EW) on top of `6957c4a`.
+> - **Modified files:** `AGENTS.md`; `app/Actions/{CorrectRecord,RegraftBatch}.php`; `app/Http/Controllers/{InventoryController,RegraftController,StockInController}.php`; `app/Http/Requests/{StoreRegraftRecordRequest,StoreStockInRequest}.php`; `app/Models/ScionVariety.php`; `database/seeders/DatabaseSeeder.php`; `resources/views/inventory/{index,stock-in/index}.blade.php`; `resources/views/layouts/sidebar.blade.php`; `resources/views/operational/regraft/index.blade.php`; `session.handoff.md`; `tests/Feature/{ActivityLogTest,InventoryTest,RecordCorrectionTest,RegraftFlowTest,RegraftTest,StockInTest,StockLedgerNestingTest}.php`; untracked `tests/Concerns/CreatesScionStockIn.php`.
+> - **Session EW — Stock In Total Received (Scion):** `/inventory/stock-in` now has a **Total Received (Scion)** summary card. `StockInController@index` passes `totalReceivedScion` = filter-scoped `SUM(quantity)` where `scion_variety_id` is not null (mirrors the seedling card, which sums where it is null). The summary row is now five cards using `row-cols-1 row-cols-md-2 row-cols-xl-5`. `StockInTest` asserts the scion total (80 and 300) and the card label.
+> - **Session EW — Record Regraft labels:** the Source Batch option text changed from `{{ $summary['regraftable'] }} pending` to `{{ $summary['regraftable'] }} regraftable` in both `resources/views/operational/regraft/index.blade.php` and `resources/views/inventory/index.blade.php`. The hint "The remaining X will stay pending." is intentionally unchanged (it describes leftover work, not batch eligibility). `InventoryTest` now asserts `B001 (Criollo) — 100 regraftable`.
+> - **Session EW — sidebar visibility:** the "Signed in as {role}" line now uses `text-white-50` (was `text-muted`, nearly invisible on `#343a40`); the logo is 48×48 with a white backing and a subtle `rgba(255,255,255,0.45)` border. No new CSS was added and **no `npm run build` is needed** — `text-white-50` already exists in the compiled Bootstrap CSS and the logo styling is inline.
+> - **Scion-number investigation (read-only, no code bug):** live Batangas scion receipts are 555 + 100 + 50 = **705** (gross, matches the Stock In card); regrafts consumed 100 into B001-R1 and 120 into B001-R2 = **220**, leaving **485 available** for the selected variety. The "up to 100 plants" was the selected source batch's `survivingQuantity()` cap (B003 = 100), not scion stock. Toledo has 50 consumed but **0 receipts**, so its availability clamps to 0 and Save is disabled for it — historical overdraw in the live data, not a regression. The `_UPDATED` ERD (§3.16/§6) says there is no scion stock balance; the derived received-minus-used availability is the owner-directed Session EU divergence.
+> - **Verified:** focused `StockInTest` **37 passed / 193 assertions**; `InventoryTest|RegraftFlowTest|RegraftTest` **85 passed / 523 assertions**; `RolePermissionAccessTest` **18 passed / 211 assertions**; full MySQL suite **473 passed / 2,555 assertions** on `db_capstone_test`; `vendor\bin\pint --test` and `php artisan view:cache` clean. Test-DB safety unchanged (`.env.testing` and `bootstrap/cache/config.php` absent; `phpunit.xml` forces mysql/db_capstone_test; `tests/TestCase.php` guard intact). No live `db_capstone` write; no migration/schema/route/permission change; `_UPDATED` docs untouched.
+> - **Still pending / USER TO VERIFY:** browser smoke-test the five Stock In cards (including **Total Received (Scion)**), both Record Regraft Source Batch labels, and the sidebar contrast/logo; the Session EU/EV regraft, correction-modal and Stock In modal browser checks from the snapshot below are still outstanding.
+> - **Next (each needs explicit owner approval):**
+>   1. Browser smoke-test the items above.
+>   2. Update the stale `AGENTS.md` Stock In section (add the **Total Received (Scion)** card), and record the **regraftable** label + sidebar visibility changes alongside the Session EU/EV regraft rules and the documented `_UPDATED` divergence.
+>   3. Commit in logical groups (suggested: (a) Stock In EP–EW, (b) EU regraft availability/regraftable labels, (c) EV correction integrity, (d) EW sidebar visibility, (e) `AGENTS.md` + this handoff). The regraft view mixes the EU labels and EV correction copy, so some groups may need hunk-level staging or a combined commit. Push only with approval.
+>   4. Live Administrator `manage_checklist` + `complete_checklist` grant remains outstanding — §5a SQL **NOT EXECUTED**; tick only those two keys in `/users` and **do not use Apply role defaults**.
+>   5. If deploying, run `npm run build` (the EW changes themselves do not require it).
+> - **Remaining risks:** strict regraft corrections can block a harmless change when historical data is already overdrawn until the receipt is corrected; Stock In corrections only validate reductions (a field-only edit on an existing overdraw is allowed); no true parallel concurrency test; browser JS is not automated; the Stock In **Total Received (Scion)** card is gross received, not remaining scion stock.
+> - **Do not:** run live SQL/reseeds, change permissions, edit `docs/CacaoTrack_PRD_UPDATED.md` / `docs/CacaoTrack_ERD_UPDATED.md`, or touch the stale `Capstone\capstone\` checkout.
+>
+> ### ▶ Previous snapshot (2026-10-31, end of Session EV)
+> - **Git:** HEAD `6957c4a`, branch `master`, **synchronized with `origin/master`**; **21 modified, 0 staged, 1 untracked directory** (`tests/Concerns/`). Nothing committed or pushed. The tree stacks the uncommitted Sessions EP–EV (Stock In refinements/revert, ET, EU, EV) on top of `6957c4a`.
+> - **Modified files:** `AGENTS.md`; `app/Actions/{CorrectRecord,RegraftBatch}.php`; `app/Http/Controllers/{InventoryController,RegraftController,StockInController}.php`; `app/Http/Requests/{StoreRegraftRecordRequest,StoreStockInRequest}.php`; `app/Models/ScionVariety.php`; `database/seeders/DatabaseSeeder.php`; `resources/views/inventory/{index,stock-in/index}.blade.php`; `resources/views/operational/regraft/index.blade.php`; `session.handoff.md`; `tests/Feature/{ActivityLogTest,InventoryTest,RecordCorrectionTest,RegraftFlowTest,RegraftTest,StockInTest,StockLedgerNestingTest}.php`; untracked `tests/Concerns/CreatesScionStockIn.php`.
+> - **Scion stock calculation (derived; no balance column):** received = `SUM(stock_ins.quantity)` for the variety; used = `SUM(regraft_records.quantity)` for sub-batches currently using that variety; `scionBalance()` = signed received − used; `availableScionQuantity()` = `max(0, scionBalance())`. Seedling receipts (`scion_variety_id` null) never count.
+> - **New regraft:** `RegraftBatch` locks the source batch, then the variety via `ScionVariety::lockForScionStock([$id])`, recomputes availability, and rejects `<1`, above scion availability, or above `Batch::survivingQuantity()`. Zero-stock message: "No scions are currently available for this variety. Record new scion stock through Stock In before proceeding."
+> - **Pending regraft:** `/operational/regraft` has a **PENDING REGRAFT** column; each source option shows "N pending"; the modal message is "{N} scions are available. You can regraft up to {cap} plants now. The remaining {pending} will stay pending." Quantity max = `min(batch pending, scion available)`; Save is disabled at 0. Receiving new scions only increases availability; it never creates a regraft record.
+> - **Regraft correction:** `CorrectRecord::regraft()` locks record → source → sub-batch → old/new varieties in ascending id order. The source cap is checked with the record's own quantity returned. Scion cap = `scionBalance() + oldQuantity` when the variety stays the same, or `newVariety->scionBalance()` when it changes. A correction that would make consumption exceed received stock is rejected.
+> - **Stock In correction:** `CorrectRecord::stockIn()` locks the receipt, then old/new varieties in ascending id order. It only validates when the correction would reduce received stock (lower quantity, variety change, or scion→seedling conversion) and rejects if the old variety would be left with less received than already consumed. Valid reductions and unconsumed conversions still save.
+> - **UI:** the correction modal now says "Varieties recorded in Stock In are listed, plus the sub-batch's current variety so an unchanged correction can be saved." (The new-regraft modal copy is unchanged.)
+> - **Concurrency:** all three writers use the same deterministic ascending variety-lock helper; availability is read after locks. A true parallel two-connection test is not supported by the transactional `RefreshDatabase` harness and Windows has no `pcntl_fork`; a lock-order regression test is in `RecordCorrectionTest`, and the lock strategy is code-verified.
+> - **Verified:** focused `RecordCorrectionTest|RegraftFlowTest|RegraftTest|InventoryTest|StockInTest` **144 passed / 850 assertions**; full MySQL suite **473 passed / 2,552 assertions** on `db_capstone_test`; `vendor\bin\pint --test`, `php artisan view:cache` and `git diff --check` clean. Test-DB safety checked (`.env.testing` and `bootstrap/cache/config.php` absent; `phpunit.xml` forces mysql/db_capstone_test; `tests/TestCase.php` guard intact). No live `db_capstone` access; no migration/schema/route/permission change.
+> - **Still pending / USER TO VERIFY:** browser smoke-test `/operational/regraft` and `/inventory` Record Regraft (availability refresh, pending message, zero disables Save, old choice after validation), the correction modal (new copy + rejection messages), and the Session ET Stock In modal.
+> - **Next (each needs explicit owner approval):**
+>   1. Browser smoke-test the regraft forms, correction modal and Stock In modal.
+>   2. Update the stale `AGENTS.md` Stock In section and add the regraft availability/pending + correction-integrity rules and the documented `_UPDATED` divergence.
+>   3. Commit in logical groups (suggested: (a) Stock In EP–ET, (b) EU regraft availability/pending, (c) EV correction integrity, (d) `AGENTS.md` + this handoff). The regraft view mixes the EU pending UI and the EV correction copy, so (b)+(c) may need hunk-level staging or one combined commit. Push only with approval.
+>   4. Live Administrator `manage_checklist` + `complete_checklist` grant remains outstanding — §5a SQL **NOT EXECUTED**; tick only those two keys in `/users` and **do not use Apply role defaults**.
+>   5. If deploying, run `npm run build`.
+> - **Remaining risks:** strict regraft corrections can block a harmless change when historical data is already overdrawn until the receipt is corrected; Stock In corrections only validate reductions (a field-only edit on an existing overdraw is allowed); no true parallel concurrency test; browser JS is not automated.
+> - **Do not:** run live SQL/reseeds, change permissions, edit `docs/CacaoTrack_PRD_UPDATED.md` / `docs/CacaoTrack_ERD_UPDATED.md`, or touch the stale `Capstone\capstone\` checkout.
+>
+> ### ▶ Previous snapshot (2026-10-31, end of Session EU)
+> - **Git:** HEAD `6957c4a`, branch `master`, **synchronized with `origin/master`**; **21 modified, 0 staged, 1 untracked file**:
+>   new `tests/Concerns/CreatesScionStockIn.php`; modified
+>   `app/Actions/{CorrectRecord,RegraftBatch}.php`, `app/Http/Controllers/{InventoryController,RegraftController}.php`,
+>   `app/Http/Requests/StoreRegraftRecordRequest.php`, `app/Models/ScionVariety.php`,
+>   `database/seeders/DatabaseSeeder.php`, `resources/views/inventory/index.blade.php`,
+>   `resources/views/operational/regraft/index.blade.php`,
+>   `tests/Feature/{InventoryTest,RecordCorrectionTest,RegraftFlowTest,RegraftTest,StockLedgerNestingTest}.php`,
+>   plus the pre-existing Session ET files (`StockInController.php`, `StoreStockInRequest.php`,
+>   `stock-in/index.blade.php`, `StockInTest.php`, `ActivityLogTest.php`, `AGENTS.md`, this handoff).
+>   Nothing committed or pushed.
+> - **Current regraft state:** every Record Regraft dropdown lists only ACTIVE scion varieties with at
+>   least one scion `stock_ins` row (`ScionVariety::receivedInStockIn()`), never preselected. The
+>   correction dropdown lists those plus each listed sub-batch's current variety.
+> - **Scion availability:** derived as `SUM(stock_ins.quantity for the variety) −
+>   SUM(regraft_records.quantity for sub-batches using that variety)`, clamped at 0. No balance column.
+>   The Record Regraft forms show "Available scion quantity: N"; the quantity max is
+>   `min(batch regraftable, scion available)`. A 0-available variety stays listed, shows 0 and disables
+>   Save Regraft. Seedlings never contribute.
+> - **Server:** `RegraftBatch` locks the source batch and scion-variety row, then rejects quantities above
+>   the scion availability (or a 0 balance) inside the transaction. Direct calls cannot bypass it.
+> - **Seeded values (family unchanged):** B001 500/400/100 · B001-R1 100/50/30 · B001-R1-R1 30/30/0 ·
+>   B002 150/150/0 · B003 100/100/0. Scion availability: Criollo 90 (120 received − 30 used),
+>   Toledo 0 (100 − 100), Trinitario 80 (80 − 0). `stock_ins` 5, `activity_logs` 12,
+>   Stock In total 1,100 / seedlings 800, ledger seedlings 800. Seeder idempotent.
+> - **Docs divergence:** owner-approved; the client-approved `_UPDATED` PRD/ERD state there is no scion
+>   stock balance and no separate per-scion inventory. Those files were **not edited**.
+> - **Verified:** focused Regraft/Flow/Inventory/Correction/StockLedger/SeededFamily **116 passed / 689
+>   assertions**; full MySQL suite **459 passed / 2,419 assertions** on `db_capstone_test` (DB name printed
+>   first); Pint on changed files, `php -l`, `view:cache` and `git diff --check` clean. No live
+>   `db_capstone` access; no migration/schema/route/permission change.
+> - **Still browser-only / USER TO VERIFY:** on `/operational/regraft` and `/inventory`, select each
+>   variety — the availability line and quantity max update, a 0-available variety disables Save, and a
+>   failed validation restores the old choice; hard refresh first. The Session ET Stock In browser list
+>   (footer/tabs/saves/discard/inline-supplier) also remains unverified.
+> - **Next (each needs explicit owner approval):**
+>   1. Visually smoke-test the two regraft forms and the ET Stock In modal.
+>   2. Update the stale `AGENTS.md` Stock In section AND add the regraft Stock In/availability rules +
+>      the documented `_UPDATED` divergence.
+>   3. Commit in separate parts: (a) Session ET Stock In code/tests, (b) regraft restriction +
+>      availability code/tests + trait, (c) `AGENTS.md` + this handoff. Push only with approval.
+>   4. Live Administrator `manage_checklist` + `complete_checklist` grant remains outstanding — §5a SQL
+>      **NOT EXECUTED**; tick only those two keys in `/users` and **do not use Apply role defaults**.
+> - **Do not:** run live SQL/reseeds, change permissions, edit `docs/CacaoTrack_PRD_UPDATED.md` /
+>   `docs/CacaoTrack_ERD_UPDATED.md`, or touch the stale `Capstone\capstone\` checkout.
+>
+> - **▶ Session EU (DONE — regraft scion varieties from Stock In + available scion quantity cap; 2026-10-31):**
+>   **(1) Single definition:** `ScionVariety::scopeReceivedInStockIn()` = active + at least one scion
+>   `stock_ins` row. `regraftScionVarieties` (both Record Regraft modals) and
+>   `regraftCorrectionVarieties` (qualifying + current) use it; Add Batch, filters, Stock In/Out and the
+>   Scion Variety list are unchanged.
+>   **(2) Forms:** label "Replacement Scion Variety", placeholder "Select scion variety…", helper text,
+>   no preselection, old() restore, empty state with disabled Save and a Stock In link only for
+>   `manage_stock`. Removed the old source-variety preselection JS and `data-variety-id`.
+>   **(3) Server:** `StoreRegraftRecordRequest` uses the scope; `RegraftBatch` re-checks inside the
+>   transaction; `CorrectRecord` requires the rule only when the variety changes (unchanged always saves).
+>   `CorrectRegraftRecordRequest` remains active-exists-only.
+>   **(4) Scion stock:** `ScionVariety` gains `regraftRecords()`, `receivedScionQuantity()`,
+>   `usedScionQuantity()`, `availableScionQuantity()` and `scopeWithScionAvailability()` (eager-loaded
+>   sums, no N+1). Both Record Regraft forms display the live available figure, cap the quantity at the
+>   lower of batch/scion stock, and disable Save when the selected variety has 0; zero varieties remain
+>   listed. Server messages: "Regraft quantity cannot exceed the N scions available for {variety}." /
+>   "No scions of {variety} are available for regrafting. Record a Scion Stock In first."
+>   **(5) Seeder:** scion receipts (Criollo, Trinitario) now run before the seeded regrafts; one Toledo
+>   receipt (100 units, 2026-09-01) was added so the seeded 100-unit Toledo regraft remains valid.
+>   Family numbers unchanged; stock_ins 4→5; activity_logs 11→12; Stock In total 1,000→1,100; seedlings
+>   800 unchanged. Re-running the seeder is idempotent.
+>   **(6) Tests:** shared `Tests\Concerns\CreatesScionStockIn`; updated setups in RegraftTest,
+>   RegraftFlowTest and InventoryTest; `StockLedgerNestingTest` receipt-total assertion 1,000→1,100;
+>   new tests cover the Stock In listing, zero-availability listing, derived availability, POST/direct
+>   over-limit rejection + rollback, exact-cap success, and correction unchanged/non-qualifying/qualifying
+>   cases. `_UPDATED` docs untouched.
+>   **(7) Verification:** focused **116/689**; full suite **459/2,419** on `db_capstone_test`; Pint,
+>   `php -l`, `view:cache`, `git diff --check` clean. HEAD `6957c4a`; 21 modified/0 staged/1 untracked;
+>   nothing committed or pushed. No live `db_capstone` access.
+> - **▶ Session ET (DONE — independent Seedlings + Scion entries saved together; owner-directed; 2026-10-31):**
+>   **(1) Form:** removed the shared fields above the tabs. Each pane now owns supplier, quantity, origin,
+>   date received and notes; Scion adds variety + unit price + calculated amount. Both panes remain enabled
+>   and in the page; no pane is reset on tab switch.
+>   **(2) Footer:** the `<form>` now carries `.modal-content` so `modal-dialog-scrollable` keeps the footer
+>   visible. Removed `#stockInScionSubmitBtn`; exactly one submit button (`#stockInSubmitBtn`) remains in the
+>   footer with Cancel. `guardSubmit` now targets only that button and shows "Saving…".
+>   **(3) Server:** `StoreStockInRequest` removes untouched panes in `prepareForValidation()` (date alone is
+>   not data), validates only filled panes with tab-prefixed messages, and requires at least one pane
+>   ("Fill in the Seedlings tab, the Scion tab, or both."). `StockInController@store` fingerprints the
+>   normalized payload (nested arrays, blanks + prefilled date ignored), then one `DB::transaction` creates
+>   the seedling row and/or scion row, each with its own `ActivityLog::TYPE_STOCK_IN_RECORDED` row. Success
+>   names only what was saved ("Saved: Seedlings 500 and Scion 300."). Route and `manage_stock` unchanged.
+>   **(4) Helpers:** "Required when you fill in this tab.", "Seedlings are recorded without a variety or
+>   price.", Filled/error tab marks, "Will save: …" summary bar above the footer, Clear this entry, Copy
+>   supplier and date from the other tab, discard confirmation ("Discard what you entered?" / Keep editing /
+>   Discard), Enter-key guard, and inline-supplier draft restore.
+>   **(5) Tests:** updated all old single-row posters to nested payloads; added both-tabs, exact browser-shape
+>   scion-only/seedlings-only, note-only all-or-nothing, forced-log-failure rollback, duplicate with empty
+>   other tab, 403 without `manage_stock`, seedling-only totals/ledger, modal markup/no `required`, and old()
+>   restoration. The old in-pane-button test was replaced by a one-footer-submit test.
+>   **(6) Verification:** `StockInTest` **37/190**; `ActivityLogTest` **18/56**; full suite **446/2,331** on
+>   `db_capstone_test`; Pint, `php -l`, `view:cache`, `git diff --check` clean. No migration/schema/capstone
+>   write. HEAD `6957c4a`; 7 modified/0 staged/0 untracked; nothing committed or pushed.
+>   **Next (each needs explicit owner approval):** browser smoke-test the USER TO VERIFY list; update
+>   `AGENTS.md`; commit code then docs; push only with approval. The live Administrator checklist grant is
+>   still outstanding (§5a SQL NOT EXECUTED).
+> - **▶ Session ES (DONE — Scion tab Save Stock In button; owner-directed UI + test change only; 2026-10-31):**
+>   **(1) Button:** added `#stockInScionSubmitBtn` (`type="submit"`, "Save Stock In") directly below the
+>   Calculated Amount block (above Notes) in the Scion tab pane; it submits the existing `#stockInForm`.
+>   The shared footer Save Stock In button remains.
+>   **(2) JS:** `guardSubmit` now accepts one or more button ids and disables/spinners both stock-in submit buttons
+>   on submit, preventing double submission from either button.
+>   **(3) Validation (unchanged):** `StoreStockInRequest` still enforces the both-or-neither rule
+>   (`scion_variety_id` ↔ `unit_price`). No migration/table/column, no controller/request/model edit; Stock In
+>   still never touches inventory or batches. PRD §2.2/FR-09 and ERD §3.7 were used for validation only — not edited.
+>   **(4) Verification:** focused `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test
+>   --filter=StockInTest` → **27 passed / 112 assertions**, exit 0; full suite → **436 passed / 2,253 assertions**,
+>   exit 0; `vendor\bin\pint --test`, `php artisan view:cache` and `git diff --check` clean. Test-DB safety
+>   re-verified first (`.env.testing` and `bootstrap/cache/config.php` absent; `phpunit.xml` forces
+>   mysql/db_capstone_test; `tests/TestCase.php` guard intact). No live `db_capstone` access.
+>   **(5) Git:** HEAD `6957c4a`, branch `master`, synced with `origin/master`; **4 modified** (Stock In view,
+>   `StockInTest`, `AGENTS.md`, this handoff), **0 staged/untracked**, nothing committed/pushed.
+>   **Next (each needs explicit owner approval):** visually smoke-test `/inventory/stock-in` (Scion tab button,
+>   footer button, amount preview); then commit the view + test and docs (AGENTS + handoff); push only with approval.
+>   The live Administrator `manage_checklist` + `complete_checklist` grant remains outstanding (§5a SQL still NOT EXECUTED).
+> - **▶ Session ER (DONE — reverted the unified Stock In form to the original tabs; owner-directed; 2026-10-31):**
+>   **(1) Revert:** removed the Session EQ unified `Scion Details` block and restored the original `Seedlings` / `Scion`
+>   Bootstrap tabs in `#stockInModal` (shared supplier / quantity / origin / date received; the Scion tab adds scion
+>   variety + unit price + notes; one footer **Save Stock In** button). `tests/Feature/StockInTest.php` was restored to
+>   the Session EP tests (modal sizing/amount preview, scion-tab reopening on a partial scion submission, negative unit
+>   price rejected). The pre-EQ view/test state (Session EP) is restored exactly.
+>   **(2) Docs validation only:** re-checked against `docs/CacaoTrack_PRD_UPDATED.md` §2.2 / FR-09 (Stock In fields:
+>   Seedlings, Quantity, Date, Origin) and `docs/CacaoTrack_ERD_UPDATED.md` §3.7 (`Stock_In` keeps nullable
+>   `Scion_Variety_ID` / `Unit_Price` / `Notes`; the presence of `scion_variety_id` is the signal and there is no
+>   discriminator column). The tabbed form matches both; no PRD/ERD file was edited and no schema/table changed.
+>   Server-side both-or-neither validation remains in `StoreStockInRequest`; Stock In still never touches inventory or batches.
+>   **(3) Verification:** focused `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test
+>   --filter=StockInTest` → **26 passed / 109 assertions**, exit 0; full suite → **435 passed / 2,250 assertions**, exit 0.
+>   Test-DB safety re-verified first (`.env.testing` and `bootstrap/cache/config.php` absent; `phpunit.xml` forces
+>   mysql/db_capstone_test; `tests/TestCase.php` guard intact). No live `db_capstone` access; no migration/column,
+>   controller/request/model edit, commit or push.
+>   **(4) Git:** HEAD `6957c4a`, branch `master`, synced with `origin/master`; **4 modified** (Stock In view,
+>   `StockInTest`, `AGENTS.md`, this handoff), **0 staged/untracked**, nothing committed/pushed.
+>   **Next (each needs explicit owner approval):** visually smoke-test `/inventory/stock-in` on desktop and a narrow
+>   viewport (Seedlings / Scion tabs, Save Stock In footer, amount preview); then commit the restored view + test and
+>   docs (AGENTS + handoff); push only with approval. The live Administrator `manage_checklist` +
+>   `complete_checklist` grant remains outstanding (§5a SQL still NOT EXECUTED).
+> - **▶ Session EP (DONE — Stock In modal usability refinement; owner-scoped UI + test change only, no schema/inventory-rule change; 2026-10-31):**
+>   **Implemented only the approved Stock In modal refinements — no migration/column, no controller/request/model edit, no live
+>   `db_capstone` access, no commit/push.**
+>   **(1) Responsive modal:** `#stockInModal` now uses `modal-dialog modal-lg modal-dialog-scrollable
+>   modal-fullscreen-sm-down`, so it is wide on desktop, full-screen on phones, and the body scrolls while the header/footer
+>   stay fixed; shared fields reflow to Quantity / Origin / Date Received columns and Scion Variety + Unit Price sit side by
+>   side. The existing tabs, Supplier (+ inline add), Date Received, Origin, Scion Variety, Unit Price, Notes, Receiving
+>   History and filters are preserved.
+>   **(2) Scion calculated amount:** new read-only `#stockInCalculatedAmount` block shows `quantity × unit_price` live (2
+>   decimals, client-side `toLocaleString`, `aria-live="polite"`); it is display-only — `stock_ins` keeps `quantity` and
+>   `unit_price` and there is no amount column.
+>   **(3) Validation feedback:** business rules are unchanged (`quantity` integer `min:1`; `unit_price` numeric `min:0`,
+>   `required_with:scion_variety_id`); the Scion tab now reopens when scion input was submitted or scion-specific errors
+>   exist, so error messages are never hidden behind the Seedlings tab; unit price gained the `₱` input-group prefix,
+>   `inputmode` hints and helper text. Stock In still never touches inventory.
+>   **(4) Tests/verification:** `tests/Feature/StockInTest.php` +3 tests (responsive/amount markup; scion-tab reopening after
+>   a partial scion submission; negative unit price rejected). Test-DB safety re-verified first (`.env.testing` and
+>   `bootstrap/cache/config.php` absent, `phpunit.xml` forces `mysql`/`db_capstone_test`, `tests/TestCase.php` guard
+>   intact). Focused `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test --filter=StockInTest`
+>   → **26 passed / 109 assertions**, exit 0; `vendor\bin\pint --test`, `php artisan view:cache` and `git diff --check`
+>   clean. Last full-suite baseline remains **432 passed / 2,239 assertions** (Session EL); the working tree adds 3 tests.
+>   **(5) Git:** HEAD `6957c4a`, branch `master`, `## master...origin/master` synchronized; **3 modified** (Stock In view,
+>   `StockInTest`, this handoff), **0 staged/untracked**, nothing committed/pushed. The pre-existing handoff edits were
+>   preserved. **Next (each needs explicit owner approval):** visually smoke-test `/inventory/stock-in` on desktop + a
+>   narrow viewport (amount preview, fullscreen below `sm`, scrolling); then commit the Stock In refinement (view + test)
+>   and this handoff (smallest option: one code commit + one docs commit, EI/EM precedent); push only with approval. The
+>   live Administrator `manage_checklist` + `complete_checklist` grant remains outstanding (§5a SQL still NOT EXECUTED).
+> - **▶ Session EO (DONE — owner-authorized final pre-push checks + published the 10 reviewed commits; 2026-10-29):**
+>   **Checks + push only — no commit/amend/stage/reset/stash/discard, no code/test/doc edit before the push,
+>   no pull/rebase, no live `db_capstone` access and no permission change; only this handoff was edited
+>   afterwards.**
+>   **(1) Pre-push checks (all passed):** `git status --short` → only ` M session.handoff.md` (modified,
+>   unstaged); **0 staged, 0 untracked**; `git log origin/master..master --oneline` → exactly the 10
+>   EN-reviewed commits (`22a0770`, `05f785d`, `cd3912c`, `3a522e3`, `6f68b92`, `47b4cc2`, `c84158c`,
+>   `745099c`, `5101f3d`, `6957c4a`); branch `master`, remote `origin` =
+>   `https://github.com/tingalfilepenf-pixel/CacaoTrack.git`; `git ls-remote origin refs/heads/master` →
+>   **`49351ce8b4b7f46f1c1b976c9188d0ed8dac7863`**, identical to local `origin/master` (unchanged since EN);
+>   `git diff --check` clean.
+>   **(2) Push:** `git push origin master` (no force options, no other branch) → exit **0**,
+>   `49351ce..6957c4a  master -> master`.
+>   **(3) Post-push verification:** `git status --short` → only ` M session.handoff.md`; `git status -sb` →
+>   `## master...origin/master` (**synchronized, 0 ahead / 0 behind**); HEAD = local `origin/master` =
+>   remote `refs/heads/master` = **`6957c4af406f4a3355da27c3261bfa9cf9b20a14`**; **0 staged, 0 untracked**;
+>   this handoff remains modified/unstaged and was not part of the push.
+>   **▶ Start here next session (vibecoding) — each step only with explicit owner approval:** (1) grant the
+>   live Administrator `manage_checklist` + `complete_checklist` via `/users` → Edit own account (tick only
+>   those two; **do not use Apply role defaults**; `correct_records` is not needed; §5a SQL remains **NOT
+>   EXECUTED**); (2) smoke-test the checklist flow (Staff completes → Manager verifies); (3) optionally
+>   re-run the suite — expected **432 passed / 2,239 assertions** on `db_capstone_test`; (4) if deploying,
+>   run `npm run build`. **Do not run live SQL/reseeds, change permissions, or commit/push without
+>   approval.** Live `db_capstone` was not accessed; last captured baseline (Session EH) remains users 1,
+>   batches 5, activity_logs 13.
+> - **▶ Session EN (DONE — read-only pre-push review of the 10 outgoing commits; 2026-10-28):**
+>   **Read-only only — no push/pull, no commit/amend/stage/reset/stash, no code/test edit, no SQL and no
+>   live `db_capstone` access; only this handoff was edited afterwards.**
+>   **(1) Branch/remote:** branch `master`, **ahead 10 / behind 0** of `origin/master`;
+>   `git ls-remote origin refs/heads/master` → **`49351ce8b4b7f46f1c1b976c9188d0ed8dac7863`**, identical to
+>   local `origin/master` and the merge-base. Linear history (no merge commits); `git diff --check` clean.
+>   **(2) Outgoing commits (chronological):** `22a0770` feat(auth) centralize role permissions and enforce
+>   route access · `05f785d` feat(users) role templates + gated inline master-data creation · `cd3912c`
+>   feat(ui) checklist verification, friendly errors and role-aware navigation · `3a522e3` chore(activity)
+>   remove unused legacy types · `6f68b92` test(auth) role defaults, checklist verification and access
+>   matrix · `47b4cc2` docs(auth) role permissions and checklist workflow · `c84158c` fix(stock)
+>   permission-gated inline supplier/client links · `745099c` chore checkpoint tested inventory and
+>   analytics changes · `5101f3d` docs(handoff) record tested working tree and results · `6957c4a`
+>   perf(scion-varieties) eliminate per-row existence queries.
+>   **(3) Range `49351ce..6957c4a`:** **62 files, +6,888/−1,342**, 5 added files
+>   (`App\Support\ChecklistHistory`, `errors/403`, `errors/404`, `RolePermissionAccessTest`,
+>   `ScionVarietyManagementTest`), no deleted files. Scope: permission catalog/route gates; role templates
+>   and inline Supplier/Client gating; checklist complete-vs-manage/verify split + friendly 403/404 +
+>   permission-aware sidebar/dashboard; legacy activity-type cleanup; test-safety (`phpunit.xml` forces
+>   `mysql`/`db_capstone_test`, `tests/TestCase.php` guard) and access-matrix tests; docs; guarded deletes +
+>   inventory rebuild + sub-batch collapse + lifecycle/status/actions/filters/cards; analytics deficit/KPI/
+>   Stock-Ledger changes; Scion Variety N+1 fix.
+>   **(4) Security:** **no `.env`, credentials, tokens, private keys, DB dumps/SQL files, `vendor/`,
+>   `node_modules/`, `storage/` or `public/build`** in the range; `.env` confirmed gitignored; token-pattern
+>   scan clean; no `eval`/`exec`/`system` or new external calls. `password123` appears only as a test fixture
+>   (`RolePermissionAccessTest:403-404`, `UserManagementTest:33-34,119`). `docs/CacaoTrack_PRD.md` and
+>   `docs/CacaoTrack_PRD_REVISED.md` are byte-identical (SHA-256
+>   `6851FBA6829950413EABBE2C7091BAF45356A0B394F673A6CAA8A8B07ACE7D32`).
+>   **(5) Working tree:** only ` M session.handoff.md` (**+233/−15** versus HEAD before this EN entry),
+>   **0 staged, 0 untracked**, no stashes; the uncommitted handoff is in no commit and will **not** be pushed.
+>   **(6) Non-blocking concerns:** `745099c` is a large mixed checkpoint (28 files, +2,481/−683) that is
+>   harder to bisect/revert; `47b4cc2` (docs) also carries a 2-line `sidebar.blade.php` change;
+>   `public/build` is gitignored, so **run `npm run build` after deploying** the CSS/JS source changes; the
+>   live Administrator still lacks `manage_checklist` + `complete_checklist` (checklist routes 403 until
+>   granted); handoff docs contain the public repo URL and local paths (already present in history).
+>   **▶ Start here next session (vibecoding) — each step only with explicit owner approval:** (1) run
+>   `git push origin master` (pushes **10** commits); (2) grant the live Administrator `manage_checklist` +
+>   `complete_checklist` via `/users` → Edit own account (tick only those two; **do not use Apply role
+>   defaults**; `correct_records` is not needed; §5a SQL remains **NOT EXECUTED**); (3) smoke-test the
+>   checklist flow (Staff completes → Manager verifies); (4) optionally re-run the suite — expected
+>   **432 passed / 2,239 assertions** on `db_capstone_test`; (5) if deploying, run `npm run build`.
+>   **Do not run live SQL/reseeds, change permissions, stage/commit, or push without approval.** Live
+>   `db_capstone` baseline remains users 1, batches 5, activity_logs 13 (Session EH, last captured).
+> - **▶ Session EM (DONE — owner-approved commit of the EK Scion Variety optimization; 2026-10-28):**
+>   **Commit-only session — no code/test edits, no SQL/migrations/seeders, no permission or live-data change,
+>   no push/pull/reset/stash/amend. Only this handoff was edited afterwards.**
+>   **(1) Pre-commit inspection:** `git status --short` → **3 modified** (EK controller + EK test + this
+>   handoff), 0 staged, 0 untracked, no stashes. Diffs reviewed: the controller hunk is only
+>   `withCount('batches')->withExists(['batches','stockOutDetails','stockIns'])` + its explanatory comment;
+>   the test hunk only adds the stock-in / stock-out blocker tests, the batch-count + guarded-delete
+>   rendering test and the query-count test. `git diff --check` clean. No code/test edit was made.
+>   **(2) Staged exactly 2 files:** `app/Http/Controllers/ScionVarietyController.php` +
+>   `tests/Feature/ScionVarietyManagementTest.php`; `session.handoff.md` deliberately **not staged**.
+>   Staged diff reviewed (`--stat` → 2 files, **+114/−4**; `--check` clean).
+>   **(3) Commit `6957c4af406f4a3355da27c3261bfa9cf9b20a14` —
+>   `perf(scion-varieties): eliminate per-row existence queries`** — exactly the two files
+>   (2 files changed, +114/−4); no other path was committed.
+>   **(4) Post-commit state:** `git status --short` → only ` M session.handoff.md` (this entry), 0 staged,
+>   0 untracked; branch `master` **ahead 10 / behind 0** of `origin/master`; **not pushed**. No amend, no
+>   reset/stash/discard, no history rewrite. Live `db_capstone` was **not** accessed.
+>   **(5) Verified baseline unchanged:** the committed tree is exactly the one Session EL tested green —
+>   **432 passed / 2,239 assertions** on `db_capstone_test`; focused `ScionVarietyManagementTest`
+>   **8 passed / 37 assertions**; Pint clean.
+>   **▶ Start here next session (vibecoding) — only after explicit owner approval:** (1) run
+>   `git push origin master` (now pushes **10** commits) only on approval; (2) grant the live Administrator
+>   `manage_checklist` + `complete_checklist` via `/users` → Edit own account (tick only those two;
+>   **do not use Apply role defaults**; `correct_records` is not needed; §5a SQL remains **NOT EXECUTED**);
+>   (3) optionally smoke-test the checklist flow after the grant (Staff completes → Manager verifies);
+>   (4) re-run the suite if desired — expected **432 passed / 2,239 assertions** on `db_capstone_test`.
+>   **Do not run live SQL/reseeds, change permissions, stage/commit, or push without approval.** Live
+>   `db_capstone` baseline remains users 1, batches 5, activity_logs 13 (Session EH, last captured).
+> - **▶ Session EL (DONE — full-suite regression check after the EK Scion Variety performance fix; 2026-10-28):**
+>   **Verification only — no code/test edits, no SQL/migrations/seeders, no permission or live-data change,
+>   no staging/commit/push/pull/reset/stash/amend. Only this handoff was edited.**
+>   **(1) Pre-test state:** HEAD `5101f3d`, branch `master`, **ahead 9 / behind 0** of `origin/master`;
+>   **3 modified** (the EK controller + test + this handoff), **0 staged, 0 untracked**, no stashes;
+>   `git diff --check` clean. No unexpected files.
+>   **(2) Test-DB safety re-confirmed:** `.env.testing` absent; `bootstrap/cache/config.php` absent;
+>   `phpunit.xml:26-28` forces `mysql` / `db_capstone_test` / empty `DB_URL` with `force="true"`;
+>   `tests/TestCase.php:16-34` guard intact (refuses `RefreshDatabase` on any other DB). No live
+>   `db_capstone` access; no migrate/seed/SQL command was run.
+>   **(3) Full suite:** `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
+>   → **exit 0**, **432 passed / 2,239 assertions**, **0 failed / 0 skipped**, **53.49 s** PHPUnit
+>   (~56.1 s wall) — exact expected baseline (428 + 4 new EK tests).
+>   **(4) Focused suite:** `php artisan test --filter=ScionVarietyManagementTest` → **8 passed / 37
+>   assertions**, exit 0. **Pint:** `vendor\bin\pint --test` → **exit 0**, no files modified.
+>   **(5) Scion fix regression checks all pass:** `batches_count` retained (`withCount('batches')`);
+>   `withExists(['batches','stockOutDetails','stockIns'])` supplies `batches_exists`,
+>   `stock_out_details_exists`, `stock_ins_exists` read by `ScionVariety::deletionBlockers()`;
+>   referenced varieties stay deletion-protected, unreferenced remain deletable; blocker messages, disabled
+>   Delete tooltip and `#deleteScionVarietyModal` target unchanged; the query-count test passes and no
+>   per-row existence fallback remains in the listing path.
+>   **(6) Final Git:** `git diff --check` clean; still **3 modified, 0 staged, 0 untracked** (same files);
+>   HEAD unchanged at `5101f3d`; **nothing was staged/committed/amended/pushed/pulled/reset/stashed**.
+>   The pre-existing EK/EI/EJ handoff edits are preserved.
+>   **▶ Start here next session (vibecoding) — only after explicit owner approval:** (1) decide the commit
+>   strategy for the EK controller/test + this handoff (smallest option: one code commit + one docs commit;
+>   EI precedent); (2) grant the live Administrator `manage_checklist` + `complete_checklist` via `/users` →
+>   Edit own account (tick only those two; **do not use Apply role defaults**; `correct_records` is not
+>   needed; §5a SQL remains **NOT EXECUTED**); (3) run `git push origin master` (pushes **9** commits) only
+>   on approval; (4) re-run the focused/full suite if desired — verified baseline is now **432 passed / 2,239
+>   assertions** on `db_capstone_test`. **Do not run live SQL/reseeds, change permissions, stage/commit, or
+>   push without approval.** Live `db_capstone` was **not** queried this session; last captured baseline
+>   (Session EH) remains users 1, batches 5, activity_logs 13.
+> - **▶ Session EK (DONE — Scion Variety listing N+1 removed with a controller-only `withExists()` fix + focused tests; 2026-10-28):**
+>   **Owner-scoped optimization only: no model/view/schema/route/permission/live-data change, and no staging,
+>   commit, push, pull, reset, stash or amend.**
+>   **(1) Change (one file):** `app/Http/Controllers/ScionVarietyController.php@index` replaced
+>   `->withCount(['batches','stockOutDetails','stockIns'])` with
+>   `->withCount('batches')->withExists(['batches','stockOutDetails','stockIns'])`. The BATCHES column keeps
+>   `batches_count`; `withExists()` now supplies `batches_exists`, `stock_out_details_exists` and
+>   `stock_ins_exists`, which `ScionVariety::deletionBlockers()` reads instead of running a fallback
+>   `exists()` per relation per row. **Cause:** `withCount()` emits `*_count`, not `*_exists`; the view calls
+>   `canBeDeleted()` for every row and `deletionBlockers()` again for blocked rows, so the old code added
+>   up to 3 queries per row (6 when blocked). Model and view were verified sufficient as-is and **not edited**.
+>   **(2) Tests (approved test file only):** `tests/Feature/ScionVarietyManagementTest.php` is now **8 tests**.
+>   Added stock-in blocker, stock-out-detail blocker, batch-count + guarded-delete rendering, and
+>   `test_listing_does_not_grow_its_query_count_with_the_number_of_varieties` — compares the same page at
+>   **1 vs 3 referenced varieties** and asserts equal query counts (no brittle exact total). Existing batch
+>   blocker test now asserts the exact error message; new blocker tests assert the exact stock-in /
+>   stock-out messages and that no `scion_variety_deleted` log row is written. The stock-out test isolates
+>   the line blocker by clearing the batch's variety reference after creating the line.
+>   **Verified:** focused suite `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test';
+>   php artisan test --filter=ScionVarietyManagementTest` → **8 passed / 37 assertions**, exit 0;
+>   `vendor\bin\pint --test` **passed**; `php -l` clean on both files. Test-DB safety re-verified first:
+>   `.env.testing` + `bootstrap/cache/config.php` absent, `phpunit.xml:26-28` forces `mysql` /
+>   `db_capstone_test` / empty `DB_URL`, `tests/TestCase.php` guard intact. No live `db_capstone` access.
+>   **(3) Deletion behavior preserved:** blocked tables/rows still refuse deletion with the same blocker
+>   wording, disabled-button tooltip and `data-bs-target="#deleteScionVarietyModal"` enabled state;
+>   unreferenced varieties remain deletable under the existing Manager/Administrator rules.
+>   **(4) Git:** HEAD `5101f3d`, branch `master`, **ahead 9 / behind 0** of `origin/master`; **3 modified,
+>   0 staged, 0 untracked**, no stashes: the controller, the test file and this handoff. The handoff's
+>   pre-existing EI/EJ edits were preserved. `git diff --check` clean. **Nothing was staged/committed/pushed.**
+>   **▶ Start here next session (vibecoding) — only after explicit owner approval:** (1) grant the live
+>   Administrator `manage_checklist` + `complete_checklist` via `/users` → Edit own account (tick only those
+>   two; **do not use Apply role defaults**; `correct_records` is not needed; §5a SQL remains **NOT EXECUTED**);
+>   (2) decide the commit strategy for the new controller/test changes (smallest option: one code commit +
+>   this handoff docs commit; session EI precedent); (3) run the pending `git push origin master` (pushes
+>   **9** commits) only on approval; (4) optionally re-run the full suite from the working tree — expected
+>   **432 passed** (428 prior + 4 new) against `db_capstone_test`. **Do not run live SQL/reseeds, change
+>   permissions, stage/commit, or push without approval.**
+> - **▶ Session EJ (DONE — read-only inspection of the three remaining tasks: Administrator checklist access, Scion Variety `*_exists` N+1, Git push readiness; 2026-10-28):**
+>   **Read-only only — no code/test edits, no SQL, no permission or live-data change, no staging/commit/push.
+>   Only this handoff was edited.**
+>   **(1) Git state:** HEAD `5101f3d`, branch `master`, **ahead 9 / behind 0** of `origin/master`; actual
+>   remote (`git ls-remote origin refs/heads/master`) = `49351ce`, so no fetch/reconcile is needed. Both
+>   reported commits are present: `745099c` (28 files, +2,481/−683) and `5101f3d` (this handoff, +190/−10).
+>   Working tree is **NOT clean**: 1 modified doc (this handoff — the EI entry plus this EJ entry),
+>   0 staged, 0 untracked, no stashes.
+>   **(2) Task 1 — Administrator checklist access (recommended, NOT executed):** checklist access =
+>   `manage_checklist` **or** `complete_checklist`; task create/edit/delete/verify = `manage_checklist`;
+>   completing = `complete_checklist`; delete also needs the Administrator/Manager role. `correct_records`
+>   is **not** required (it only gates `/corrections/*`). For full Administrator use grant **both**
+>   checklist keys via `/users` → Edit own account → tick only those two → Update User (self-edit is
+>   allowed; only own-role change is blocked; `manage_users` is re-added). **Do not use Apply role
+>   defaults** — the Administrator template ticks all 10 incl. `correct_records`. Files: none (UI/DB JSON
+>   only); DB record: `users.permissions` for user 1 + one `user_updated` activity row. Caveat: an account
+>   holding both keys can complete then verify its own completion.
+>   **(3) Task 2 — Scion Variety N+1 (diagnosis; fix NOT applied):** `ScionVarietyController@index:43`
+>   uses `withCount(['batches','stockOutDetails','stockIns'])`, which yields `*_count` attributes, but
+>   `ScionVariety::deletionBlockers()` checks `*_exists` and falls back to `exists()` per relation per
+>   call. With the view calling `canBeDeleted()` + `deletionBlockers()` again for blocked rows, that is
+>   up to 3 extra queries per row (6 when blocked). Recommended smallest fix:
+>   `->withCount('batches')->withExists(['batches','stockOutDetails','stockIns'])` (keeps the BATCHES
+>   column, supplies `batches_exists`/`stock_out_details_exists`/`stock_ins_exists`; no model/view edit,
+>   deletion behavior unchanged). If approved, add a query-count/blocker test to
+>   `ScionVarietyManagementTest`.
+>   **(4) Task 3 — push readiness (NOT executed):** push only after approval with `git push origin master`
+>   (normal fast-forward; pushes **9** commits, not just the two listed; the uncommitted handoff stays
+>   local). Verify with `git ls-remote origin refs/heads/master` → `5101f3d` and `git status -sb`.
+>   **(5) Test safety re-verified (no tests run):** `.env.testing` absent; `bootstrap/cache/config.php`
+>   absent; `phpunit.xml:26-28` forces `mysql` / `db_capstone_test` / `DB_URL=''`; `tests/TestCase.php`
+>   guard intact. Run only `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`.
+>   **▶ Next session — only after explicit owner approval:** (1) grant the two checklist keys in User
+>   Management (no `correct_records`, no role-template apply); (2) apply the Task 2 controller fix + test;
+>   (3) run the push. **Do not run live SQL/reseeds, change permissions, edit code, or push without
+>   approval.**
+> - **▶ Session EI (DONE — owner-approved commit strategy executed; 2026-10-28):**
+>   **Two commits created from the tested working tree — no code/test edits before committing, no live SQL,
+>   no permission change. Only this handoff was edited afterwards.**
+>   **(1) Pre-commit inspection:** HEAD `c84158c`, branch `master`, **29 modified** (21 code/assets, 7 tests,
+>   1 doc), **0 staged, 0 untracked, no stashes**; `git diff` all `M`, no added/deleted files and no secrets
+>   (the only `db_capstone` strings were inside this handoff). File count matched the EH/EG report exactly.
+>   **(2) Code checkpoint `745099c3a3d824c708b364ebf8adaced6c4e590a` — `chore: checkpoint tested inventory
+>   and analytics changes`:** exactly the **28 non-doc files** (list in (6)), **+2,481/−683**;
+>   `session.handoff.md` deliberately excluded.
+>   **(3) Post-commit suite (from the committed tree):** safety re-verified first — `.env.testing` absent,
+>   `bootstrap/cache/config.php` absent, `phpunit.xml` forces `mysql` / `db_capstone_test` / `DB_URL=''`
+>   (`force="true"`), `tests/TestCase.php` guard intact. Command
+>   `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test` → **exit 0,
+>   428 passed / 2217 assertions**, ~45.5s, **0 failed / 0 skipped / 0 incomplete / 0 risky** — exact
+>   expected baseline. No live `db_capstone` write.
+>   **(4) Docs commit `5101f3dae53f5626c168deb9b185e79a59db5028` — `docs(handoff): record tested working
+>   tree and results`:** `session.handoff.md` only (**+190/−10**), created after the code tests passed.
+>   **(5) Final state:** after the two commits the working tree was **clean** (0 staged, 0 untracked),
+>   branch `master` **ahead 9** of `origin/master`; **not pushed**. This EI handoff entry was written
+>   afterwards and is the **only uncommitted file** (1 modified doc). HEAD is now **consistent with the
+>   tested tree** (`c84158c` + `745099c`), resolving the EF/EG/HEAD inconsistency. No
+>   `reset`/`checkout`/`clean`/`stash`/`--no-verify`, no amend, no history rewrite.
+>   **(6) Code-checkpoint files (28):** `app/Http/Controllers/{AnalyticsController,BatchController,
+>   InventoryController,ScionVarietyController}.php`, `app/Http/Requests/StoreBatchRequest.php`,
+>   `app/Models/{ActivityTask,Batch,MortalityRecord,ScionVariety}.php`,
+>   `app/Support/{AnalyticsMetrics,BatchTree,OperationalAnalyticsPdf,StockLedgerPdf}.php`,
+>   `resources/css/app.css`, `resources/js/app.js`,
+>   `resources/views/analytics/{index,stock-ledger}.blade.php`,
+>   `resources/views/inventory/index.blade.php`,
+>   `resources/views/operational/batches/{index.blade.php,partials/batch-row.blade.php}`,
+>   `resources/views/operational/scion-varieties/index.blade.php`,
+>   `tests/Feature/{BatchManagementTest,BatchTreeTest,InventoryTest,NestedBatchesTest,
+>   SeededFamilyKpiTest,StockLedgerNestingTest,StockLedgerRunningBalanceTest}.php`.
+>   **▶ Next session:** only the **live Administrator permission update** remains from the EH plan
+>   (`manage_checklist` + `complete_checklist`, optionally `correct_records`; §5a SQL still **NOT
+>   EXECUTED**) — it requires **separate explicit approval**; nothing live was changed in EI. After that,
+>   smoke-test the checklist flow (Staff completes → Manager verifies; live `db_capstone` data is untouched:
+>   users 1, batches 5, activity_logs 13). **Do not run live SQL/reseeds, change permissions, or push
+>   without approval.**
 > - **▶ Session EH (DONE — automated test execution only from the preserved working tree; 2026-10-28):**
 >   **Automated testing only — no code/test edits, no staging/commits, no permission or live-data changes.
 >   Only this handoff was edited.**
@@ -1031,7 +1509,8 @@
 >     the `↳` indent. The same control and behaviour now live on `/operational/batches`.
 >   - **(0c) Code/test baseline (code-side only):** full MySQL suite
 >     `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`
->     → **428 passed / 2217 assertions** (Session EE final, after the `c84158c` inline-link follow-up;
+>     → **432 passed / 2,239 assertions** (Session EL final, after the EK Scion Variety fix; was
+>     428/2217 at EE after the `c84158c` inline-link follow-up,
 >     was 408/2001 at EB, 407/1994 at EA, 407/1984 at DZ,
 >     407/1977 at DY, 407/1986 at DX, 406/1960 at DW, 400/1900 at DV, 401/1913 at DU, 399/1909 at DT,
 >     398/1898 at DS, 395/1873 at DR, 394/1867 at DQ, 392/1855 at DP, 385/1797 at DN, 384/1789 at DM,
@@ -1039,14 +1518,18 @@
 >     clean. `phpunit.xml` now **forces** MySQL `db_capstone_test` and `tests/TestCase.php` refuses
 >     `RefreshDatabase` when the DB is not `db_capstone_test`. Run tests **only** against
 >     `db_capstone_test`.
->   - **(0d) Repo / GitHub (updated Session EE).** Remote `origin` =
+>   - **(0d) Repo / GitHub (updated Session EO).** Remote `origin` =
 >     **https://github.com/tingalfilepenf-pixel/CacaoTrack** (public, branch `master`); `gh` CLI installed.
 >     **Session EE added seven commits on top of `49351ce`:** `22a0770` (permission catalog + routes),
 >     `05f785d` (stock forms + User Management), `cd3912c` (checklist UI + errors + sidebar + Dashboard),
 >     `3a522e3` (ActivityLog cleanup), `6f68b92` (tests), `47b4cc2` (docs/PRD/handoff) and `c84158c`
->     (permission-gated inline **+ Add Supplier/Client** links). Head is **`c84158c`**.
->     The older cumulative **DI…ED** changes in files not touched by Session EE are still uncommitted;
->     the list below records them:
+>     (permission-gated inline **+ Add Supplier/Client** links). **Session EI then committed the previously
+>     uncommitted DI…EE working tree as `745099c` (28-file code checkpoint, +2,481/−683) + `5101f3d`
+>     (docs/handoff), and Session EM committed the Scion Variety optimization as `6957c4a` (2 files,
+>     +114/−4). **Session EO (2026-10-29) passed the final pre-push checks and pushed `49351ce..6957c4a`
+>     (10 commits) to `origin/master`; `master` is now synchronized at `6957c4a`, and the working tree is
+>     this handoff only (uncommitted, not pushed).**
+>     Everything listed below is committed as of `745099c` (kept here for provenance):
 >     Session DW — new `app/Support/ChecklistHistory.php` (record/detail/status derivation + shared day
 >     task list, RULE 6), `DailyChecklistController` (history filters/records/selected record; `exportPdf`
 >     now reads the shared definition), `operational/checklist/index.blade.php` (Today/History tabs, filter
@@ -1121,7 +1604,8 @@
 >     colors swapped), `layouts/sidebar.blade.php` (Mortality Tracking / Regraft / Batches links
 >     removed; routes/pages retained), `AGENTS.md`;
 >     Session ED — `session.handoff.md` only (Phase 0 read-only audit; no code/database change);
->     plus `session.handoff.md`. **No commit/push was made this session (not requested).**
+>     plus `session.handoff.md`. **The EE-era "no commit/push" note is historical — this whole list was
+>     committed in EI `745099c`.**
 >   - **(0e) Phase 0 inspection (Session ED) — DECIDE BEFORE CODING; do not assume a role-based design yet.**
 >     The audit found no proposal document in the repo; the current model is per-user JSON. Before changing
 >     permissions/UI, get explicit owner/client decisions on: (a) keep per-user JSON (role = label) vs
@@ -2490,17 +2974,107 @@ snapshots); (b) `stock_out_details.unit` is a **fixed list** `seedlings`/`pieces
 §2/§3/§5/§6).
 
 ## Quick start for the next session
-- **▶ Current quick start (latest: Session EH, 2026-10-28 — full suite green from the working tree; live `db_capstone` unchanged; await approval to commit and grant permissions):**
-  HEAD `c84158c`; 29 modified, 0 staged/untracked, no stash; working tree preserved. Full MySQL suite run
+- **▶ Current quick start (latest: Session EX, 2026-11-03 — Stage 1 role descriptions + maker–checker done; see the top CONTINUATION SNAPSHOT for the full list):**
+  HEAD `6957c4a`, branch `master`, synchronized with `origin/master`; **30 modified, 0 staged, 2 untracked
+  directories** (`resources/views/users/partials/`, `tests/Concerns/`); nothing committed or pushed. Full suite
+  **481 passed / 2,680 assertions** on `db_capstone_test`. **Next (each needs explicit owner approval):**
+  (1) Stage 2 report-only plan for Manager read-only operational views; (2) Stage 3 docs
+  (`docs/CacaoTrack_PRD.md` FR-02 + byte-identical `_REVISED`, `AGENTS.md`, this handoff); (3) browser-smoke
+  the checklist maker–checker UI; (4) grant the live Administrator `manage_checklist` +
+  `complete_checklist` via `/users` (tick only those two; **do not use Apply role defaults**; §5a SQL remains
+  **NOT EXECUTED**); (5) commit in logical groups and push only with approval. **Do not run live SQL/reseeds,
+  change permissions, or commit/push without approval.**
+- **▶ Previous quick start (Session EV, 2026-10-31 — scion stock correction integrity fixed; see the top CONTINUATION SNAPSHOT for the full list):**
+  HEAD `6957c4a`, branch `master`, synchronized with `origin/master`; **21 modified, 0 staged, 1 untracked
+  directory** (`tests/Concerns/`); nothing committed or pushed. Full suite **473 passed / 2,552 assertions**
+  on `db_capstone_test`. **Next (each needs explicit owner approval):** (1) browser smoke-test
+  `/operational/regraft`, `/inventory` Record Regraft, the correction modal and the Session ET Stock In modal;
+  (2) update the stale `AGENTS.md`; (3) commit in logical groups; (4) push only with approval; (5) grant the
+  live Administrator `manage_checklist` + `complete_checklist` via `/users` (tick only those two; **do not use
+  Apply role defaults**; §5a SQL remains **NOT EXECUTED**). **Do not run live SQL/reseeds, change permissions,
+  or commit/push without approval.**
+- **▶ Previous quick start (Session EP, 2026-10-31 — Stock In modal usability refinement implemented; focused tests green; the view + test + this handoff are uncommitted and HEAD is unchanged):**
+  HEAD `6957c4a`; branch `master`, **0 ahead / 0 behind** of `origin/master` (last push Session EO). Working tree: **3 modified**
+  (`resources/views/inventory/stock-in/index.blade.php`, `tests/Feature/StockInTest.php`, this handoff) — **0 staged,
+  0 untracked**. Focused suite `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test';
+  php artisan test --filter=StockInTest` → **26 passed / 109 assertions**. Pint + `view:cache` + `git diff --check` clean.
+  Last full baseline **432 / 2,239** (Session EL); +3 tests are now in the tree. **Next (each needs explicit owner
+  approval):** (1) visually smoke-test `/inventory/stock-in` on desktop and a phone-sized viewport — Scion tab amount
+  preview, modal scrolling/fullscreen, validation feedback; (2) commit the Stock In refinement (view + test) and this
+  handoff (recommended: one code commit + one docs commit, EI/EM precedent) and push; (3) grant the live Administrator
+  `manage_checklist` + `complete_checklist` via `/users` (tick only those two; do not use Apply role defaults;
+  `correct_records` not needed; §5a SQL still NOT EXECUTED) and smoke-test Staff complete → Manager verify; (4) run
+  `npm run build` if deploying. **Do not run live SQL/reseeds, change permissions, or commit/push without approval.**
+- **▶ Previous quick start (Session EO, 2026-10-29 — owner-authorized push DONE; `49351ce..6957c4a` published to `origin/master`; `master` synchronized at `6957c4a`; working tree = this handoff only; live Administrator checklist permissions still need separate approval):**
+  HEAD `6957c4a`; branch `master`, **0 ahead / 0 behind** of `origin/master` (remote verified
+  `6957c4af406f4a3355da27c3261bfa9cf9b20a14`). Pre-push checks: only ` M session.handoff.md` (modified,
+  unstaged), **0 staged/untracked**, `git diff --check` clean, remote unchanged at `49351ce`, and the
+  10 outgoing commits matched the Session EN-reviewed list exactly. Push: `git push origin master` (no
+  force) → `49351ce..6957c4a  master -> master`. Post-push: `master...origin/master` synchronized; only
+  ` M session.handoff.md` remains (this handoff is uncommitted and was not pushed). Suite baseline remains
+  **432 passed / 2,239 assertions** on `db_capstone_test` (last verified Session EL). **Next (each needs
+  explicit owner approval): (1) live Administrator `manage_checklist` + `complete_checklist` grant via
+  `/users` — tick only those two, do not use Apply role defaults, `correct_records` not needed (§5a SQL
+  still NOT EXECUTED); (2) smoke-test the checklist flow (Staff completes → Manager verifies); (3)
+  optionally re-run the suite; (4) run `npm run build` if deploying. Do not run live SQL/reseeds, change
+  permissions, or commit/push without approval.**
+- **▶ Previous quick start (Session EN, 2026-10-28 — read-only pre-push review DONE; superseded by EO: push completed and `master` is synchronized at `6957c4a`; live Administrator checklist permissions still need separate approval):**
+  At the time: HEAD `6957c4a`; branch `master`, **ahead 10 / behind 0**, **not pushed**. Working tree: only
+  ` M session.handoff.md` (+233/−15 before this EN entry), **0 staged/untracked**, no stashes. The full
+  outgoing range `49351ce..6957c4a` was reviewed commit-by-commit: permissions/checklist workflow, role
+  templates, activity-type cleanup, test-safety guard, docs, inventory/analytics checkpoint and the Scion
+  Variety perf fix. **No `.env`, secrets, tokens, keys, DB dumps, `vendor/`, `node_modules/`, `storage/` or
+  `public/build`** in the range; `password123` is test-fixture only; PRD + PRD_REVISED byte-identical
+  (SHA-256 `6851FB…7D32`); `git diff --check` clean. Non-blocking: `745099c` is a large 28-file checkpoint,
+  `47b4cc2` (docs) also carries a 2-line sidebar change, and `public/build` is gitignored (**run
+  `npm run build` on deploy**). Suite baseline remains **432 passed / 2,239 assertions** on
+  `db_capstone_test` (last verified Session EL). **Next (each needs explicit owner approval): (1) `git push
+  origin master` (10 commits); (2) live Administrator `manage_checklist` + `complete_checklist` grant via
+  `/users` — tick only those two, do not use Apply role defaults, `correct_records` not needed (§5a SQL
+  still NOT EXECUTED); then smoke-test the checklist flow (Staff completes → Manager verifies); (3)
+  optionally re-run the suite; (4) run `npm run build` if deploying. Do not run live SQL/reseeds, change
+  permissions, or stage/commit/push without approval.**
+- **▶ Previous quick start (Session EM, 2026-10-28 — optimization committed as `6957c4a`; suite green 432/2239; superseded by EN: read-only pre-push review done, no secrets; next = push + live Administrator checklist permissions, separate approvals):**
+  HEAD `6957c4a` — `perf(scion-varieties): eliminate per-row existence queries` (2 files, **+114/−4**);
+  branch `master`, **ahead 10** of `origin/master`, **not pushed**. Working tree: **1 modified** (this
+  handoff only), **0 staged/untracked**. The committed tree is the one Session EL tested green on
+  `db_capstone_test`: **432 passed / 2,239 assertions**, exit **0**, **0 failed / 0 skipped**, 53.49 s;
+  focused EK suite **8 / 37**; `vendor\bin\pint --test` clean. Live `db_capstone` was **not** accessed.
+  **Next (each needs explicit owner approval): (1) `git push origin master` (10 commits); (2) live
+  Administrator `manage_checklist` + `complete_checklist` grant via `/users` — tick only those two, do
+  not use Apply role defaults, `correct_records` not needed (§5a SQL still NOT EXECUTED); then smoke-test
+  the checklist flow (Staff completes → Manager verifies). Do not run live SQL/reseeds, change
+  permissions, or stage/commit/push without approval.**
+- **▶ Previous quick start (Session EL, 2026-10-28 — regression check DONE; suite green 432/2239; superseded by EM: optimization committed as `6957c4a`; next = push + live Administrator checklist permissions, separate approvals):**
+  HEAD was `5101f3d`, branch `master`, **ahead 9** of `origin/master`, **not pushed**. Working tree at
+  the time: **3 modified** (EK `ScionVarietyController` + `ScionVarietyManagementTest`, plus this
+  handoff), **0 staged/untracked**. Full MySQL suite from the working tree on `db_capstone_test`:
+  **432 passed / 2,239 assertions**, exit **0**, **0 failed / 0 skipped**, 53.49 s; focused EK suite
+  **8 / 37**; `vendor\bin\pint --test` clean. DB safety re-confirmed (forced `mysql` /
+  `db_capstone_test` / empty `DB_URL`, no config cache, TestCase guard intact). Live `db_capstone` was
+  **not** queried or written. The EK controller+test were committed by EM (`6957c4a`); the handoff
+  remains uncommitted.
+- **▶ Previous quick start (Session EI, 2026-10-28 — commits DONE; suite green 428/2217; superseded by EL: regression verified 432/2239; next = live Administrator checklist permissions, separate approval):**
+  HEAD `5101f3d` (code checkpoint `745099c`, docs `5101f3d`); branch `master`, **ahead 9** of
+  `origin/master`, **not pushed**. Both commits were made from a clean staging state; after them only
+  this EI handoff entry is modified/uncommitted (1 doc). Post-commit full
+  MySQL suite from the committed tree on `db_capstone_test`: **428 passed / 2217 assertions**, exit **0**,
+  **0 failed / 0 skipped / 0 incomplete / 0 risky**. HEAD is now internally consistent — the DV guarded
+  deletes and the DJ–EA/EC inventory/analytics work are committed. Live `db_capstone` was **not** written
+  (users 1, batches 5, activity_logs 13) and no permission was changed. **Next: the live Administrator
+  permission update (`manage_checklist` + `complete_checklist`; §5a SQL still NOT EXECUTED) requires
+  separate explicit approval, then smoke-test the checklist flow. Do not run live SQL/reseeds, change
+  permissions, or push without approval.**
+- **▶ Previous quick start (Session EH, 2026-10-28 — suite verified 428/2217 from the working tree; superseded by EI: commit strategy executed):**
+  HEAD was `c84158c`; 29 modified, 0 staged/untracked, no stash; working tree preserved. Full MySQL suite
   from the working tree on `db_capstone_test`: **428 passed / 2217 assertions**, exit **0**, ~36s,
   **0 failed / 0 skipped / 0 incomplete / 0 risky** — exact expected baseline. Live `db_capstone` read-only
-  before/after baseline is **identical** (DB `db_capstone`; users **1**, batches **5**, activity_logs **13**;
+  before/after baseline was **identical** (DB `db_capstone`; users **1**, batches **5**, activity_logs **13**;
   same 7-key Administrator; SHA-256 **`5064A3FA19DAA6467B2DA125CBA8CD7AC1EFEEE7B73917BF92D61FDA58996E5D`**).
-  Tests ran the **working tree, not HEAD**; HEAD remains inconsistent. **Next: approve (1) the commit strategy
-  (recommended one code checkpoint of the 28 non-doc files + one docs commit; do not use EF's five-way split)
-  and (2) the live Administrator permission update (`manage_checklist` + `complete_checklist`; §5a SQL is
-  NOT EXECUTED). Do not test HEAD, run live SQL/reseeds, change permissions, or stage/commit until approved.**
-- **▶ Previous quick start (Session EG, 2026-10-28 — read-only audit; superseded by EH: suite verified 428/2217, live DB unchanged):**
+  Tests ran the **working tree, not HEAD**; HEAD was inconsistent until EI committed it. The remaining item
+  is the live Administrator permission update (`manage_checklist` + `complete_checklist`; §5a SQL is
+  NOT EXECUTED).
+- **▶ Previous quick start (Session EG, 2026-10-28 — read-only audit; superseded by EH/EI: suite verified 428/2217, commits executed, live DB unchanged):**
   HEAD `c84158c`; 29 modified, 0 staged/untracked, no stash; working tree preserved. HEAD is inconsistent
   (final `destroy` routes but archive/restore controllers/views/tests; `SeededFamilyKpiTest:61` also posts to
   the dead archive route; `ActivityTask::canBeDeleted()` still requires archived). Exact DV fix list, the
@@ -7353,7 +7927,9 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
        (supplier, quantity, origin, date received). The **Seedlings** tab records a plain seedling
        delivery; the **Scion** tab adds **scion variety** (active only) + **unit price** (+ optional
        notes). The received `quantity` is recorded immediately for both — there is **no** five-day
-       viability count and no `viable` column (Phase 7A).
+       viability count and no `viable` column (Phase 7A). The Scion tab also has its own **Save Stock In**
+       button (`#stockInScionSubmitBtn`) below the Calculated Amount and above Notes, besides the shared
+       footer button (Session ES).
      - The single Receiving History list is mixed and now carries a dedicated **TYPE** column
        (**Seedlings** green badge / **Scion** info badge, Session CN — derived via
        `StockIn::entryType()`), plus a **Type** filter (All Types / Seedlings / Scion). Scion rows show
@@ -7365,6 +7941,43 @@ master tables. Drift vs the Session AU snapshot above is UI usage, not session c
        viability and scion-receipt Edit/Archive/Details remain unbuilt (client-gated, deferred).
 
 ## 5. Verification status
+- **Session ES (Scion tab Save Stock In button, 2026-10-31): focused + full suites GREEN; UI/test/docs-only.**
+  Added `#stockInScionSubmitBtn` below the Calculated Amount block in the Scion tab pane (same `#stockInForm`);
+  the footer button remains and `guardSubmit` disables both on submit. Test-DB safety re-verified first. Focused
+  `StockInTest` → **27 passed / 112 assertions**, full suite → **436 passed / 2,253 assertions**, exit 0. `pint --test`, `view:cache` and
+  `git diff --check` clean. `StoreStockInRequest` both-or-neither validation unchanged; no schema/table/controller/
+  request change; no live `db_capstone` access.
+- **Session ER (reverted to the original tabbed Stock In form, 2026-10-31): focused + full suites GREEN; UI/test/docs-only.**
+  Test-DB safety re-verified first: `.env.testing` absent, `bootstrap/cache/config.php` absent, `phpunit.xml`
+  forces `mysql` / `db_capstone_test` / empty `DB_URL`, `tests/TestCase.php` guard intact. Focused
+  `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test --filter=StockInTest` →
+  **26 passed / 109 assertions**, exit 0. Full suite → **435 passed / 2,250 assertions**, exit 0.
+  `vendor\bin\pint --test`, `php artisan view:cache` and `git diff --check` clean. The New Stock In modal is back
+  to the original `Seedlings` / `Scion` tabs (shared supplier/quantity/origin/date; Scion adds variety + unit price
+  + notes) with one footer Save Stock In button. The Session EQ unified form was reverted. Server-side
+  both-or-neither validation is unchanged. No live `db_capstone` access, no migration/schema/controller/request change.
+- **Session EP (Stock In modal usability refinement, 2026-10-31): focused suite GREEN; UI/test-only.**
+  Test-DB safety re-verified immediately before running: `.env.testing` absent, `bootstrap/cache/config.php` absent,
+  `phpunit.xml` forces `mysql` / `db_capstone_test` / empty `DB_URL`, `tests/TestCase.php` guard intact. Command:
+  `$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test --filter=StockInTest` → **26 passed /
+  109 assertions, exit 0**. New tests: modal responsive classes + `#stockInCalculatedAmount` / `aria-live` markup; the
+  Scion tab reopens with a visible error after a unit-price-only submission; a negative unit price is rejected.
+  `vendor\bin\pint --test`, `php artisan view:cache` and `git diff --check` clean. `#stockInModal` now uses
+  `modal-lg modal-dialog-scrollable modal-fullscreen-sm-down`; the Scion amount is display-only (no schema/column or
+  inventory-rule change); the stored `quantity` / `unit_price` rules are unchanged. Last full-suite baseline remains
+  **432 / 2,239** (Session EL) with **+3 tests** now uncommitted. **No live `db_capstone` read/write, no migration/seeder,
+  no commit/push.**
+- **Session EL (full-suite regression check after the EK Scion Variety `withExists()` fix, 2026-10-28):
+  full suite GREEN; verification only (no code/test/schema/live-data change).** Test-DB safety re-confirmed
+  first: `.env.testing` + `bootstrap/cache/config.php` absent, `phpunit.xml:26-28` forces `mysql` /
+  `db_capstone_test` / empty `DB_URL` with `force="true"`, `tests/TestCase.php` guard intact. MySQL suite
+  (`$env:DB_CONNECTION='mysql'; $env:DB_DATABASE='db_capstone_test'; php artisan test`) → **exit 0, 432
+  passed / 2,239 assertions, 0 failed / 0 skipped, 53.49 s** (428 prior + 4 EK tests). Focused
+  `--filter=ScionVarietyManagementTest` → **8 passed / 37 assertions**; `vendor\bin\pint --test` → exit 0.
+  Scion checks: `batches_count` retained; `withExists()` supplies `batches_exists` /
+  `stock_out_details_exists` / `stock_ins_exists` for `ScionVariety::deletionBlockers()`; blockers, UI and
+  delete rules unchanged; query-count regression test passes. **No live `db_capstone` query or write; no
+  migration/seeder run.**
 - **Session DZ (Dashboard Total Active Inventory + Analytics Total Grafted KPI cards, 2026-10-12): full
   suite GREEN; UI/controller/test only.** MySQL suite (`$env:DB_CONNECTION='mysql';
   $env:DB_DATABASE='db_capstone_test'; php artisan test`) **407 passed / 1984 assertions, 0 failures**

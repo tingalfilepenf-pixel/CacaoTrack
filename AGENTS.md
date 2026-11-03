@@ -8,6 +8,22 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## STOCK IN — original Seedlings / Scion tabs + Scion save button (2026-10-31, Sessions ER/ES)
+- **Owner-directed revert:** the Session EQ unified "Scion Details" form was reverted. `/inventory/stock-in`
+  again uses the original **Seedlings / Scion** Bootstrap tabs (Session CC/EP): shared supplier, quantity,
+  origin and date received; the Seedlings tab records a plain receiving; the Scion tab adds scion variety +
+  unit price + notes. Do not remove the tabs without owner sign-off.
+- **Save buttons (Session ES):** the shared footer **Save Stock In** button remains, and the Scion tab now
+  has its own **Save Stock In** submit button (`#stockInScionSubmitBtn`) directly below the Calculated
+  Amount block (above Notes), so the scion entry can be submitted without scrolling. Both buttons submit
+  the same `#stockInForm`; `guardSubmit` disables both on submit to prevent double submission.
+- **Validation unchanged:** `StoreStockInRequest` keeps the both-or-neither rule (`scion_variety_id` ↔
+  `unit_price` via `required_with`); Stock In still writes no inventory/batch changes.
+- **No migration, schema, route, permission, controller or live-data change.** `docs/CacaoTrack_PRD_UPDATED.md`
+  §2.2/FR-09 and `docs/CacaoTrack_ERD_UPDATED.md` §3.7 were used for validation only — **not edited**.
+  **Verified:** focused `StockInTest` **27 passed / 112 assertions**; full MySQL suite **436 passed /
+  2,253 assertions** on `db_capstone_test`; Pint, `view:cache` and `git diff --check` clean.
+
 ## ROLE PERMISSIONS, DAILY CHECKLIST SPLIT, FRIENDLY UI (2026-10-28, Session EE)
 - **Catalog:** `App\Models\Role::PERMISSIONS` now holds **10** keys — `manage_users`, `manage_inventory`,
   `manage_stock`, `record_operations`, `manage_checklist`, `complete_checklist`, `correct_records`,
@@ -1006,9 +1022,10 @@ mapping below records the P1–P3 schema transition (now complete). (For full hi
   apply the delta → record Activity History → commit; roll back on any failure (revised PRD §8).
 
 ## P6 deferred items (confirmed open — DO NOT implement without sign-off)
-1. **Stock In scion-tab UI (DELIVERED in Session CC):** scion receiving is entered through the
-   Stock In form's **"Scion" tab** (scion variety + unit price + notes; server sets `viable =
-   quantity`). This is what exists now. The former standalone **"Scion Receiving CRUD UI" item is
+1. **Stock In scion-tab UI (DELIVERED in Session CC; restored in Session ER):** scion receiving is
+   entered through the Stock In form's **"Scion" tab** (shared supplier/quantity/origin/date; the tab
+   adds scion variety + unit price + notes). This is what exists now; the temporary unified-form
+   attempt (Session EQ) was reverted. The former standalone **"Scion Receiving CRUD UI" item is
    obsolete/closed** — the `/operational/scion-receivings` page, controller, request and route no
    longer exist. **Optional unbuilt slices (client-gated, do not build unprompted):** Edit / Archive /
    Details for a scion receipt row.
