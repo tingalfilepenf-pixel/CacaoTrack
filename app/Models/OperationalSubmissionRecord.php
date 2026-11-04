@@ -69,6 +69,14 @@ class OperationalSubmissionRecord extends Model
                 throw new DomainException('The official record id must be positive.');
             }
         });
+
+        static::updating(function (): void {
+            throw new DomainException('Operational submission link rows are immutable.');
+        });
+
+        static::deleting(function (): void {
+            throw new DomainException('Operational submission link rows cannot be deleted.');
+        });
     }
 
     public function submission(): BelongsTo
