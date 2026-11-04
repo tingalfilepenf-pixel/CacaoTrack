@@ -14,8 +14,18 @@
     $canViewAnalytics = $currentUser?->hasPermission('view_analytics') ?? false;
     $canViewActivity = $currentUser?->hasPermission('view_activity') ?? false;
     $canManageUsers = $currentUser?->hasPermission('manage_users') ?? false;
+    $submissionWorkflow = \App\Support\SubmissionWorkflowSwitch::enabled();
+    $canSubmitOperations = $currentUser?->hasPermission('submit_operations') ?? false;
+    $canVerifyOperations = $currentUser?->hasPermission('verify_operations') ?? false;
+    $canViewOperationalRecords = $currentUser?->hasPermission('view_operational_records') ?? false;
+    $pendingSubmissionCount = $submissionWorkflow && $canVerifyOperations
+        ? \App\Models\OperationalSubmission::query()
+            ->where('status', \App\Models\OperationalSubmission::STATUS_PENDING)
+            ->count()
+        : 0;
 
     $canOpenChecklist = $canManageChecklist || $canCompleteChecklist;
+    $canOpenSubmissions = $submissionWorkflow && ($canSubmitOperations || $canVerifyOperations || $canViewOperationalRecords);
     $canViewInventory = $canRecordOperations || $canManageInventory || $canManageStock;
 
     $managementOpen = request()->routeIs([
@@ -44,12 +54,31 @@
         </a>
 
         <!-- Operational -->
-        @if ($canOpenChecklist || $canManageInventory)
+        @if ($canOpenChecklist || $canManageInventory || $canOpenSubmissions)
             <h6 class="nav-title">Operational</h6>
             @if ($canOpenChecklist)
                 <a href="{{ route('operational.checklist') }}" class="nav-link {{ request()->routeIs('operational.checklist') ? 'active' : '' }}">
                     <i class="bi bi-check-square"></i>
                     <span>Daily Checklist</span>
+                </a>
+            @endif
+            @if ($submissionWorkflow && $canSubmitOperations)
+                <a href="{{ route('operational.submissions.index') }}" class="nav-link {{ request()->routeIs('operational.submissions.index', 'operational.submissions.show') ? 'active' : '' }}">
+                    <i class="bi bi-send"></i>
+                    <span>My Submissions</span>
+                </a>
+            @endif
+            @if ($submissionWorkflow && $canVerifyOperations)
+                <a href="{{ route('operational.submissions.queue') }}" class="nav-link {{ request()->routeIs('operational.submissions.queue') ? 'active' : '' }}">
+                    <i class="bi bi-inbox"></i>
+                    <span>Submission Queue</span>
+                    <span class="badge bg-warning text-dark ms-auto">{{ $pendingSubmissionCount }}</span>
+                </a>
+            @endif
+            @if ($submissionWorkflow && $canViewOperationalRecords && ! $canVerifyOperations)
+                <a href="{{ route('operational.submissions.index') }}" class="nav-link {{ request()->routeIs('operational.submissions.index', 'operational.submissions.show') ? 'active' : '' }}">
+                    <i class="bi bi-inbox"></i>
+                    <span>Submissions</span>
                 </a>
             @endif
             @if ($canManageInventory)

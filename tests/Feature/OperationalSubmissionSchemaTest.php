@@ -148,7 +148,7 @@ class OperationalSubmissionSchemaTest extends TestCase
             ->create(['submitted_by_id' => $submitter->id]);
 
         $this->assertSame(OperationalSubmission::TYPE_STOCK_OUT, $stockOut->submission_type);
-        $this->assertArrayHasKey('lines', $stockOut->payload);
+        $this->assertArrayHasKey('details', $stockOut->payload);
 
         $record = OperationalSubmissionRecord::factory()
             ->create(['submission_id' => $submission->submission_id]);

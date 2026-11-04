@@ -33,6 +33,9 @@ class ActivityLog extends Model
         'record_corrected' => 'Record Corrected',
         'stock_in_recorded' => 'Stock In Recorded',
         'stock_out_recorded' => 'Stock Out Recorded',
+        'operational_submission_submitted' => 'Operational Submission Submitted',
+        'operational_submission_approved' => 'Operational Submission Approved',
+        'operational_submission_rejected' => 'Operational Submission Rejected',
         'report_generated' => 'Report Generated',
         'profile_updated' => 'Profile Updated',
         'user_created' => 'User Created',
@@ -78,6 +81,12 @@ class ActivityLog extends Model
     public const TYPE_STOCK_IN_RECORDED = 'stock_in_recorded';
 
     public const TYPE_STOCK_OUT_RECORDED = 'stock_out_recorded';
+
+    public const TYPE_OPERATIONAL_SUBMISSION_SUBMITTED = 'operational_submission_submitted';
+
+    public const TYPE_OPERATIONAL_SUBMISSION_APPROVED = 'operational_submission_approved';
+
+    public const TYPE_OPERATIONAL_SUBMISSION_REJECTED = 'operational_submission_rejected';
 
     public const TYPE_REPORT_GENERATED = 'report_generated';
 
@@ -143,6 +152,9 @@ class ActivityLog extends Model
         'record_corrected' => 'bg-warning text-dark',
         'stock_in_recorded' => 'bg-info text-dark',
         'stock_out_recorded' => 'bg-secondary',
+        'operational_submission_submitted' => 'bg-info text-dark',
+        'operational_submission_approved' => 'bg-success',
+        'operational_submission_rejected' => 'bg-danger',
         'report_generated' => 'bg-primary',
         'profile_updated' => 'bg-light text-dark border',
         'user_created' => 'bg-success',

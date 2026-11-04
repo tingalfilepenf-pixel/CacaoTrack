@@ -273,11 +273,17 @@
                                                 @endif
                                             </li>
                                             <li>
-                                                <button type="button" class="dropdown-item"
-                                                    data-bs-toggle="modal" data-bs-target="#recordMortalityModal"
-                                                    data-batch-id="{{ $batch->batch_id }}">
-                                                    <i class="bi bi-bandaid me-1"></i> Record Mortality
-                                                </button>
+                                                @if (\App\Support\SubmissionWorkflowSwitch::enabled())
+                                                    <a class="dropdown-item" href="{{ route('operational.submissions.mortality.create', ['batch_id' => $batch->batch_id]) }}">
+                                                        <i class="bi bi-bandaid me-1"></i> Submit Mortality
+                                                    </a>
+                                                @else
+                                                    <button type="button" class="dropdown-item"
+                                                        data-bs-toggle="modal" data-bs-target="#recordMortalityModal"
+                                                        data-batch-id="{{ $batch->batch_id }}">
+                                                        <i class="bi bi-bandaid me-1"></i> Record Mortality
+                                                    </button>
+                                                @endif
                                             </li>
                                         </ul>
                                     </div>

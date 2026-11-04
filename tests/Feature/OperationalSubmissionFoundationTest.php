@@ -10,7 +10,6 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use SplFileInfo;
 use Tests\TestCase;
 
 class OperationalSubmissionFoundationTest extends TestCase
@@ -131,27 +130,19 @@ class OperationalSubmissionFoundationTest extends TestCase
         );
     }
 
-    public function test_no_live_code_references_the_new_tables_or_models(): void
+    public function test_seeders_console_and_providers_do_not_write_submission_tables(): void
     {
         $files = collect();
 
         foreach ([
-            app_path('Http'),
-            app_path('Actions'),
-            app_path('Support'),
             app_path('Console'),
             app_path('Providers'),
-            app_path('Models'),
-            resource_path('views'),
-            base_path('routes'),
             base_path('database/seeders'),
         ] as $path) {
             if (File::isDirectory($path)) {
                 $files = $files->merge(File::allFiles($path));
             }
         }
-
-        $files->push(new SplFileInfo(base_path('routes/web.php')));
 
         $needles = [
             'operational_submissions',
@@ -160,10 +151,6 @@ class OperationalSubmissionFoundationTest extends TestCase
         ];
 
         foreach ($files as $file) {
-            if (in_array($file->getFilename(), ['OperationalSubmission.php', 'OperationalSubmissionRecord.php'], true)) {
-                continue;
-            }
-
             $contents = File::get($file->getPathname());
 
             foreach ($needles as $needle) {

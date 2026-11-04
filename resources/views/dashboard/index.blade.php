@@ -5,6 +5,14 @@
 
 @section('content')
 <div class="container-fluid px-0">
+    @if (! is_null($pendingSubmissionCount))
+        <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2">
+            <i class="bi bi-inbox"></i>
+            <span>Pending submissions: <strong>{{ number_format($pendingSubmissionCount) }}</strong></span>
+            <a href="{{ route('operational.submissions.queue') }}" class="btn btn-sm btn-warning ms-auto">Review Queue</a>
+        </div>
+    @endif
+
     @if (count($quickActions) > 0)
         <!-- Permission-based Quick Actions -->
         <div class="card mb-4">

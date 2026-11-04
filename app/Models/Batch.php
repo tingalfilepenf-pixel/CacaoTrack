@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 
 /**
  * Client-approved ERD entity `Batch` (ERD §3.8).
@@ -618,6 +619,32 @@ class Batch extends Model
      *
      * @return list<string>
      */
+    /**
+     * Whether any operational submission references this batch as its subject.
+     * Mortality submissions carry the indexed `subject_batch_id` FK, so the
+     * database would refuse deletion even when the submission is no longer
+     * pending.
+     */
+    public function hasOperationalSubmissionReference(): bool
+    {
+        return OperationalSubmission::query()
+            ->where('subject_batch_id', $this->batch_id)
+            ->exists();
+    }
+
+    /**
+     * Whether a Pending Stock Out submission names this batch in its frozen
+     * payload details. Stock Out headers may span batches, so they do not use
+     * `subject_batch_id`.
+     */
+    public function hasPendingStockOutSubmission(): bool
+    {
+        return OperationalSubmission::query()
+            ->where('status', OperationalSubmission::STATUS_PENDING)
+            ->whereJsonContains('payload->details', ['batch_id' => (int) $this->batch_id])
+            ->exists();
+    }
+
     public function deletionBlockers(): array
     {
         $checks = [
@@ -641,6 +668,14 @@ class Batch extends Model
             if ($exists) {
                 $blockers[] = $label;
             }
+        }
+
+        if ($this->hasOperationalSubmissionReference()) {
+            $blockers[] = 'operational submissions';
+        }
+
+        if ($this->hasPendingStockOutSubmission()) {
+            $blockers[] = 'pending stock-out submissions';
         }
 
         return $blockers;
@@ -667,6 +702,35 @@ class Batch extends Model
      *
      * @return array<string, array<int, mixed>>
      */
+    /**
+     * Query scope for a batch that may be the subject of a new operational
+     * submission: it must still be an official, non-archived, active batch
+     * (ELIG-01). A stored `inactive` status or an `archived_at` value means the
+     * batch is Cancelled for this purpose.
+     */
+    public function scopeSubmissionEligible(Builder $query): Builder
+    {
+        return $query->whereNull('archived_at')->where('status', self::STATUS_ACTIVE);
+    }
+
+    /**
+     * Centralized ELIG-01 exists rule for submission form requests (RULE 6).
+     */
+    public static function submissionEligibleExistsRule(string $column): Exists
+    {
+        return Rule::exists((new static)->getTable(), $column)
+            ->whereNull('archived_at')
+            ->where('status', self::STATUS_ACTIVE);
+    }
+
+    /**
+     * Whether this batch is eligible as a submission subject (ELIG-01).
+     */
+    public function isSubmissionEligible(): bool
+    {
+        return $this->archived_at === null && $this->status === self::STATUS_ACTIVE;
+    }
+
     public static function storeRules(): array
     {
         return [

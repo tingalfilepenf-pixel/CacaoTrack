@@ -250,4 +250,82 @@ class HardRestrictionTest extends TestCase
         $this->assertSame(' Administrator ', $padded->fresh()->role);
         $this->assertSame(['view_activity'], $padded->fresh()->permissions);
     }
+
+    public function test_submit_and_verify_are_mutually_exclusive_for_custom_roles(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->post(route('users.manage.store'), $this->payload([
+                'email' => 'submit.verify@example.com',
+                'role' => 'Supervisor',
+                'permissions' => ['submit_operations', 'verify_operations'],
+            ]))
+            ->assertSessionHasErrors('permissions', null, 'user');
+
+        $this->assertDatabaseMissing('users', ['email' => 'submit.verify@example.com']);
+    }
+
+    public function test_an_administrator_cannot_hold_submit_or_verify(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        foreach (['submit_operations', 'verify_operations'] as $key) {
+            $email = "admin.{$key}@example.com";
+
+            $this->actingAs($admin)
+                ->post(route('users.manage.store'), $this->payload([
+                    'email' => $email,
+                    'role' => Role::ADMINISTRATOR,
+                    'permissions' => [$key],
+                ]))
+                ->assertSessionHasErrors('permissions', null, 'user');
+
+            $this->assertDatabaseMissing('users', ['email' => $email]);
+        }
+    }
+
+    public function test_a_custom_verify_holder_is_a_valid_account(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->post(route('users.manage.store'), $this->payload([
+                'email' => 'custom.verifier@example.com',
+                'role' => 'Checker',
+                'permissions' => ['verify_operations'],
+            ]))
+            ->assertRedirect(route('users.index'))
+            ->assertSessionHasNoErrors();
+
+        $created = User::where('email', 'custom.verifier@example.com')->firstOrFail();
+
+        $this->assertTrue($created->hasPermission('verify_operations'));
+        $this->assertFalse($created->needsPermissionCorrection());
+    }
+
+    public function test_an_invalid_submit_verify_account_is_denied_and_flagged_read_only(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $invalid = User::factory()->create([
+            'role' => Role::MANAGER,
+            'permissions' => ['submit_operations', 'verify_operations', 'manage_inventory'],
+        ]);
+
+        $this->assertTrue($invalid->needsPermissionCorrection());
+
+        $this->actingAs($invalid)
+            ->get(route('inventory.index'))
+            ->assertForbidden();
+
+        $this->actingAs($admin)
+            ->get(route('users.index'))
+            ->assertOk()
+            ->assertSee('Needs correction');
+
+        $this->assertEqualsCanonicalizing(
+            ['submit_operations', 'verify_operations', 'manage_inventory'],
+            $invalid->fresh()->permissions,
+        );
+    }
 }

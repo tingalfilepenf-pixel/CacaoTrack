@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\OperationalSubmission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -305,6 +306,14 @@ class UserController extends Controller
             }
         }
 
-        return DB::table('task_completes')->where('verified_by_id', $userId)->exists();
+        if (DB::table('task_completes')->where('verified_by_id', $userId)->exists()) {
+            return true;
+        }
+
+        return OperationalSubmission::query()
+            ->where(fn ($query) => $query
+                ->where('submitted_by_id', $userId)
+                ->orWhere('decided_by_id', $userId))
+            ->exists();
     }
 }

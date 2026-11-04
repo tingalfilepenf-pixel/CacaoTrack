@@ -10,6 +10,7 @@ use App\Http\Controllers\DailyChecklistController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MortalityController;
+use App\Http\Controllers\OperationalSubmissionController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RegraftController;
 use App\Http\Controllers\ScionVarietyController;
@@ -54,12 +55,59 @@ Route::prefix('operational')->middleware('auth')->group(function () {
         Route::post('/checklist/completions/{completion}/verify', [DailyChecklistController::class, 'verifyCompletion'])->name('operational.checklist.completions.verify');
     });
 
+    // Phase 3 operational-submission workflow (proposed; disabled by default).
+    Route::prefix('submissions')->middleware('submissions.enabled')->group(function () {
+        Route::middleware('permission:submit_operations,verify_operations,view_operational_records')->group(function () {
+            Route::get('/', [OperationalSubmissionController::class, 'index'])
+                ->name('operational.submissions.index');
+            Route::get('/{submission}', [OperationalSubmissionController::class, 'show'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.show');
+        });
+
+        Route::middleware('permission:verify_operations')->group(function () {
+            Route::get('/queue', [OperationalSubmissionController::class, 'queue'])
+                ->name('operational.submissions.queue');
+
+            Route::post('/{submission}/approve', [OperationalSubmissionController::class, 'approve'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.approve');
+            Route::post('/{submission}/reject', [OperationalSubmissionController::class, 'reject'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.reject');
+        });
+
+        Route::middleware('permission:submit_operations')->group(function () {
+            Route::get('/mortality/create', [OperationalSubmissionController::class, 'createMortality'])
+                ->name('operational.submissions.mortality.create');
+            Route::post('/mortality', [OperationalSubmissionController::class, 'storeMortality'])
+                ->name('operational.submissions.mortality.store');
+
+            Route::get('/stock-out/create', [OperationalSubmissionController::class, 'createStockOut'])
+                ->name('operational.submissions.stock-out.create');
+            Route::post('/stock-out', [OperationalSubmissionController::class, 'storeStockOut'])
+                ->name('operational.submissions.stock-out.store');
+
+            Route::get('/{submission}/resubmit', [OperationalSubmissionController::class, 'createResubmission'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.resubmit.create');
+            Route::post('/{submission}/resubmit/mortality', [OperationalSubmissionController::class, 'storeMortalityResubmission'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.resubmit.mortality');
+            Route::post('/{submission}/resubmit/stock-out', [OperationalSubmissionController::class, 'storeStockOutResubmission'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.resubmit.stock-out');
+        });
+    });
+
     // Mortality, Regraft and Batches remain `record_operations` functions.
     Route::middleware('permission:record_operations')->group(function () {
         // Mortality is record-only: the adjustment route was removed with the
         // Mortality_Adjustments entity (revised ERD §6).
         Route::get('/mortality', [MortalityController::class, 'index'])->name('operational.mortality');
-        Route::post('/mortality/records', [MortalityController::class, 'store'])->name('operational.mortality.records.store');
+        Route::post('/mortality/records', [MortalityController::class, 'store'])
+            ->middleware('submissions.direct-writes')
+            ->name('operational.mortality.records.store');
 
         Route::get('/regraft', [RegraftController::class, 'index'])->name('operational.regraft');
         Route::post('/regraft/records', [RegraftController::class, 'store'])->name('operational.regraft.records.store');
@@ -114,7 +162,9 @@ Route::prefix('inventory')->group(function () {
         Route::post('/stock-in', [StockInController::class, 'store'])->name('inventory.stock-in.store');
 
         Route::get('/stock-out', [StockOutController::class, 'index'])->name('inventory.stock-out');
-        Route::post('/stock-out', [StockOutController::class, 'store'])->name('inventory.stock-out.store');
+        Route::post('/stock-out', [StockOutController::class, 'store'])
+            ->middleware('submissions.direct-writes')
+            ->name('inventory.stock-out.store');
     });
 
     // Inline Supplier/Client creation from the stock forms is master-data

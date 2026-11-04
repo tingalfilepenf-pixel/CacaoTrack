@@ -60,6 +60,9 @@ class Role
         'manage_inventory' => 'Maintain Scion Variety, Client and Supplier lists',
         'manage_stock' => 'Record Stock In and Stock Out',
         'record_operations' => 'Record Mortality, Regraft, Batches and Monthly Inventory',
+        'submit_operations' => 'Submit Operational Transactions',
+        'verify_operations' => 'Verify Operational Submissions',
+        'view_operational_records' => 'View Operational Records',
         'manage_checklist' => 'Manage and verify Daily Checklist tasks',
         'complete_checklist' => 'Mark assigned Daily Checklist tasks as completed',
         'correct_records' => 'Correct Mistakes (Edit Recorded Entries)',
@@ -80,6 +83,9 @@ class Role
         'manage_inventory' => 'Keep the Scion Variety, Client and Supplier lists up to date.',
         'manage_stock' => 'Record seedlings and scions received and released.',
         'record_operations' => 'Record mortality, regraft sub-batches, batches and monthly inventory snapshots.',
+        'submit_operations' => 'Submit mortality and stock-out entries for Manager verification.',
+        'verify_operations' => 'Review, approve or reject operational submissions from other users.',
+        'view_operational_records' => 'Read operational submissions and the official records they create.',
         'manage_checklist' => 'Create, edit, delete and verify Daily Checklist tasks.',
         'complete_checklist' => 'Mark the Daily Checklist tasks assigned to you as completed.',
         'correct_records' => 'Fix a recorded entry and keep the before/after audit trail.',
@@ -99,9 +105,9 @@ class Role
      * @var array<string, string>
      */
     public const ROLE_DESCRIPTIONS = [
-        self::ADMINISTRATOR => 'Full access to the system, including user accounts, master data, stock, operations, the Daily Checklist and analytics.',
-        self::MANAGER => 'Keeps master data current, manages and verifies the Daily Checklist, and reviews analytics, reports and activity history.',
-        self::STAFF => 'Records operational entries and stock movements, and completes assigned Daily Checklist tasks.',
+        self::ADMINISTRATOR => 'Manages user accounts and system access, and reviews operational records read-only; cannot submit or verify operational transactions.',
+        self::MANAGER => 'Keeps master data current, verifies operational submissions, manages the Daily Checklist, and reviews analytics, reports and activity history.',
+        self::STAFF => 'Records operational entries and stock movements, submits operational transactions for verification, and completes assigned Daily Checklist tasks.',
     ];
 
     /**
@@ -129,6 +135,7 @@ class Role
             'view_analytics',
             'generate_reports',
             'view_activity',
+            'view_operational_records',
         ],
         self::MANAGER => [
             'manage_inventory',
@@ -136,11 +143,13 @@ class Role
             'view_analytics',
             'generate_reports',
             'view_activity',
+            'verify_operations',
         ],
         self::STAFF => [
             'record_operations',
             'manage_stock',
             'complete_checklist',
+            'submit_operations',
         ],
     ];
 
@@ -218,6 +227,17 @@ class Role
                     $violations[] = (self::PERMISSIONS[$key] ?? $key).' is restricted to the Administrator role.';
                 }
             }
+        }
+
+        $canSubmit = in_array('submit_operations', $permissions, true);
+        $canVerify = in_array('verify_operations', $permissions, true);
+
+        if ($canSubmit && $canVerify) {
+            $violations[] = 'Submitting and verifying operational transactions are mutually exclusive permissions.';
+        }
+
+        if (self::isCanonicalAdministrator($roleName) && ($canSubmit || $canVerify)) {
+            $violations[] = 'Administrators cannot submit or verify operational transactions.';
         }
 
         return $violations;

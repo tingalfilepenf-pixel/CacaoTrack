@@ -65,6 +65,9 @@ class RolePermissionAccessTest extends TestCase
             'Mark assigned Daily Checklist tasks as completed',
             Role::PERMISSIONS['complete_checklist']
         );
+        $this->assertArrayHasKey('submit_operations', Role::PERMISSIONS);
+        $this->assertArrayHasKey('verify_operations', Role::PERMISSIONS);
+        $this->assertArrayHasKey('view_operational_records', Role::PERMISSIONS);
 
         foreach (array_keys(Role::PERMISSIONS) as $key) {
             $this->assertArrayHasKey($key, Role::PERMISSION_DESCRIPTIONS);
@@ -75,16 +78,22 @@ class RolePermissionAccessTest extends TestCase
     public function test_built_in_role_defaults_match_the_confirmed_workflow(): void
     {
         $this->assertEqualsCanonicalizing(
-            ['record_operations', 'manage_stock', 'complete_checklist'],
+            ['record_operations', 'manage_stock', 'complete_checklist', 'submit_operations'],
             Role::defaultPermissionsFor(Role::STAFF)
         );
         $this->assertEqualsCanonicalizing(
-            ['manage_inventory', 'manage_checklist', 'view_analytics', 'generate_reports', 'view_activity'],
+            ['manage_inventory', 'manage_checklist', 'view_analytics', 'generate_reports', 'view_activity', 'verify_operations'],
             Role::defaultPermissionsFor(Role::MANAGER)
         );
+
+        $administratorDefaults = Role::defaultPermissionsFor(Role::ADMINISTRATOR);
+
+        $this->assertContains('view_operational_records', $administratorDefaults);
+        $this->assertNotContains('submit_operations', $administratorDefaults);
+        $this->assertNotContains('verify_operations', $administratorDefaults);
         $this->assertEqualsCanonicalizing(
-            array_keys(Role::PERMISSIONS),
-            Role::defaultPermissionsFor(Role::ADMINISTRATOR)
+            array_values(array_diff(array_keys(Role::PERMISSIONS), ['submit_operations', 'verify_operations'])),
+            $administratorDefaults
         );
         $this->assertSame([], Role::defaultPermissionsFor('Custom Role'));
     }
@@ -497,7 +506,10 @@ class RolePermissionAccessTest extends TestCase
             }
         }
 
-        $this->assertSame([], Role::cannotDo(Role::ADMINISTRATOR));
+        $administratorCannot = array_column(Role::cannotDo(Role::ADMINISTRATOR), 'key');
+
+        $this->assertEqualsCanonicalizing(['submit_operations', 'verify_operations'], $administratorCannot);
+        $this->assertContains('view_operational_records', array_column(Role::canDo(Role::ADMINISTRATOR), 'key'));
         $this->assertSame([], Role::canDo('Custom Role'));
         $this->assertNull(Role::descriptionFor('Custom Role'));
         $this->assertStringNotContainsStringIgnoringCase('approve staff', implode(' ', Role::ROLE_DESCRIPTIONS));
@@ -534,10 +546,13 @@ class RolePermissionAccessTest extends TestCase
             ->assertSee('id="editUserTemplate"', false)
             ->assertSee('Maintain Scion Variety, Client and Supplier lists')
             ->assertSee('Record Stock In and Stock Out')
+            ->assertSee('Submit Operational Transactions')
+            ->assertSee('Verify Operational Submissions')
+            ->assertSee('View Operational Records')
             ->assertSee('Manage and verify Daily Checklist tasks')
             ->assertSee('Mark assigned Daily Checklist tasks as completed')
             ->assertSee('Create, edit, delete and verify Daily Checklist tasks.')
-            ->assertSee('"Staff":["record_operations","manage_stock","complete_checklist"]', false);
+            ->assertSee('"Staff":["record_operations","manage_stock","complete_checklist","submit_operations"]', false);
     }
 
     public function test_saving_a_custom_role_and_permissions_does_not_auto_apply_defaults(): void
