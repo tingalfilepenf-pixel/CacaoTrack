@@ -21,7 +21,11 @@ class CorrectStockInRequest extends AppFormRequest
     public function rules(): array
     {
         return [
-            'supplier_id' => ['required', 'integer', Supplier::activeExistsRule('supplier_id')],
+            'supplier_id' => [
+                $this->isScionCorrection() ? 'nullable' : 'required',
+                'integer',
+                Supplier::activeExistsRule('supplier_id'),
+            ],
             'quantity' => ['required', 'integer', 'min:1'],
             'scion_variety_id' => ['nullable', 'integer', ScionVariety::activeExistsRule('scion_variety_id'), 'required_with:unit_price'],
             'unit_price' => ['nullable', 'numeric', 'min:0', 'required_with:scion_variety_id'],
@@ -29,6 +33,11 @@ class CorrectStockInRequest extends AppFormRequest
             'notes' => ['nullable', 'string', 'max:1000'],
             'date_received' => ['required', 'date', 'before_or_equal:today'],
         ];
+    }
+
+    private function isScionCorrection(): bool
+    {
+        return $this->filled('scion_variety_id') || $this->filled('unit_price');
     }
 
     /**

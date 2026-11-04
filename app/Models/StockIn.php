@@ -129,14 +129,19 @@ class StockIn extends Model
      *
      * A stock-in is either seedling-only (`scion_variety_id`/`unit_price` both
      * null) or scion-inclusive (both set). `required_with` each way expresses
-     * "both or neither" without a discriminator column.
+     * "both or neither" without a discriminator column. A supplier is required
+     * for a seedling receipt but optional for a scion receipt (decision 13).
      *
      * @return array<string, array<int, mixed>>
      */
-    public static function rules(): array
+    public static function rules(bool $isScionEntry = false): array
     {
         return [
-            'supplier_id' => ['required', 'integer', Supplier::activeExistsRule('supplier_id')],
+            'supplier_id' => [
+                $isScionEntry ? 'nullable' : 'required',
+                'integer',
+                Supplier::activeExistsRule('supplier_id'),
+            ],
             'quantity' => ['required', 'integer', 'min:1'],
             'scion_variety_id' => ['nullable', 'integer', ScionVariety::activeExistsRule('scion_variety_id'), 'required_with:unit_price'],
             'unit_price' => ['nullable', 'numeric', 'min:0', 'required_with:scion_variety_id'],

@@ -37,6 +37,30 @@ class StockValidationTest extends TestCase
         $this->assertFalse($valid->fails());
     }
 
+    public function test_stock_in_rules_accept_a_scion_record_without_a_supplier(): void
+    {
+        $variety = ScionVariety::factory()->create();
+
+        $scion = Validator::make([
+            'supplier_id' => null,
+            'quantity' => 100,
+            'origin' => 'Davao',
+            'scion_variety_id' => $variety->scion_variety_id,
+            'unit_price' => 10,
+            'date_received' => '2026-09-01',
+        ], StockIn::rules(true));
+        $this->assertFalse($scion->fails());
+
+        $seedling = Validator::make([
+            'supplier_id' => null,
+            'quantity' => 100,
+            'origin' => 'Davao',
+            'date_received' => '2026-09-01',
+        ], StockIn::rules());
+        $this->assertTrue($seedling->fails());
+        $this->assertArrayHasKey('supplier_id', $seedling->errors()->toArray());
+    }
+
     public function test_stock_out_detail_rules_require_a_valid_unit_and_positive_quantity(): void
     {
         $batch = Batch::factory()->create();

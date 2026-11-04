@@ -557,6 +557,88 @@ class StockInTest extends TestCase
         $this->assertSame('2026-09-02', $logs[1]->activity_date->toDateString());
     }
 
+    public function test_a_scion_receipt_does_not_require_a_supplier(): void
+    {
+        $user = User::factory()->create();
+        $variety = $this->createScionVariety();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'scion' => [
+                    'quantity' => 40,
+                    'origin' => 'Davao',
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'unit_price' => 12.5,
+                    'notes' => '',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', 'Saved: Scion 40.');
+
+        $record = StockIn::firstOrFail();
+        $this->assertNull($record->supplier_id);
+        $this->assertTrue($record->isScionEntry());
+
+        $log = ActivityLog::where('activity_type', ActivityLog::TYPE_STOCK_IN_RECORDED)->firstOrFail();
+        $this->assertStringContainsString('from supplier', $log->description);
+    }
+
+    public function test_a_scion_receipt_still_rejects_an_unknown_or_archived_supplier(): void
+    {
+        $user = User::factory()->create();
+        $supplier = $this->createSupplier();
+        $variety = $this->createScionVariety();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'scion' => [
+                    'supplier_id' => 9999,
+                    'quantity' => 10,
+                    'origin' => 'Davao',
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'unit_price' => 10,
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasErrors(['scion.supplier_id'], null, 'stockin');
+
+        $supplier->update(['archived_at' => now()]);
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'scion' => [
+                    'supplier_id' => $supplier->supplier_id,
+                    'quantity' => 10,
+                    'origin' => 'Davao',
+                    'scion_variety_id' => $variety->scion_variety_id,
+                    'unit_price' => 10,
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasErrors(['scion.supplier_id'], null, 'stockin');
+
+        $this->assertSame(0, StockIn::count());
+    }
+
+    public function test_a_seedling_receipt_still_requires_a_supplier(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post(route('inventory.stock-in.store'), [
+                'seedling' => [
+                    'supplier_id' => '',
+                    'quantity' => 10,
+                    'origin' => 'Davao',
+                    'date_received' => '2026-09-05',
+                ],
+            ])
+            ->assertSessionHasErrors(['seedling.supplier_id'], null, 'stockin');
+
+        $this->assertSame(0, StockIn::count());
+    }
+
     public function test_a_scion_only_save_ignores_the_untouched_seedling_tab(): void
     {
         $user = User::factory()->create();
@@ -647,7 +729,6 @@ class StockInTest extends TestCase
                 ],
             ])
             ->assertSessionHasErrors([
-                'scion.supplier_id',
                 'scion.quantity',
                 'scion.origin',
                 'scion.scion_variety_id',
@@ -802,6 +883,8 @@ class StockInTest extends TestCase
             ->assertSee('id="scionPane"', false)
             ->assertSee('Seedlings are recorded without a variety or price.')
             ->assertSee('Required when you fill in this tab.')
+            ->assertSee('The supplier is optional; the other fields are required when you fill in this tab.')
+            ->assertSee('Select Supplier (optional)')
             ->assertSee('Clear this entry')
             ->assertSee('Copy supplier and date from the other tab')
             ->assertSee('Fill in at least one tab.')
