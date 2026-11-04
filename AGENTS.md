@@ -8,6 +8,47 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
+## PHASE 3 MORTALITY / STOCK OUT APPROVAL PILOT — BRANCH ONLY (2026-11-04)
+- **Branch:** `feat/phase-3-mortality-stockout-approval-pilot`. **Not merged and not pushed.** `master` is unchanged by this branch.
+- **Status:** implemented on the branch, tested only on `db_capstone_test`. The workflow remains a **proposed design**; panelist/client confirmation is not sought. **Live `db_capstone` was not migrated, seeded, written or permission-edited.** Its two Phase 2 migrations remain Pending.
+- **Switch:** `config/cacaotrack.operational_submission.enabled`, default **false**, env
+  `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED`. It is an explicit boolean, not the date-based
+  `OperationalCutover` helper. New routes return 404 while OFF; sidebar/Dashboard submission
+  links and the Manager pending count appear only while ON.
+- **Population:** `submit_operations`, `verify_operations`, `view_operational_records` were added to
+  `Role::PERMISSIONS` with labels/descriptions. Temporary 13-key catalog. Defaults: Staff +
+  `submit_operations`, Manager + `verify_operations`, Administrator + `view_operational_records`;
+  Administrator holds neither submit nor verify. `record_operations` and `manage_stock` are **not**
+  retired. User Management shows the new keys even while the workflow is OFF.
+- **Hard rules:** submit + verify are mutually exclusive for every role; the canonical Administrator
+  cannot hold submit or verify; existing Administrator-only `manage_users`/`correct_records` and
+  reserved role-name rules remain. Invalid stored accounts are denied by `EnsurePermission` and shown
+  as “Needs correction”, without automatic rewriting.
+- **Custom roles:** a custom role holding `verify_operations` **may verify**; the model is key-based.
+  The hard rules still stop self-approval (verifier ≠ submitter) and Administrator verification.
+- **Implemented flow:** Staff submit Mortality and Stock Out; submissions are immutable and only
+  Pending/Approved/Rejected exist. Manager queue/review, approve/reject with written reason,
+  linked resubmission, and D6 automatic rejection after a rolled-back revalidation failure. Official
+  records and official-effect Activity Log rows are attributed to the **submitter**; the Manager
+  decision is stored on the submission and in its own approval/rejection Activity Log rows.
+- **Approval:** official writes reuse the direct-flow actions (`RecordMortality`, `RecordStockOut`).
+  ELIG-01 (active + not archived) is checked at submission and approval; ELIG-02 (Client active) at
+  Stock Out approval; caps remain `Batch::survivingQuantity()` / the existing per-line + aggregate
+  Stock Out gate. Pending/Rejected never change official rows, balances, quantities or analytics.
+- **Switch ON:** direct Mortality and Stock Out official-write POSTs are disabled together; Staff use
+  the submission forms, which list active submission-eligible batches. General Mortality/Stock Out
+  history is restricted to all-scope users. Regraft, Stock In, Batch Creation, Monthly Inventory and
+  corrections remain direct writes.
+- **Guards:** a Pending submission blocks deleting its subject batch (including a batch named inside a
+  Stock Out payload's `details`); any `subject_batch_id` reference blocks deletion through the FK;
+  users referenced as submitter/decider cannot be deleted.
+- **Verification:** full MySQL suite on `db_capstone_test` finished **586 passed / 3,305
+  assertions** after commit 10; Pint, `view:cache` and `git diff --check` clean. Direct-flow tests
+  were unchanged by the shared-action extraction.
+- **Deployment precondition:** apply the two Phase 2 migrations to `db_capstone` first, with a fresh
+  verified backup and explicit sign-off; there are no `Schema::hasTable` guards in model queries.
+  Then deploy with the switch OFF, verify direct behaviour, and only then enable the switch.
+
 ## OPERATIONAL APPROVAL, BATCH CREATION, SUBMISSION LIFECYCLE, CORRECTIONS — DOCS ONLY (2026-11-04, Group 3 F01–F04)
 - **Status:** proposed design (pending written confirmation by the panelist and the client), **Proposed / Not Yet Implemented**. The current application still writes
   operational records directly from the forms; there is no `operational_submissions` staging table, no
