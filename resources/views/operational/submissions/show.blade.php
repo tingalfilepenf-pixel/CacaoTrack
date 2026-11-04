@@ -27,6 +27,15 @@
 @if (session('error'))
     <div class="alert alert-danger">{{ session('error') }}</div>
 @endif
+@if ($errors->submission_rejection->any())
+    <div class="alert alert-danger">
+        <ul class="mb-0 ps-3">
+            @foreach ($errors->submission_rejection->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
 
 <div class="card mb-4">
     <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
@@ -104,6 +113,13 @@
                 <form method="POST" action="{{ route('operational.submissions.approve', $submission) }}" class="mt-3">
                     @csrf
                     <button type="submit" class="btn btn-success">Approve Submission</button>
+                </form>
+                <form method="POST" action="{{ route('operational.submissions.reject', $submission) }}" class="mt-3">
+                    @csrf
+                    <label for="rejectionReason" class="form-label text-muted small fw-bold">Rejection reason <span class="text-danger">*</span></label>
+                    <textarea class="form-control @error('reason', 'submission_rejection') is-invalid @enderror" id="rejectionReason" name="reason" rows="3" required></textarea>
+                    @error('reason', 'submission_rejection')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                    <button type="submit" class="btn btn-outline-danger mt-2">Reject Submission</button>
                 </form>
             @endif
         @endif

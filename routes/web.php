@@ -72,6 +72,9 @@ Route::prefix('operational')->middleware('auth')->group(function () {
             Route::post('/{submission}/approve', [OperationalSubmissionController::class, 'approve'])
                 ->whereNumber('submission')
                 ->name('operational.submissions.approve');
+            Route::post('/{submission}/reject', [OperationalSubmissionController::class, 'reject'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.reject');
         });
 
         Route::middleware('permission:submit_operations')->group(function () {

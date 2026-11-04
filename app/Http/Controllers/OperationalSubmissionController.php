@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Actions\ApproveOperationalSubmission;
+use App\Actions\RejectOperationalSubmission;
 use App\Actions\SubmitOperationalSubmission;
+use App\Exceptions\ApprovalRevalidationException;
+use App\Http\Requests\RejectOperationalSubmissionRequest;
 use App\Http\Requests\StoreMortalitySubmissionRequest;
 use App\Http\Requests\StoreStockOutSubmissionRequest;
 use App\Models\Batch;
@@ -31,6 +34,7 @@ class OperationalSubmissionController extends Controller
     public function __construct(
         private readonly SubmitOperationalSubmission $submissions,
         private readonly ApproveOperationalSubmission $approvals,
+        private readonly RejectOperationalSubmission $rejections,
     ) {}
 
     public function index(Request $request): View
@@ -87,8 +91,24 @@ class OperationalSubmissionController extends Controller
 
     public function approve(Request $request, OperationalSubmission $submission): RedirectResponse
     {
+        $managerId = (int) $request->user()->id;
+
         try {
-            $this->approvals->execute($submission, (int) $request->user()->id);
+            $this->approvals->execute($submission, $managerId);
+        } catch (ApprovalRevalidationException $exception) {
+            try {
+                $this->rejections->automatic($submission, $managerId, $exception->getMessage());
+            } catch (\Throwable $rejectionFailure) {
+                report($rejectionFailure);
+
+                return redirect()
+                    ->route('operational.submissions.show', $submission)
+                    ->with('error', 'Approval failed revalidation, but the submission could not be rejected and is still Pending. Please try again.');
+            }
+
+            return redirect()
+                ->route('operational.submissions.show', $submission)
+                ->with('error', 'Approval failed revalidation. The submission was automatically rejected: '.$exception->getMessage());
         } catch (DomainException|ValidationException $exception) {
             return redirect()
                 ->route('operational.submissions.show', $submission)
@@ -100,6 +120,25 @@ class OperationalSubmissionController extends Controller
         return redirect()
             ->route('operational.submissions.show', $submission)
             ->with('success', 'Submission approved; official record created.');
+    }
+
+    public function reject(RejectOperationalSubmissionRequest $request, OperationalSubmission $submission): RedirectResponse
+    {
+        try {
+            $this->rejections->manual(
+                $submission,
+                (int) $request->user()->id,
+                (string) $request->validated()['reason'],
+            );
+        } catch (DomainException $exception) {
+            return redirect()
+                ->route('operational.submissions.show', $submission)
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('operational.submissions.show', $submission)
+            ->with('success', 'Submission rejected.');
     }
 
     public function createMortality(): View

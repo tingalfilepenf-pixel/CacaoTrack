@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Exceptions\ApprovalRevalidationException;
 use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\Client;
@@ -63,12 +64,16 @@ class ApproveOperationalSubmission
         $batch = Batch::query()->lockForUpdate()->findOrFail($payload['batch_id']);
 
         if (! $batch->isSubmissionEligible()) {
-            throw ValidationException::withMessages([
-                'batch_id' => "Batch {$batch->batch_code} is no longer active at approval.",
-            ])->errorBag('submission_approval');
+            throw new ApprovalRevalidationException("Batch {$batch->batch_code} is no longer active at approval.");
         }
 
-        $record = $this->mortality->execute($payload, (int) $submission->submitted_by_id);
+        try {
+            $record = $this->mortality->execute($payload, (int) $submission->submitted_by_id);
+        } catch (ValidationException $exception) {
+            throw new ApprovalRevalidationException(
+                (string) collect($exception->errors())->flatten()->first()
+            );
+        }
 
         OperationalSubmissionRecord::create([
             'submission_id' => $submission->submission_id,
@@ -92,9 +97,7 @@ class ApproveOperationalSubmission
         $client = Client::query()->lockForUpdate()->findOrFail($payload['client_id']);
 
         if ($client->isArchived()) {
-            throw ValidationException::withMessages([
-                'client_id' => "Client {$client->client_name} is archived at approval.",
-            ])->errorBag('submission_approval');
+            throw new ApprovalRevalidationException("Client {$client->client_name} is archived at approval.");
         }
 
         $batchIds = collect($payload['details'] ?? [])
@@ -111,20 +114,22 @@ class ApproveOperationalSubmission
             ->get();
 
         if ($batches->count() !== $batchIds->count()) {
-            throw ValidationException::withMessages([
-                'details' => 'One or more batches in this submission no longer exist.',
-            ])->errorBag('submission_approval');
+            throw new ApprovalRevalidationException('One or more batches in this submission no longer exist.');
         }
 
         foreach ($batches as $batch) {
             if (! $batch->isSubmissionEligible()) {
-                throw ValidationException::withMessages([
-                    'details' => "Batch {$batch->batch_code} is no longer active at approval.",
-                ])->errorBag('submission_approval');
+                throw new ApprovalRevalidationException("Batch {$batch->batch_code} is no longer active at approval.");
             }
         }
 
-        $header = $this->stockOuts->execute($payload, (int) $submission->submitted_by_id);
+        try {
+            $header = $this->stockOuts->execute($payload, (int) $submission->submitted_by_id);
+        } catch (ValidationException $exception) {
+            throw new ApprovalRevalidationException(
+                (string) collect($exception->errors())->flatten()->first()
+            );
+        }
 
         OperationalSubmissionRecord::create([
             'submission_id' => $submission->submission_id,
