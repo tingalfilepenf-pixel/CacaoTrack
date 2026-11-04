@@ -60,6 +60,14 @@ Route::prefix('operational')->middleware('auth')->group(function () {
         Route::middleware('permission:submit_operations,verify_operations,view_operational_records')->group(function () {
             Route::get('/', [OperationalSubmissionController::class, 'index'])
                 ->name('operational.submissions.index');
+            Route::get('/{submission}', [OperationalSubmissionController::class, 'show'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.show');
+        });
+
+        Route::middleware('permission:verify_operations')->group(function () {
+            Route::get('/queue', [OperationalSubmissionController::class, 'queue'])
+                ->name('operational.submissions.queue');
         });
 
         Route::middleware('permission:submit_operations')->group(function () {

@@ -92,7 +92,11 @@
                                     <div class="text-muted">Resubmission of #{{ $submission->resubmissionOf->submission_id }}</div>
                                 @endif
                             </td>
-                            <td class="text-end pe-4 text-muted">—</td>
+                            <td class="text-end pe-4">
+                                <a href="{{ route('operational.submissions.show', $submission) }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> View
+                                </a>
+                            </td>
                         </tr>
                     @empty
                         <tr>

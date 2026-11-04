@@ -48,6 +48,37 @@ class OperationalSubmissionController extends Controller
         ]);
     }
 
+    public function queue(Request $request): View
+    {
+        $submissions = OperationalSubmission::query()
+            ->with(['submitter', 'subjectBatch'])
+            ->where('status', OperationalSubmission::STATUS_PENDING)
+            ->orderBy('submitted_at')
+            ->orderBy('submission_id')
+            ->paginate(10)
+            ->withQueryString();
+
+        return view('operational.submissions.queue', [
+            'submissions' => $submissions,
+        ]);
+    }
+
+    public function show(Request $request, OperationalSubmission $submission): View
+    {
+        $user = $request->user();
+
+        abort_unless(OperationalSubmissionVisibility::canView($user, $submission), 404);
+
+        $submission->load(['submitter', 'decider', 'subjectBatch', 'resubmissionOf', 'records']);
+
+        return view('operational.submissions.show', [
+            'submission' => $submission,
+            'canVerify' => $user->hasPermission('verify_operations'),
+            'canSubmit' => $user->hasPermission('submit_operations'),
+            'canViewAll' => OperationalSubmissionVisibility::canViewAll($user),
+        ]);
+    }
+
     public function createMortality(): View
     {
         return view('operational.submissions.mortality-create', [
