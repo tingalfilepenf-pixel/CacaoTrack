@@ -1,9 +1,19 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Phase 3 Mortality / Stock Out approval pilot — **BRANCH ONLY; NOT MERGED; NOT PUSHED; LIVE `db_capstone` UNTOUCHED**)
+> ### ▶ Continue here (latest: Phase 3 Mortality / Stock Out approval pilot — **MERGED `7035b64`; PUSHED; LIVE `db_capstone` MIGRATED + FOUR-ACCOUNT PERMISSIONS APPLIED (2026-11-05; SWITCH OFF)**)
 >
-> - **Branch:** `feat/phase-3-mortality-stockout-approval-pilot`, created from `master` at `d17b686`.
->   Eleven commits implement the pilot; **do not merge/push without explicit owner approval.**
+> - **Git:** HEAD `7035b64` — `Merge branch 'feat/phase-3-mortality-stockout-approval-pilot'`;
+>   `master` **in sync with `origin/master` (0/0)**, pushed `d17b686..7035b64`. The local feature
+>   branch remains at `f6a0db2` (not deleted). This handoff edit is uncommitted; only the untracked
+>   `docs/CacaoTrack_Phase2_Decision_Register.md` remains besides it.
+> - **Commit stack:** the merged Phase 3 branch contains the switch, RBAC/hard rules, shared direct
+>   actions, submission capture, Staff list / Manager queue, approve, reject/D6, resubmission,
+>   switch-on guards/navigation, deletion guards, docs, and the raw-SQL guard `f6a0db2`.
+> - **Raw-SQL guard:** `tests/Feature/OperationalSubmissionRawSqlGuardTest.php` scans **77 files under
+>   `app/`** and makes **78 assertions** (77 per-file + 1 non-empty sanity). It excludes only the two
+>   submission models and the approval, rejection and submit actions. It caught
+>   `UserController::hasOperationalRecords()` using `DB::table('operational_submissions')`; that now
+>   uses `OperationalSubmission::query()`.
 > - **Design status:** proposed design; panelist/client confirmation is not sought. Do not describe it as approved by them.
 > - **Switch:** `cacaotrack.operational_submission.enabled` (env
 >   `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED`), **false by default**. It is a boolean, not the
@@ -28,13 +38,51 @@
 >   tests were unchanged: focused Mortality/Stock Out/Inventory/Regraft/Ledger **126 passed / 725
 >   assertions** before and after the extraction.
 > - **Verification:** every commit ran the full MySQL suite on `db_capstone_test`, Pint,
->   `view:cache` and `git diff --check`; final suite after commit 10 **586 passed / 3,305 assertions**.
-> - **Live DB:** **not** migrated, seeded, written or permission-edited. The Phase 2 migrations remain
->   Pending on `db_capstone`. Deployment requires applying them first after a fresh verified backup and
->   explicit sign-off (no `Schema::hasTable` guards in model queries), then deploying with the switch
->   OFF and enabling it only after direct-flow smoke checks.
-> - **Working tree:** docs commit; `docs/CacaoTrack_Phase2_Decision_Register.md` remains untracked and
->   must be preserved.
+>   `view:cache` and `git diff --check`. Final suite after `f6a0db2`: **587 passed / 3,383
+>   assertions**, 48.7 s; Pint passed.
+> - **Live DB (2026-11-05):** the two additive Phase 2 migrations are **applied** to `db_capstone` —
+>   `2026_11_04_000001_create_operational_submissions_table` and
+>   `2026_11_04_000002_create_operational_submission_records_table`. `migrate:status` is **0 Pending**;
+>   both submission tables are empty. The DB has **25 tables**, **55** migration rows, **4** users and
+>   **11** batches; every other table's row count is unchanged. `php artisan cacao:health` passed for
+>   **11 batches**. Pre-migration backup:
+>   `db_capstone_pre_phase3_operational_submissions_20261105_020629.sql` (**41,457 bytes**,
+>   SHA-256 `C70A58901A23FE6D16967CFADF250F064446D75D8987826C276C19726C564794`).
+> - **Live permissions (2026-11-05):** the four-account update is **applied** — id 1 Administrator +
+>   `view_operational_records`; id 2 Staff + `submit_operations`; ids 3 and 4 Manager +
+>   `verify_operations`. Nothing was removed; nobody holds both submit and verify; the Administrator
+>   holds neither. Pre-update backup:
+>   `db_capstone_pre_phase3_permissions_20261105_021957.sql` (**45,349 bytes**, SHA-256
+>   `AD686C204A9DCE80BF8F6F131FD46DCB7C3ADF9C439B87DC29C08BC6836289DE`).
+> - **Switch remains OFF:** `cacaotrack.operational_submission.enabled` /
+>   `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED` is still **false**, so direct Mortality and Stock Out
+>   writes are unchanged. **Next:** owner check of each role with the switch off, then a controlled
+>   switch-on test with one Mortality and one Stock Out submission.
+> - **Live account note:** the live Administrator still lacks `correct_records`; the older
+>   checklist-key note in §5a is historical.
+> - **Owner decisions used by this implementation (not yet written into the untracked register):**
+>   D1 immutable submissions/no edit-delete-withdraw; D5 linked resubmission by the original submitter
+>   any number of times; D6 automatic rejection after rollback with a separate save, leaving Pending
+>   if that save fails; ELIG-01 active non-archived batch at submission and approval; ELIG-02 active
+>   Client at Stock Out approval; U8 visibility; explicit boolean switch; submitter attribution;
+>   Manager decision logged separately; a custom role with `verify_operations` may verify (self-approval
+>   and Administrator verification remain blocked). The register still shows some of these as open —
+>   update it only with owner approval.
+> - **Still unresolved / deferred:** final 11-key catalog; retirement of `record_operations` and
+>   `manage_stock` (not safe at switch-on because Regraft, Batches, Monthly Inventory and Stock In
+>   still use them); permission migration; corrections workflow / `record_corrections`; the other
+>   operational modules; COR-01; D11 mortality future-date; and the SCHEMA-01/SCHEMA-02 documentation
+>   items. Do not implement these without sign-off.
+> - **Next session order:** (1) decide whether to commit this handoff edit; (2) owner check of each
+>   role with the switch OFF; (3) controlled switch-on test with one Mortality and one Stock Out
+>   submission; (4) have the owner decide whether to update the decision register/canonical
+>   PRD/ERD/Design/AGENTS for the implemented decisions (panelist/client confirmation is not sought);
+>   (5) keep tests on `db_capstone_test` and never touch `db_capstone` without a fresh verified backup
+>   and explicit sign-off.
+> - **Note:** `AGENTS.md` still carries the earlier Phase 3 “branch only” banner; update it in the
+>   next docs commit if the owner wants AGENTS to match this merged/pushed state.
+> - **Working tree:** `M session.handoff.md` (this update) + untracked
+>   `docs/CacaoTrack_Phase2_Decision_Register.md`; nothing staged.
 >
 > ### ▶ Previous snapshot (Phase 2 foundation implemented — **OPERATIONAL SUBMISSION TABLES, MODELS, GUARDS, DECISIONS; MERGED `d17b686`; PUSHED; APPROVAL WORKFLOW STILL NOT IMPLEMENTED**)
 >
