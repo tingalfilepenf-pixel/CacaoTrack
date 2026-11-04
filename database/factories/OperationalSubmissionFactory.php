@@ -67,8 +67,8 @@ class OperationalSubmissionFactory extends Factory
             return [
                 'client_id' => 1,
                 'release_date' => now()->toDateString(),
-                'lines' => [
-                    ['batch_id' => 1, 'quantity' => 1, 'unit' => 'pots'],
+                'details' => [
+                    ['batch_id' => 1, 'quantity' => 1, 'unit' => 'pots', 'unit_price' => null],
                 ],
             ];
         }

@@ -10,6 +10,7 @@ use App\Http\Controllers\DailyChecklistController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MortalityController;
+use App\Http\Controllers\OperationalSubmissionController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RegraftController;
 use App\Http\Controllers\ScionVarietyController;
@@ -52,6 +53,26 @@ Route::prefix('operational')->middleware('auth')->group(function () {
         Route::delete('/checklist/tasks/{task}', [DailyChecklistController::class, 'destroyTask'])->name('operational.checklist.tasks.destroy');
         // Managers record verification on a Staff completion; Staff cannot.
         Route::post('/checklist/completions/{completion}/verify', [DailyChecklistController::class, 'verifyCompletion'])->name('operational.checklist.completions.verify');
+    });
+
+    // Phase 3 operational-submission workflow (proposed; disabled by default).
+    Route::prefix('submissions')->middleware('submissions.enabled')->group(function () {
+        Route::middleware('permission:submit_operations,verify_operations,view_operational_records')->group(function () {
+            Route::get('/', [OperationalSubmissionController::class, 'index'])
+                ->name('operational.submissions.index');
+        });
+
+        Route::middleware('permission:submit_operations')->group(function () {
+            Route::get('/mortality/create', [OperationalSubmissionController::class, 'createMortality'])
+                ->name('operational.submissions.mortality.create');
+            Route::post('/mortality', [OperationalSubmissionController::class, 'storeMortality'])
+                ->name('operational.submissions.mortality.store');
+
+            Route::get('/stock-out/create', [OperationalSubmissionController::class, 'createStockOut'])
+                ->name('operational.submissions.stock-out.create');
+            Route::post('/stock-out', [OperationalSubmissionController::class, 'storeStockOut'])
+                ->name('operational.submissions.stock-out.store');
+        });
     });
 
     // Mortality, Regraft and Batches remain `record_operations` functions.
