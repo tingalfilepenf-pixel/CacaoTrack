@@ -105,7 +105,7 @@ class Role
      * @var array<string, string>
      */
     public const ROLE_DESCRIPTIONS = [
-        self::ADMINISTRATOR => 'Manages user accounts and system access, and reviews operational records read-only; cannot submit or verify operational transactions.',
+        self::ADMINISTRATOR => 'Manages user accounts and system access, and reviews operational records read-only; cannot create, submit or verify operational transactions.',
         self::MANAGER => 'Keeps master data current, verifies operational submissions, manages the Daily Checklist, and reviews analytics, reports and activity history.',
         self::STAFF => 'Records operational entries and stock movements, submits operational transactions for verification, and completes assigned Daily Checklist tasks.',
     ];
@@ -127,8 +127,6 @@ class Role
         self::ADMINISTRATOR => [
             'manage_users',
             'manage_inventory',
-            'manage_stock',
-            'record_operations',
             'manage_checklist',
             'complete_checklist',
             'correct_records',
@@ -144,6 +142,7 @@ class Role
             'generate_reports',
             'view_activity',
             'verify_operations',
+            'view_operational_records',
         ],
         self::STAFF => [
             'record_operations',

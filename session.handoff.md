@@ -1,11 +1,16 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Phase 3 Mortality / Stock Out approval pilot — **MERGED `7035b64`; PUSHED; LIVE `db_capstone` MIGRATED + FOUR-ACCOUNT PERMISSIONS APPLIED (2026-11-05; SWITCH OFF)**)
+> ### ▶ Continue here (latest: Phase 3 live deployment — **2026-11-05; `db_capstone` MIGRATED + FOUR-ACCOUNT PERMISSIONS APPLIED; SWITCH OFF; HANDOFF COMMITTED `1d447c1`, UNPUSHED**)
 >
-> - **Git:** HEAD `7035b64` — `Merge branch 'feat/phase-3-mortality-stockout-approval-pilot'`;
->   `master` **in sync with `origin/master` (0/0)**, pushed `d17b686..7035b64`. The local feature
->   branch remains at `f6a0db2` (not deleted). This handoff edit is uncommitted; only the untracked
->   `docs/CacaoTrack_Phase2_Decision_Register.md` remains besides it.
+> - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read
+>   `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. The live DB is already
+>   migrated and permission-updated — **do not re-apply either change**. Tests only on
+>   `db_capstone_test`; no live SQL/write without a fresh verified backup and explicit sign-off.
+> - **Git:** HEAD `1d447c1` — `docs(handoff): record the live Phase 3 deployment state`; `master` is
+>   **1 commit ahead of `origin/master`** (the handoff commit only), **not pushed**. The Phase 3 merge
+>   `7035b64` is already on `origin/master`; the local feature branch remains at `f6a0db2` (not
+>   deleted). This new handoff edit is uncommitted; the untracked
+>   `docs/CacaoTrack_Phase2_Decision_Register.md` remains beside it.
 > - **Commit stack:** the merged Phase 3 branch contains the switch, RBAC/hard rules, shared direct
 >   actions, submission capture, Staff list / Manager queue, approve, reject/D6, resubmission,
 >   switch-on guards/navigation, deletion guards, docs, and the raw-SQL guard `f6a0db2`.
@@ -54,6 +59,13 @@
 >   holds neither. Pre-update backup:
 >   `db_capstone_pre_phase3_permissions_20261105_021957.sql` (**45,349 bytes**, SHA-256
 >   `AD686C204A9DCE80BF8F6F131FD46DCB7C3ADF9C439B87DC29C08BC6836289DE`).
+> - **Live deployment scope:** no application code, route, view, seeder or test file changed; the live
+>   changes were the two additive migrations and the four permission updates only. Do not re-apply them.
+> - **Template fix (branch `fix/admin-template-wording`, 2026-11-05):** new Administrator accounts from
+>   the role template no longer receive `manage_stock` or `record_operations`; the Manager template now
+>   includes `view_operational_records`. An existing account with `manage_stock` and/or
+>   `record_operations` stored keeps them — including live Administrator id 1 — and no stored
+>   permission, hard rule, migration or live data was changed.
 > - **Switch remains OFF:** `cacaotrack.operational_submission.enabled` /
 >   `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED` is still **false**, so direct Mortality and Stock Out
 >   writes are unchanged. **Next:** owner check of each role with the switch off, then a controlled
@@ -73,8 +85,9 @@
 >   still use them); permission migration; corrections workflow / `record_corrections`; the other
 >   operational modules; COR-01; D11 mortality future-date; and the SCHEMA-01/SCHEMA-02 documentation
 >   items. Do not implement these without sign-off.
-> - **Next session order:** (1) decide whether to commit this handoff edit; (2) owner check of each
->   role with the switch OFF; (3) controlled switch-on test with one Mortality and one Stock Out
+> - **Next session order:** (1) review this handoff edit and commit/push it only with explicit owner
+>   approval (it sits on top of `1d447c1`; the Phase 3 merge is already pushed); (2) owner check of
+>   each role with the switch OFF; (3) controlled switch-on test with one Mortality and one Stock Out
 >   submission; (4) have the owner decide whether to update the decision register/canonical
 >   PRD/ERD/Design/AGENTS for the implemented decisions (panelist/client confirmation is not sought);
 >   (5) keep tests on `db_capstone_test` and never touch `db_capstone` without a fresh verified backup

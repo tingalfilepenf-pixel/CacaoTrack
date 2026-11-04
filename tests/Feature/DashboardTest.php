@@ -148,17 +148,13 @@ class DashboardTest extends TestCase
             ->assertDontSee('Record Regraft');
     }
 
-    public function test_administrator_and_manager_quick_actions_are_unchanged(): void
+    public function test_administrator_and_manager_quick_actions_match_their_templates(): void
     {
         $administrator = User::factory()->admin()->create();
 
         $this->actingAs($administrator)->get(route('dashboard'))
             ->assertOk()
             ->assertViewHas('quickActions', fn (array $actions) => array_column($actions, 'label') === [
-                'Record Mortality',
-                'Record Regraft',
-                'Stock In',
-                'Stock Out',
                 'Daily Checklist',
                 'Scion Varieties',
                 'Clients',

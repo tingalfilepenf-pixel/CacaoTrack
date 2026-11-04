@@ -2,12 +2,25 @@
 
 namespace Tests;
 
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * @param  list<string>  $permissions
+     */
+    protected function userWithPermissions(array $permissions, string $role = Role::STAFF): User
+    {
+        return User::factory()->create([
+            'role' => $role,
+            'permissions' => array_values(array_unique($permissions)),
+        ]);
+    }
+
     /**
      * Refuse to run a database test unless it is pointed at the dedicated
      * MySQL test database. This guard runs before RefreshDatabase can touch a

@@ -189,7 +189,7 @@ class RecordCorrectionTest extends TestCase
             'remark' => 'Original remark.',
         ]);
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->userWithPermissions(['record_operations']))
             ->get(route('operational.regraft'))
             ->assertOk()
             ->assertViewHas('regraftCorrectionVarieties', fn ($varieties) => $varieties

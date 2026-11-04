@@ -226,7 +226,7 @@ class ActivityLogTest extends TestCase
 
     public function test_recording_mortality_writes_an_activity_log(): void
     {
-        $user = User::factory()->admin()->create();
+        $user = $this->userWithPermissions(['record_operations']);
         $batch = $this->createBatch($user);
 
         $this->actingAs($user)->post(route('operational.mortality.records.store'), [
@@ -246,7 +246,7 @@ class ActivityLogTest extends TestCase
 
     public function test_recording_stock_in_writes_an_unbound_activity_log(): void
     {
-        $user = User::factory()->admin()->create();
+        $user = $this->userWithPermissions(['manage_stock']);
         $supplier = Supplier::create([
             'supplier_name' => 'Davao Cacao Growers',
             'contact_number' => '0917-111-2233',
