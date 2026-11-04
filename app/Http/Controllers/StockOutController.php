@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\RecordStockOut;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\StoreStockOutRequest;
-use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\Client;
 use App\Models\StockOut;
@@ -12,13 +12,13 @@ use App\Models\StockOutDetail;
 use App\Support\DuplicateSubmissionGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class StockOutController extends Controller
 {
+    public function __construct(private readonly RecordStockOut $stockOuts) {}
+
     /**
      * FR-10 Stock Out listing. A Stock Out is a header plus one detail line
      * per batch/scion variety (ERD §3.14/§3.15).
@@ -95,54 +95,7 @@ class StockOutController extends Controller
         $fingerprint = DuplicateSubmissionGuard::assertFresh('stock_out', $validated, 'stockout');
 
         try {
-            DB::transaction(function () use ($validated): void {
-                $batches = $this->lockAndValidateBatches($validated['details']);
-
-                $header = StockOut::create([
-                    'client_id' => $validated['client_id'],
-                    'user_id' => Auth::id(),
-                    'release_date' => $validated['release_date'],
-                    'total_amount' => null,
-                ]);
-
-                $totalAmount = 0.0;
-                $hasAmount = false;
-
-                foreach ($validated['details'] as $line) {
-                    $unitPrice = $line['unit_price'] ?? null;
-                    $amount = $unitPrice === null
-                        ? null
-                        : round((float) $unitPrice * (int) $line['quantity'], 2);
-
-                    $header->details()->create([
-                        'batch_id' => $line['batch_id'],
-                        'quantity' => $line['quantity'],
-                        'unit' => $line['unit'],
-                        'unit_price' => $unitPrice,
-                        'amount' => $amount,
-                    ]);
-
-                    if ($amount !== null) {
-                        $hasAmount = true;
-                        $totalAmount += $amount;
-                    }
-                }
-
-                if ($hasAmount) {
-                    $header->forceFill(['total_amount' => round($totalAmount, 2)])->save();
-                }
-
-                // Decrement every referenced batch's live available balance.
-                foreach ($batches as $batchId => $batch) {
-                    $released = (int) collect($validated['details'])
-                        ->where('batch_id', $batchId)
-                        ->sum('quantity');
-
-                    $batch->decrement('available_count', $released);
-                }
-
-                $this->recordActivityLog($validated, $batches);
-            });
+            $this->stockOuts->execute($validated, (int) Auth::id());
         } catch (\Throwable $exception) {
             DuplicateSubmissionGuard::release('stock_out', $fingerprint);
 
@@ -162,91 +115,5 @@ class StockOutController extends Controller
             ->route('inventory.stock-out')
             ->with('success', 'Client added successfully.')
             ->with('new_client_id', $client->client_id);
-    }
-
-    /**
-     * Lock every referenced batch and validate all lines before any write.
-     *
-     * @param  array<int, array<string, mixed>>  $details
-     * @return Collection<int, Batch> Keyed by batch_id.
-     */
-    private function lockAndValidateBatches(array $details): Collection
-    {
-        $lineIndexByBatch = [];
-
-        foreach ($details as $index => $line) {
-            $lineIndexByBatch[(int) $line['batch_id']] ??= $index;
-        }
-
-        $batches = Batch::query()
-            ->whereIn('batch_id', array_keys($lineIndexByBatch))
-            ->lockForUpdate()
-            ->get()
-            ->keyBy('batch_id');
-
-        // Per-line check against that line's own batch.
-        foreach ($details as $index => $line) {
-            $batch = $batches->get((int) $line['batch_id']);
-
-            if ($batch === null) {
-                $this->failValidation([
-                    "details.{$index}.batch_id" => 'The selected batch could not be found.',
-                ], 'stockout');
-            }
-
-            $surviving = $batch->survivingQuantity();
-
-            if ((int) $line['quantity'] > $surviving) {
-                $this->failValidation([
-                    "details.{$index}.quantity" => "Quantity exceeds the {$surviving} surviving plants available for {$batch->batch_code}.",
-                ], 'stockout');
-            }
-        }
-
-        // Aggregate check: the same batch may not be over-released across lines.
-        foreach ($lineIndexByBatch as $batchId => $firstIndex) {
-            $batch = $batches->get($batchId);
-
-            $requested = (int) collect($details)
-                ->where('batch_id', $batchId)
-                ->sum('quantity');
-
-            if ($batch->scion_variety_id === null) {
-                $this->failValidation([
-                    "details.{$firstIndex}.batch_id" => "Batch {$batch->batch_code} has no scion variety assigned, so it cannot be released.",
-                ], 'stockout');
-            }
-
-            $surviving = $batch->survivingQuantity();
-
-            if ($requested > $surviving) {
-                $this->failValidation([
-                    "details.{$firstIndex}.quantity" => "Quantity exceeds the {$surviving} surviving plants available for {$batch->batch_code}.",
-                ], 'stockout');
-            }
-        }
-
-        return $batches;
-    }
-
-    /**
-     * @param  array<string, mixed>  $validated
-     * @param  Collection<int, Batch>  $batches
-     */
-    private function recordActivityLog(array $validated, Collection $batches): void
-    {
-        $client = Client::find($validated['client_id']);
-        $totalQuantity = (int) collect($validated['details'])->sum('quantity');
-        $lineCount = count($validated['details']);
-        $batchId = $batches->count() === 1 ? $batches->keys()->first() : null;
-
-        ActivityLog::record(
-            $batchId,
-            ActivityLog::TYPE_STOCK_OUT_RECORDED,
-            "Released {$totalQuantity} seedlings to ".($client?->client_name ?? 'client')
-                ." across {$lineCount} line(s).",
-            null,
-            $validated['release_date'],
-        );
     }
 }

@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\RecordMortality;
 use App\Http\Requests\StoreMortalityRecordRequest;
-use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
 use App\Models\ScionVariety;
@@ -11,11 +11,12 @@ use App\Support\DuplicateSubmissionGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class MortalityController extends Controller
 {
+    public function __construct(private readonly RecordMortality $records) {}
+
     /**
      * FR-04 Mortality Tracking listing. Mortality has no adjustment/correction
      * action any more (Mortality_Adjustments was removed with the revised
@@ -80,38 +81,10 @@ class MortalityController extends Controller
     {
         $validated = $request->validated();
 
-        $cause = MortalityRecord::composeCause($validated['cause'], $validated['cause_other'] ?? null);
-
         $fingerprint = DuplicateSubmissionGuard::assertFresh('mortality', $validated, 'mortality');
 
         try {
-            DB::transaction(function () use ($validated, $cause): void {
-                $batch = Batch::query()->lockForUpdate()->findOrFail($validated['batch_id']);
-
-                $capacity = $batch->remainingMortalityCapacity();
-
-                if ((int) $validated['quantity'] > $capacity) {
-                    $this->failValidation([
-                        'quantity' => "Mortality cannot exceed the batch's remaining quantity of {$capacity} for {$batch->batch_code}.",
-                    ], 'mortality');
-                }
-
-                MortalityRecord::create([
-                    'batch_id' => $batch->batch_id,
-                    'user_id' => Auth::id(),
-                    'quantity' => $validated['quantity'],
-                    'cause' => $cause,
-                    'recorded_at' => $validated['recorded_at'],
-                ]);
-
-                ActivityLog::record(
-                    $batch->batch_id,
-                    ActivityLog::TYPE_MORTALITY_RECORDED,
-                    "Recorded {$validated['quantity']} mortality for {$batch->batch_code} due to {$cause}.",
-                    null,
-                    $validated['recorded_at'],
-                );
-            });
+            $this->records->execute($validated, (int) Auth::id());
         } catch (\Throwable $exception) {
             DuplicateSubmissionGuard::release('mortality', $fingerprint);
 
