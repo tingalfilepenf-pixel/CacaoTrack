@@ -8,6 +8,7 @@
 
 - **2.0 — 2026-09-28:** Corrected the client-approved baseline (`CacaoTrack_ERD_UPDATED.md`) for internal ERD/PRD contradictions and undefined rules. **No client-approved rule was changed.** New, unconfirmed rules carry the `[PROPOSED — pending client confirmation]` marker (rendered in bold) with an `(OD-n)` reference; the decisions are collected in `CacaoTrack_PRD.md` §19 Open Decisions. Development history was moved to Appendix A.
 - **2.0 — 2026-09-29 (confirmed):** `Total_Grafted` confirmed as a **cumulative, non-decreasing log** per batch (client spreadsheet evidence + direct statement *"Grafted minus Regraft = mortality or yield for the parent batch"*); a batch's live population for mortality/regraft is `Total_Grafted − Regraft`. Updated §2 rule 7, §3.8 and §3.11; PRD §2.4/§10/§11/§19 in step.
+- **2.0 — 2026-11-04 (documentation, Group 3):** Documented the proposed (pending written confirmation by the panelist and the client) but **not yet implemented** operational submission/verification workflow (F01–F03) and correction-audit policy (F04) in §3.2, §3.8, §4 and §9. No schema or relationship is implemented or changed.
 - **1.0:** Client-approved revised core data model. Preserved untouched as provenance in `CacaoTrack_ERD_UPDATED.md`.
 
 ---
@@ -87,6 +88,8 @@ CLIENT
 
 **Purpose:** Records important system and operational actions performed by users.
 
+**Activity History and correction audit:** `Activity_Log` is the readable action/audit trail. It is **not by itself the complete correction audit** because its `Description` field cannot be relied on to preserve full before-and-after values. The proposed `Record_Correction` entity (§9.2) is **not implemented**; its final schema requires owner approval.
+
 ---
 
 ### 3.3 `Analytics`
@@ -132,6 +135,8 @@ CLIENT
 
 **Purpose:** Records completion and verification of Daily Checklist tasks.
 
+**Daily Checklist rejection/resubmission — deferred (decision 8):** the existing verify-only workflow and `UNIQUE(Task_ID, Completion_Date)` remain. No rejection or resubmission columns are proposed in this phase.
+
 ---
 
 ### 3.6 `Supplier`
@@ -166,6 +171,8 @@ CLIENT
 
 **Business rule:** for a **seedling** row (`Scion_Variety_ID IS NULL`), `Quantity` records the seedlings actually received; it may differ from the originally ordered quantity, and it is immediately eligible for establishing production batches (there is no five-day wait or separate seedling viability count). **Any total of seedlings received must exclude rows where `Scion_Variety_ID` is set.** For a **scion-inclusive** row (`Scion_Variety_ID` set, with `Unit_Price`), `Quantity` records the scion material received and is not part of the seedling total.
 
+**Supplier optionality (decision 13):** `Supplier_ID` is optional for a scion receipt without a formal supplier. The current code still requires a supplier for a scion receipt; aligning that code with this ERD is Phase 1 work and does not change this document.
+
 `Stock_In` does **not** require a `Batch_ID` because Stock In records the receiving event before seedlings are established as a Batch. There is **no** "type"/discriminator column: the presence of `Scion_Variety_ID` is itself the signal that a row includes scion.
 
 **No stock balance [PROPOSED — pending client confirmation]** (OD-8): the system keeps **no seedling stock balance** and does **not** enforce Stock In → Batch traceability. This is intentional and consistent with "no stock balance".
@@ -194,6 +201,8 @@ CLIENT
 **Purpose:** Represents an established grafted cacao Batch. A regraft sub-batch is linked to its parent Batch through `Parent_Batch_ID` and has its own independent 21-day cycle.
 
 **Important:** Batch Monitoring is not a separate entity. The Batch remains the operational record for the grafted cacao cycle. A parent Batch and each regraft sub-batch are represented within the same `Batch` entity.
+
+**Batch Creation approval — proposed / not yet implemented:** the proposed design (pending written confirmation by the panelist and the client) requires a Staff Batch Creation submission and Manager verification. Only an approved submission creates an official `Batch`; pending or rejected submissions create no official Batch. The fields and relationships in this section are unchanged. See §9.1.
 
 **`Total_Grafted` — CONFIRMED (2026-09-29):** `Total_Grafted` is a **cumulative, non-decreasing log** of the plants grafted into the batch. It is **not** reduced by a regraft and **not** reduced by Mortality; each regraft is recorded as a new Grafted entry (sub-batch `Total_Grafted = q`) alongside a Re Graft entry. The batch's **still-attributable/live population** for mortality and regraft purposes is **`Total_Grafted − Regraft`**. Client evidence: the spreadsheet's Regraft row carries a new Grafted entry plus a Re Graft entry on the same row, and the client confirmed *"Grafted minus Regraft = mortality or yield for the parent batch"*. This is the basis of the mortality cap (OD-4), the regraft cap (OD-6) and the crude-mortality-rate denominator (OD-10), which is `SUM(Total_Grafted − Regraft)` — each physical plant counted exactly once.
 
@@ -230,13 +239,13 @@ CLIENT
 | — | `Quantity` |
 | — | `Cause` |
 | — | `Recorded_At` |
-| — | `Plant_Condition` *(Root Stock / Scion)* **[PROPOSED — pending client confirmation]** (OD-2) |
+| — | `Plant_Condition` *(not implemented; excluded from submission payloads — decision 23)* |
 
 **Purpose:** Records mortality during the 21-day cycle or when a plant dies after the cycle is completed.
 
 **Business rule:** A dead root stock cannot be regrafted and is counted as Mortality. Mortality is strictly incrementing: each recorded death increases the mortality total for the specific Batch or sub-batch where the death occurred. Mortality logging does not decrease or modify the Regraft counter, and a Regraft does not offset Mortality.
 
-**Plant condition [PROPOSED — pending client confirmation]** (OD-2): `Plant_Condition` records whether the death was a root stock or a scion. Open question for the client: what a **scion**-condition death means for the regraft flow (see PRD §19). If scion deaths are handled only through Regraft, the PRD requirement to record scion condition should be removed instead.
+**Plant condition — not implemented (decision 23):** no `Plant_Condition` column exists and it is excluded from submission payloads. The original OD-2 question (what a scion-condition death means for the regraft flow) remains open only as a note; do not add the column without a separately approved ERD revision.
 
 ---
 
@@ -245,9 +254,9 @@ CLIENT
 | Key | Attribute |
 |---|---|
 | PK | `Regraft_ID` |
-| FK | `Batch_ID` *(the source batch)* |
+| FK | `Batch_ID` *(the created regraft sub-batch; NOT NULL)* |
+| FK | `Parent_Batch_ID` *(nullable — the source batch)* |
 | FK | `User_ID` |
-| FK | `Sub_Batch_ID` *(nullable — the sub-batch this record created)* **[PROPOSED — pending client confirmation]** (OD-11) |
 | — | `Quantity` |
 | — | `Regraft_Date` |
 | — | `Remark` |
@@ -256,7 +265,7 @@ CLIENT
 
 **Transaction rule:** Parent-batch update, `Regraft_Record` creation, and sub-batch creation must succeed or fail together. The completed regraft/sub-batch operation is recorded in `Activity_Log`. `Batch.Regraft` is the cached total described in §3.8 (OD-12).
 
-**Note:** `Parent_Batch_ID` on this record is **not** used (it duplicates `Batch.Parent_Batch_ID`); the proposed `Sub_Batch_ID` identifies the sub-batch the record created (OD-11), while `Batch_ID` is the source batch.
+**Note:** `Batch_ID` identifies the created regraft sub-batch; `Parent_Batch_ID` identifies the source batch. The obsolete `Sub_Batch_ID` proposal (OD-11) is withdrawn; this matches the live `regraft_records` table and no database change is proposed.
 
 **History:** the entity was renamed from `Replanting_Record` to `Regraft_Record` on 2026-09-30 (same table, `regraft_records`; columns `regraft_id` / `regraft_date`). The earlier brief `regraft_records` proposal and its retraction are recorded in **Appendix A — Decision Log**.
 
@@ -312,6 +321,8 @@ The Batch and Scion Variety remain the source records for batch identity and sci
 **Purpose:** Stores the Stock Out / Pull Out transaction header.
 
 A Stock Out is made by counting healthy cacao from the applicable Batch and recording the cacao delivered to a Client.
+
+**Client eligibility for Stock Out approval:** a Stock Out submission may be approved only while the selected Client is active; a Client archived after submission but before approval is ineligible. See §9.1.
 
 ---
 
@@ -382,6 +393,8 @@ Stock_Out_Detail
 Activity_Task
  └──< Task_Complete
 ```
+
+`Operational_Submission` and `Record_Correction` (§9) are **proposed / not yet implemented** and are not part of the current relationship map.
 
 ---
 
@@ -520,6 +533,43 @@ The current company terms **Batches, Inventory, Mortality, Regraft, Stock In, St
 The ERD should represent the company's actual workflow without creating duplicate processes:
 
 **Stock In records the seedlings actually received; Batch represents the grafted cacao; Scion Variety supports grafting/regrafting; Mortality records deaths against the exact Batch or sub-batch and strictly increments; Regraft (recorded internally as `Regraft_Record`) replaces a dead scion on a living root stock and creates linked sub-batches without offsetting Mortality; Inventory records the monthly Batch/sub-batch status; and Stock Out / Pull Out records healthy cacao delivered to Clients.**
+
+---
+
+## 9. Proposed Entities — Not Yet Implemented
+
+The following entities describe **proposed design (pending written confirmation by the panelist and the client)** that is **Proposed / Not Yet Implemented**. They are **not** part of the current implemented schema. Final columns, keys, and relationships **require owner approval** and must not be added to the database or code without that approval. They are listed here so the intended architecture is documented without implying that it already exists.
+
+### 9.1 `Operational_Submission` — proposed
+
+**Purpose:** staging record for the proposed (pending written confirmation by the panelist and the client) Staff-primary submission → Manager-verification workflow (PRD §2.9). A Manager may also submit other transactions where the applicable permission and role requirements permit.
+
+- Only three statuses are defined: `Pending`, `Approved`, `Rejected`.
+- Pending and Rejected submissions do not affect official operational records, inventory balances, quantities, or analytics.
+- Approval revalidates the submitted values against current official records and applies the official effect exactly once.
+- Rejection requires a written reason.
+- The verifier must differ from the submitter; a Manager cannot approve or verify their own submission and must satisfy the applicable verification permission and role requirements.
+- Rejected submissions remain in history; a resubmission is a new linked submission.
+- Batch Creation is included: only an approved Batch Creation submission creates an official `Batch` (§3.8).
+- Corrections are excluded from this workflow; existing correction routes remain temporarily available as a separate legacy process (§9.2).
+- For a Stock Out submission, approval requires the selected Client to be active; a Client archived after submission but before approval is ineligible.
+- **Final columns, keys, relationships, and permission mapping: require owner approval.**
+
+**Current implementation:** no `operational_submissions` table exists; operational forms write official rows directly.
+
+### 9.2 `Record_Correction` — proposed (table name `record_corrections`)
+
+**Purpose:** append-only correction audit for Administrator-only corrections (PRD §7).
+
+- Every correction requires a written reason.
+- Before-and-after values are preserved.
+- Correction history is append-only.
+- Activity History remains the action/audit trail, but it is not by itself the complete correction audit.
+- **Final columns and relationships: require owner approval.**
+
+**Current implementation:** no `record_corrections` table exists; correction forms do not require a written reason; Activity History is the only existing trace.
+
+**Existing correction routes vs target policy — pilot:** existing correction functionality remains temporarily available under its current implementation and permissions. This is separate from the target policy above and does not certify the existing correction behavior as safe or fully compliant. All corrections are excluded from the new operational-submission workflow; Mortality corrections and Stock Out corrections are deferred from that workflow. COR-01 remains an open technical risk. The target policy and this proposed `record_corrections` schema remain proposed / not implemented.
 
 ---
 

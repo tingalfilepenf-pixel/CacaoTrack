@@ -8,17 +8,70 @@
   checkpoints freely; do not force-push or rewrite history. The stale `capstone/` duplicate is
   gitignored.
 
-## STOCK IN — original Seedlings / Scion tabs + Scion save button (2026-10-31, Sessions ER/ES)
+## OPERATIONAL APPROVAL, BATCH CREATION, SUBMISSION LIFECYCLE, CORRECTIONS — DOCS ONLY (2026-11-04, Group 3 F01–F04)
+- **Status:** proposed design (pending written confirmation by the panelist and the client), **Proposed / Not Yet Implemented**. The current application still writes
+  operational records directly from the forms; there is no `operational_submissions` staging table, no
+  Manager verification step, and Batch Creation still creates an official Batch directly. Correction
+  forms do not require a written reason and there is no `record_corrections` table. Do not describe
+  these as implemented.
+- **F01/F02/F03 documented** in `docs/CacaoTrack_PRD.md` §2.3/§2.9/§8/FR-06,
+  `docs/CacaoTrack_ERD.md` §3.8/§9.1 and `docs/CacaoTrack_Design.md` §6.4/§8.7: Staff submit as the
+  primary flow; a Manager may also submit other transactions where applicable permission/role
+  requirements permit; a verifier must differ from the submitter;
+  submissions stay Pending until Manager verification; Pending/Rejected never affect official records,
+  balances, quantities or analytics; approval revalidates against current official records and applies
+  exactly once; rejection needs a written reason; a Manager cannot approve or verify their own submission;
+  rejected submissions stay in history; resubmission is a new linked submission; only an approved Batch
+  Creation request creates an official Batch; approved Batches are eligible for dependent operations;
+  Staff cannot edit/delete decided submissions. Only `Pending`, `Approved`, `Rejected` are defined.
+- Because submit_operations and verify_operations are mutually exclusive (FR-02.2), a user who can verify cannot submit; a Manager may submit only if they hold the submit key instead of the verify key. This interaction is unresolved.
+- **F04 documented** in `docs/CacaoTrack_PRD.md` §7/§12/§19 OD-5, `docs/CacaoTrack_ERD.md`
+  §3.2/§9.2 and `docs/CacaoTrack_Design.md` §6.2/§11: Administrator-only corrections; written reason
+  and before/after values; append-only history; `record_corrections` is **proposed, not implemented**;
+  Activity History alone is not the complete correction audit; final `record_corrections` schema and
+  relationships require approval.
+- **Open:** final submission storage schema/columns/relationships and permission key/role mapping;
+  final `record_corrections` schema/relationships. The unresolved Group 2 items (F05–F24) are untouched
+  by this change.
+- **Phase 2.2 owner decisions (2026-11-04):** D7 — a verifier must differ from the submitter; a Manager
+  may submit other transactions where the applicable permission/role requirements permit and cannot
+  verify their own. COR-02 — existing correction routes remain temporarily available without changing
+  their implementation or permissions; COR-01 remains an open technical risk. D12 — all corrections are
+  excluded from the new operational-submission workflow; Mortality and Stock Out corrections are
+  deferred. ELIG-02 — a Client must be active at Stock Out approval; a Client archived after submission
+  is ineligible, and approval must not silently accept it. D6, U8, and all other unresolved decisions
+  remain open; this does not resolve the permission catalog/key count, legacy-key retirement, or
+  permission migration.
+- **U16/U5, U6, U7 — RESOLVED (owner policy, 2026-11-04; documentation only, not implemented):**
+  custom roles remain allowed with free-text role names and customized permissions. Hard restrictions
+  apply to stored permissions regardless of role name: `submit_operations` and `verify_operations` are
+  mutually exclusive for every user; `manage_users` and `correct_records` are Administrator-only;
+  Administrators cannot hold submit/verify and cannot submit or verify ordinary operational submissions
+  (read-only access remains subject to unresolved U8); hard restrictions override selected permissions;
+  validate on save and recheck on every protected request; never automatically rewrite stored
+  permissions; deny protected-route access for violating accounts; show invalid accounts to an
+  authorized Administrator as needing correction. The existing role value `Administrator` is the
+  reserved Administrator identity (case-insensitive name protection; custom roles cannot use that name
+  in any capitalization; only an existing Administrator may assign/edit it; at least one Administrator
+  must remain). No schema change, additional identity column, protected flag, or role-type column is
+  approved. The full 11-key catalog, legacy-key retirement, and permission migration remain unresolved.
+- **No code, migration, seeder, route, view, controller, model, test, permission or live-data change.**
+  `docs/*_UPDATED.md` and `session.handoff.md` were not touched. Canonical PRD/ERD and their `_REVISED`
+  mirrors were verified byte-identical after the edit.
+
+## STOCK IN — original Seedlings / Scion tabs (2026-10-31, Sessions ER/ES; corrected Phase 0.7)
 - **Owner-directed revert:** the Session EQ unified "Scion Details" form was reverted. `/inventory/stock-in`
   again uses the original **Seedlings / Scion** Bootstrap tabs (Session CC/EP): shared supplier, quantity,
   origin and date received; the Seedlings tab records a plain receiving; the Scion tab adds scion variety +
   unit price + notes. Do not remove the tabs without owner sign-off.
-- **Save buttons (Session ES):** the shared footer **Save Stock In** button remains, and the Scion tab now
-  has its own **Save Stock In** submit button (`#stockInScionSubmitBtn`) directly below the Calculated
-  Amount block (above Notes), so the scion entry can be submitted without scrolling. Both buttons submit
-  the same `#stockInForm`; `guardSubmit` disables both on submit to prevent double submission.
+- **Save button (current):** the shared footer **Save Stock In** button is the only submit control; both
+  the Seedlings and Scion tabs post the same `#stockInForm`, and `guardSubmit` prevents double submission.
+  The former `#stockInScionSubmitBtn` was removed.
 - **Validation unchanged:** `StoreStockInRequest` keeps the both-or-neither rule (`scion_variety_id` ↔
   `unit_price` via `required_with`); Stock In still writes no inventory/batch changes.
+- **Scion supplier (approved decision 13):** the Supplier is optional for a scion receipt, matching
+  ERD §3.7 and PRD §2.2/FR-09. The current `StoreStockInRequest` still requires it; code alignment is
+  pending Phase 1 and is not a documentation change.
 - **No migration, schema, route, permission, controller or live-data change.** `docs/CacaoTrack_PRD_UPDATED.md`
   §2.2/FR-09 and `docs/CacaoTrack_ERD_UPDATED.md` §3.7 were used for validation only — **not edited**.
   **Verified:** focused `StockInTest` **27 passed / 112 assertions**; full MySQL suite **436 passed /
@@ -773,7 +826,8 @@
   quantity storage; mortality `Plant_Condition`; `Available_Count` definition (+ Gap Report);
   mortality quantity bound; corrections policy; regraft sub-batch details; 21-day cycle +
   `Batch.Status`; Stock In ↔ Batch traceability; Inventory snapshot semantics; Dashboard KPIs
-  (+ Regraft Deficit); `Regraft_Record.Sub_Batch_ID`; cached `Batch.Regraft`; scion freshness
+  (+ Regraft Deficit); `Regraft_Record.Sub_Batch_ID` (**OD-11 withdrawn** — `Batch_ID` = created
+  sub-batch, `Parent_Batch_ID` = source); cached `Batch.Regraft`; scion freshness
   rule; scion receipt traceability. Every such rule carries the inline marker
   **[PROPOSED — pending client confirmation]**. **Do not implement any `OD-n` rule without
   sign-off.**
@@ -835,6 +889,9 @@ retracted). `inventories.regraft` (monthly aggregate) is unchanged.
 - **Historical:** Seasonality Heatmap, Age Profile, Gap Report
 - **Account:** Activity History, User Management, Profile, Logout
 - Removed nav items: Batch Monitoring, Variety, Stock Reversal, Scion, Pot Type.
+- **Current UI note (Session EC):** this is the ERD/PRD target list, not the rendered sidebar. The
+  owner-directed sidebar currently hides **Mortality Tracking**, **Regraft** and **Batches**; those
+  pages and routes still exist and remain reachable directly and via Inventory row actions.
 
 ## Locked refactor plan (Session BH — P0–P6 DONE)
 - **P0 Safety/docs (DONE):** back up `db_capstone`; replace PRD/ERD with the revised content;

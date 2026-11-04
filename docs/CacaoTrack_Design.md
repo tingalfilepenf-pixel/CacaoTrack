@@ -77,35 +77,38 @@ Use a persistent application shell:
 |                          | Main page content                 |
 | Operational              |                                    |
 |  Daily Checklist         |                                    |
-|  Mortality Tracking      |                                    |
-|  Replanting              |                                    |
+|  Scion Variety           |                                    |
 |                          |                                    |
 | Inventory                |                                    |
 |  Inventory               |                                    |
 |  Stock In                |                                    |
 |  Stock Out               |                                    |
-|  Stock Reversal          |                                    |
 |                          |                                    |
 | Management               |                                    |
-|  Users                   |                                    |
-|  Suppliers               |                                    |
-|  Clients                 |                                    |
-|  Varieties               |                                    |
-|  Scions                  |                                    |
-|  Pot Types               |                                    |
-|  Batches                 |                                    |
+|  Supplier                |                                    |
+|  Client                  |                                    |
 |                          |                                    |
 | Analytics                |                                    |
 |  Operational Analytics   |                                    |
 |  Tabular Deliverables    |                                    |
-|  Historical Analytics    |                                    |
+|   Stock Ledger           |                                    |
+|   Root Cause Matrix      |                                    |
+|  Historical              |                                    |
+|   Seasonality Heatmap    |                                    |
+|   Age Profile            |                                    |
+|   Gap Report             |                                    |
 |                          |                                    |
 | Account                  |                                    |
 |  Activity History        |                                    |
+|  User Management         |                                    |
 |  Profile                 |                                    |
 |  Logout                  |                                    |
 +---------------------------------------------------------------+
 ```
+
+**Current UI note:** Mortality Tracking, Regraft and Batches pages exist but are hidden from the current
+sidebar (owner-directed); do not show them as sidebar items in this design. User Management is
+permission-gated.
 
 The existing sidebar and navigation should be preserved where they already work.
 
@@ -124,11 +127,14 @@ The sidebar should:
 Sidebar groups:
 
 1. Dashboard
-2. Operational
-3. Inventory
-4. Management
-5. Analytics
-6. Account
+2. Operational — Daily Checklist, Scion Variety
+3. Inventory — Inventory, Stock In, Stock Out
+4. Management — Supplier, Client
+5. Analytics — Operational Analytics; Tabular Deliverables (Stock Ledger, Root Cause Matrix); Historical (Seasonality Heatmap, Age Profile, Gap Report)
+6. Account — Activity History, User Management, Profile, Logout
+
+Historical is a collapsible sub-group under Analytics in the current application, not a separate
+top-level group.
 
 Permission-controlled links must not be treated as the security mechanism. Server-side authorization remains authoritative.
 
@@ -368,47 +374,74 @@ Validation must clearly identify:
 - Invalid date
 - Business-rule violations
 
-### Adjustment
+### Adjustment — historical (removed)
 
-Authorized users can access a controlled adjustment action.
+**Historical:** Mortality Adjustments were removed from the model and process. There is no adjustment
+form in the current application. Corrections are handled through the Administrator correction flow.
+**Proposed / Not Yet Implemented:** every correction requires a written reason and preserves
+before/after values; correction history is append-only in the proposed `record_corrections` table,
+whose final schema requires owner approval. Activity History alone is not the complete correction
+audit. Do not design or build an adjustment UI from this section.
 
-Adjustment form:
-
-- Mortality record
-- Adjustment quantity
-- Reason
-- Approving user
-- Adjustment date/time
-
-The UI must make it clear that an adjustment is a controlled correction, not deletion.
+**Phase 3 pilot — temporary retention and exclusion:** existing correction routes remain temporarily
+available under their current implementation and permissions; this does not certify the existing
+correction behavior as safe or fully compliant. Corrections are excluded from the new
+operational-submission workflow; Mortality and Stock Out corrections are deferred from that workflow.
+COR-01 remains an open technical risk. The target policy and `record_corrections` remain proposed / not
+implemented.
 
 ---
 
-## 6.3 Replanting
+## 6.3 Regraft
 
 Main fields:
 
 - Batch
 - Quantity
-- Replanting date
+- Regraft date
 - Remark
 
 Page structure:
 
 ```text
-Replanting
-Record replacement/replanting activity.
+Regraft
+Record replacement/regraft activity.
 
-[ + Record Replanting ]
+[ + Record Regraft ]
 
 +---------------------------------------------------------------+
 | Batch | Quantity | Date | Remark | Recorded By | Actions      |
 +---------------------------------------------------------------+
 ```
 
-Show applicable replanting deficit/capacity information when supported by the backend.
+Show applicable regraft deficit/capacity information when supported by the backend.
 
 Do not invent expected quantities.
+
+The page exists but is hidden from the current sidebar; it remains reachable directly and from
+Inventory row actions.
+
+## 6.4 Operational Submissions and Verification — Proposed / Not Yet Implemented
+
+**Status:** proposed design (pending written confirmation by the panelist and the client), not built. Current operational pages submit directly into official
+records.
+
+If built, the existing page patterns apply with a clear separation between the Staff-primary submission
+state and the official record:
+
+- Staff submit an operational transaction as the primary flow; a Manager may also submit other transactions where the applicable role and permission requirements permit. The submission is shown as Pending until a Manager verifies it.
+- A Manager reviews Pending submissions and must give a written reason to reject one.
+- Pending and Rejected submissions are visually separated from official records and never change balances, quantities, analytics, or official history.
+- Approval revalidates against current official data and applies the official record exactly once.
+- The verifier must differ from the submitter. A Manager cannot verify their own submission and must satisfy the applicable verification permission and role requirements.
+- Administrators cannot submit or verify ordinary operational submissions. They retain the applicable read-only access, subject to the separately unresolved visibility decision U8.
+- Corrections are excluded from this workflow. Existing correction routes remain temporarily available under their current implementation and permissions; this does not certify the existing correction behavior as safe. COR-01 remains an open technical risk.
+- For a Stock Out submission, approval revalidates that the selected Client is active; a Client archived after submission but before approval is ineligible. General approval-failure handling remains unresolved.
+- Rejected submissions remain visible with their reason; a resubmission is a new linked submission.
+- Batch Creation follows the same pattern: only an approved submission creates an official Batch; pending or rejected requests appear in no official Batch list.
+- Approved Batches are eligible as the subject of dependent operations.
+
+Do not add statuses, fields, or business rules beyond this section without approval.
 
 ---
 
@@ -416,50 +449,66 @@ Do not invent expected quantities.
 
 ## 7.1 Inventory
 
-Purpose: display current inventory by batch.
+Purpose: display the current per-batch inventory, including regraft sub-batches nested under their
+parent.
 
 Main columns:
 
-- Batch
-- Batch Code
-- Variety where applicable
-- Current Quantity
-- Status
-- Last Update
-- Actions where applicable
+- BATCH DETAILS (batch code and batch date)
+- SCION VARIETY
+- TOTAL GRAFTED
+- REGRAFT
+- MORTALITY
+- AVAILABLE
+- STATUS (Growing / Ready / Completed / Cancelled-Void)
+- ACTION (View, and role-permission-gated record actions)
 
 Use:
 
 - Search
-- Filters
+- Filters (scion variety, status, batch month/year)
 - Pagination
 - Status badges
 - Empty state
+- Read-only View modal
 
-The inventory value must come from the database.
+The inventory values must come from the database; AVAILABLE uses the batch's surviving quantity.
 
 ## 7.2 Stock In
 
-Form fields:
+Form fields (Seedlings tab):
 
 - Supplier
-- Batch
 - Quantity
 - Date Received
+- Origin
+- Notes (optional)
+
+Form fields (Scion tab):
+
+- Supplier (optional for a scion receipt)
+- Quantity
+- Date Received
+- Origin
+- Scion Variety
+- Unit Price
+- Notes (optional)
 
 Layout:
 
 ```text
 Record Stock In
 
-Transaction Information
-[ Supplier              ]
-[ Batch                 ]
-[ Quantity              ]
-[ Date Received         ]
+[ Seedlings ] [ Scion ]
 
-[ Cancel ] [ Record Stock In ]
+Seedlings / Scion tab fields
+
+[ Cancel ] [ Save Stock In ]
 ```
+
+The form uses the existing Seedlings / Scion tabs and one footer **Save Stock In** button. Blank tabs
+are ignored; populated tabs are saved in one database transaction. The Supplier is optional for a
+scion receipt; the current code still requires it and will be aligned in Phase 1.
 
 Before submission, show useful validation feedback.
 
@@ -483,32 +532,16 @@ Before submission:
 - Validate numeric quantity.
 - Ensure selected batch is valid.
 - Protect against quantity greater than available inventory.
+- For a Stock Out submission, revalidate at approval that the selected Client is active. A Client archived after submission but before approval is ineligible; approval must not silently accept an archived Client. This does not change the available-quantity rule.
 
 Confirmation for an important transaction may use:
 
 > Are you sure you want to record this stock-out transaction?
 
-## 7.4 Stock Reversal
+## 7.4 Stock Reversal — historical (removed)
 
-The reversal UI must clearly identify the original transaction.
-
-Display:
-
-- Original transaction
-- Transaction type derived from the selected original record
-- Reversible quantity
-- Requested reversal quantity
-- Reason
-- User
-- Date/time
-
-The UI should explain that reversal corrects an existing transaction rather than deleting it.
-
-Confirmation:
-
-> Are you sure you want to reverse this transaction?
-
-Never allow the interface to suggest a reversal beyond the reversible quantity.
+**Historical:** Stock Reversal was removed from the model and process. There is no reversal page or
+route in the current application. Do not design or build a reversal UI from this section.
 
 ---
 
@@ -559,42 +592,36 @@ Fields:
 - Contact Number
 - Address
 
-## 8.4 Varieties
+## 8.4 Varieties — historical (removed)
 
-Fields supported by the ERD:
+**Historical:** the separate Varieties module was removed. Scion Variety is the retained module for
+scion-variety information; see AGENTS.md and the ERD.
 
-- Variety Name
-- Description
+## 8.5 Scions — historical (removed)
 
-## 8.5 Scions
+**Historical:** the generic Scions stock pool was removed. Scion Variety is the retained term.
 
-Fields:
+## 8.6 Pot Types — historical (removed)
 
-- Scion Name
-- Description
-
-## 8.6 Pot Types
-
-Fields:
-
-- Pot Name
-- Description
+**Historical:** Pot Types were removed from the model and process.
 
 ## 8.7 Batches
 
 Batch management should clearly expose the central operational fields:
 
 - Batch Code
-- Variety
-- Scion
-- Pot Type
+- Parent Batch where applicable
 - User
 - Total Grafted
-- Viable Count
+- Regraft
 - Available Count
 - Grafted Date
 - Status
 - Created Date
+
+**Batch Creation — Proposed / Not Yet Implemented:** Batch Creation is an approval-gated submission.
+Only an approved request creates the official Batch; pending or rejected requests create no
+Batch. The Batch fields and relationships above are unchanged. See §6.4.
 
 Batch pages should avoid overwhelming the user with every related record at once.
 
@@ -604,13 +631,13 @@ Use a detail view for deeper batch information:
 Batch B-XXX
 
 Summary
-Total Grafted | Viable | Available | Status
+Total Grafted | Regraft | Available | Status
 
 Batch Information
-Variety | Scion | Pot Type | Grafted Date | Created By
+Parent Batch | Scion Variety | Grafted Date | Created By
 
 Related Operations
-Mortality | Replanting | Inventory | Stock In | Stock Out | Activity
+Mortality | Regraft | Inventory | Stock In | Stock Out | Activity
 ```
 
 ---
@@ -631,41 +658,18 @@ User forms should support the fields defined by the application/ERD.
 
 Passwords must never be displayed as plaintext.
 
-## 9.2 Role Management
+## 9.2 Role Management — historical (updated model)
 
-The role interface should make permissions understandable.
+**Historical:** the role-management screen and separate role entities described below are not part of
+the current model. Roles and permissions are stored per user (`users.role` + `users.permissions`); there
+is no roles table. User Management shows the role label, permission checkboxes and built-in templates;
+the permission catalog and defaults live in `app/Models/Role.php` and AGENTS.md. Server-side
+authorization remains authoritative.
 
-Example:
-
-```text
-Role: Manager
-
-Description:
-Operational management access.
-
-Access Restrictions
-[✓] Manage Inventory
-[✓] Manage Stock
-[✓] Record Operations
-[✓] View Analytics
-[✓] Generate Reports
-[✓] View Activity
-```
-
-Important rules:
-
-- Administrator is a protected system role.
-- Administrator cannot be renamed or deleted.
-- A role assigned to a user cannot be deleted.
-- Every role must have at least one permission.
-- Permission keys come from the fixed application catalog.
-- The UI does not replace server-side authorization.
-
-The interface should distinguish between:
-
-- System role
-- User-created role
-- Assigned/in-use role
+The former role-creation/deletion rules in this section no longer apply. Every user must keep at least
+one permission; Administrator is protected; stored permissions are never rewritten automatically.
+Owner-approved hard permission restrictions apply to stored permissions regardless of the editable
+role label (PRD FR-02.2); they are **Proposed / Not Yet Implemented**.
 
 ---
 
@@ -783,6 +787,17 @@ Activity History
 ```
 
 The page should emphasize traceability without becoming visually dense.
+
+**Correction audit — Proposed / Not Yet Implemented:** Activity History is the readable action trail,
+but it is not by itself the complete correction audit. The proposed (pending written confirmation by the panelist and the client) correction policy
+(Administrator-only, written reason, before/after values, append-only) uses the proposed
+`record_corrections` table, whose final schema and relationships require owner approval
+(PRD §7, ERD §9.2).
+
+During the pilot, existing correction routes remain temporarily available under their current
+implementation and permissions, and corrections are excluded from the new operational-submission
+workflow. This does not certify the existing correction behavior as safe or fully compliant; COR-01
+remains an open technical risk.
 
 ---
 
@@ -1054,6 +1069,10 @@ Use:
 
 The sidebar and action controls should reflect the signed-in user's permissions.
 
+**Current permission names:** the keys below reflect the current application. The permission catalog is
+being revised separately; until that revision is implemented, keep using the current keys and
+server-side checks.
+
 Examples:
 
 - No `manage_users` → hide User/Role management actions.
@@ -1097,13 +1116,13 @@ Quantity exceeds available inventory.
 
 Show applicable batch information where useful.
 
-### Replanting
+### Regraft
 
 Show applicable deficit/capacity where supported.
 
-### Reversal
+### Reversal — historical (removed)
 
-Show the reversible quantity before accepting the reversal.
+Stock Reversal was removed from the model and process; do not design a reversible-quantity UI.
 
 These displays are usability aids. The backend remains authoritative.
 
@@ -1298,22 +1317,18 @@ Do not present archive as if it permanently deletes data.
 | Requirement | Primary UI | Main Data |
 |---|---|---|
 | FR-01 Authentication | Login / session UI | Users |
-| FR-02 User Management | Users + Roles | Users, Roles, Role_Permissions |
+| FR-02 User Management | Users | Users |
 | FR-03 Daily Checklist | Checklist | Activity_Task, Task_Complete |
 | FR-04 Mortality | Mortality page | Mortality_Record |
-| FR-05 Adjustments | Adjustment UI | Mortality_Adjustments |
-| FR-06 Replanting | Replanting page | Replanting_Record |
-| FR-07 Inventory | Inventory page | Inventory, Batch |
-| FR-08 Stock In | Stock In form/table | Stock_In, Supplier, Batch |
-| FR-09 Stock Out | Stock Out form/table | Stock_Out, Client, Batch |
-| FR-10 Stock Reversal | Reversal page | Stock_Reversal |
+| FR-05 Regraft | Regraft page | Regraft_Record, Batch |
+| FR-06 Batches | Batch management | Batch |
+| FR-07 Scion Variety | Scion Variety management | Scion_Variety |
+| FR-08 Inventory | Inventory page | Inventory, Batch |
+| FR-09 Stock In | Stock In form/table | Stock_In, Supplier |
+| FR-10 Stock Out | Stock Out form/table | Stock_Out, Stock_Out_Detail, Client |
 | FR-11 Supplier | Supplier management | Supplier |
 | FR-12 Client | Client management | Client |
-| FR-13 Variety | Variety management | Variety |
-| FR-14 Scion | Scion management | Scions |
-| FR-15 Pot Type | Pot Type management | Pot_Type |
-| FR-16 Batch | Batch management | Batch |
-| FR-17 Activity History | Activity History | Activity_Log |
+| FR-13 Activity History | Activity History | Activity_Log |
 | Dashboard | KPI cards/charts | Operational records |
 | Tabular Deliverables | Ledger + matrix | Normalized operational data |
 | Historical Analytics | Heatmap + age + gap | Historical operational data |
@@ -1356,11 +1371,11 @@ The goal is to make it:
 
 ## 29. Source Alignment
 
-This specification is based on the uploaded CacaoTrack PRD and approved ERD.
+This specification is based on the canonical `docs/CacaoTrack_PRD.md` and `docs/CacaoTrack_ERD.md`.
 
 The PRD establishes Laravel Blade, Bootstrap 5, JavaScript, and ECharts as the fixed frontend stack and requires preservation/refinement of the existing frontend.
 
-The ERD establishes the operational entities, relationships, role/permission structure, checklist archive/restore fields, inventory relationship, stock transactions, reversal structure, and analytics history.
+The ERD establishes the current operational entities and relationships, the per-user role/permission model, checklist fields, the monthly inventory relationship, stock transactions, and analytics history. The removed master modules (Varieties, Scions, Pot Types, Stock Reversal) are not part of the current model.
 
 No new database entity is required merely to implement this frontend design.
 
