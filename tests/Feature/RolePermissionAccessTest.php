@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ActivityTask;
 use App\Models\Batch;
 use App\Models\MortalityRecord;
+use App\Models\OperationalSubmission;
 use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\TaskComplete;
@@ -82,7 +83,7 @@ class RolePermissionAccessTest extends TestCase
             Role::defaultPermissionsFor(Role::STAFF)
         );
         $this->assertEqualsCanonicalizing(
-            ['manage_inventory', 'manage_checklist', 'view_analytics', 'generate_reports', 'view_activity', 'verify_operations'],
+            ['manage_inventory', 'manage_checklist', 'view_analytics', 'generate_reports', 'view_activity', 'verify_operations', 'view_operational_records'],
             Role::defaultPermissionsFor(Role::MANAGER)
         );
 
@@ -91,8 +92,13 @@ class RolePermissionAccessTest extends TestCase
         $this->assertContains('view_operational_records', $administratorDefaults);
         $this->assertNotContains('submit_operations', $administratorDefaults);
         $this->assertNotContains('verify_operations', $administratorDefaults);
+        $this->assertNotContains('record_operations', $administratorDefaults);
+        $this->assertNotContains('manage_stock', $administratorDefaults);
         $this->assertEqualsCanonicalizing(
-            array_values(array_diff(array_keys(Role::PERMISSIONS), ['submit_operations', 'verify_operations'])),
+            array_values(array_diff(
+                array_keys(Role::PERMISSIONS),
+                ['submit_operations', 'verify_operations', 'record_operations', 'manage_stock'],
+            )),
             $administratorDefaults
         );
         $this->assertSame([], Role::defaultPermissionsFor('Custom Role'));
@@ -184,18 +190,27 @@ class RolePermissionAccessTest extends TestCase
 
     public function test_administrator_route_access_matrix(): void
     {
+        config(['cacaotrack.operational_submission.enabled' => true]);
+
         $admin = User::factory()->admin()->create();
         $task = $this->createTask();
+        $submitter = User::factory()->create();
+        $batch = $this->createBatch($submitter);
+        $submission = OperationalSubmission::factory()->forBatch($batch)->create([
+            'submitted_by_id' => $submitter->id,
+            'payload' => [
+                'batch_id' => $batch->batch_id,
+                'quantity' => 5,
+                'cause' => 'Disease',
+                'cause_other' => null,
+                'recorded_at' => now()->toDateString(),
+            ],
+        ]);
 
         foreach ([
             'operational.checklist',
-            'operational.mortality',
-            'operational.regraft',
-            'operational.batches',
             'operational.scion-varieties',
             'inventory.index',
-            'inventory.stock-in',
-            'inventory.stock-out',
             'inventory.suppliers',
             'inventory.clients',
             'analytics.index',
@@ -204,6 +219,34 @@ class RolePermissionAccessTest extends TestCase
             'users.index',
         ] as $routeName) {
             $this->actingAs($admin)->get(route($routeName))->assertOk();
+        }
+
+        $this->actingAs($admin)->get(route('operational.submissions.index'))->assertOk();
+        $this->actingAs($admin)->get(route('operational.submissions.show', $submission))
+            ->assertOk()
+            ->assertDontSee('Approve Submission')
+            ->assertDontSee('Reject Submission');
+        $this->actingAs($admin)->get(route('operational.submissions.queue'))->assertForbidden();
+
+        foreach ([
+            'operational.mortality',
+            'operational.regraft',
+            'operational.batches',
+            'inventory.stock-in',
+            'inventory.stock-out',
+        ] as $routeName) {
+            $this->actingAs($admin)->get(route($routeName))->assertForbidden();
+        }
+
+        foreach ([
+            'operational.mortality.records.store',
+            'operational.regraft.records.store',
+            'operational.batches.manage.store',
+            'inventory.stock-in.store',
+            'inventory.stock-out.store',
+            'inventory.snapshots.store',
+        ] as $routeName) {
+            $this->actingAs($admin)->post(route($routeName), [])->assertForbidden();
         }
 
         $this->actingAs($admin)->post(route('operational.checklist.tasks.store'), [
@@ -508,8 +551,17 @@ class RolePermissionAccessTest extends TestCase
 
         $administratorCannot = array_column(Role::cannotDo(Role::ADMINISTRATOR), 'key');
 
-        $this->assertEqualsCanonicalizing(['submit_operations', 'verify_operations'], $administratorCannot);
+        $this->assertEqualsCanonicalizing(
+            ['manage_stock', 'record_operations', 'submit_operations', 'verify_operations'],
+            $administratorCannot
+        );
         $this->assertContains('view_operational_records', array_column(Role::canDo(Role::ADMINISTRATOR), 'key'));
+
+        $managerCan = array_column(Role::canDo(Role::MANAGER), 'key');
+        $managerCannot = array_column(Role::cannotDo(Role::MANAGER), 'key');
+
+        $this->assertContains('view_operational_records', $managerCan);
+        $this->assertNotContains('view_operational_records', $managerCannot);
         $this->assertSame([], Role::canDo('Custom Role'));
         $this->assertNull(Role::descriptionFor('Custom Role'));
         $this->assertStringNotContainsStringIgnoringCase('approve staff', implode(' ', Role::ROLE_DESCRIPTIONS));

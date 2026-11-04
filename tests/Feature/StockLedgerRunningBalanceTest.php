@@ -162,7 +162,7 @@ class StockLedgerRunningBalanceTest extends TestCase
         $b001 = Batch::where('batch_code', 'B001')->firstOrFail();
         $client = Client::where('client_name', 'Mountain View Estate')->firstOrFail();
 
-        $this->actingAs($this->user())
+        $this->actingAs($this->userWithPermissions(['manage_stock']))
             ->post(route('inventory.stock-out.store'), [
                 'client_id' => $client->client_id,
                 'release_date' => '2026-10-01',
