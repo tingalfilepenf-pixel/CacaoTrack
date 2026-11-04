@@ -305,6 +305,13 @@ class UserController extends Controller
             }
         }
 
-        return DB::table('task_completes')->where('verified_by_id', $userId)->exists();
+        if (DB::table('task_completes')->where('verified_by_id', $userId)->exists()) {
+            return true;
+        }
+
+        return DB::table('operational_submissions')
+            ->where('submitted_by_id', $userId)
+            ->orWhere('decided_by_id', $userId)
+            ->exists();
     }
 }

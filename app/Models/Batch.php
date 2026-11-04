@@ -619,6 +619,32 @@ class Batch extends Model
      *
      * @return list<string>
      */
+    /**
+     * Whether any operational submission references this batch as its subject.
+     * Mortality submissions carry the indexed `subject_batch_id` FK, so the
+     * database would refuse deletion even when the submission is no longer
+     * pending.
+     */
+    public function hasOperationalSubmissionReference(): bool
+    {
+        return OperationalSubmission::query()
+            ->where('subject_batch_id', $this->batch_id)
+            ->exists();
+    }
+
+    /**
+     * Whether a Pending Stock Out submission names this batch in its frozen
+     * payload details. Stock Out headers may span batches, so they do not use
+     * `subject_batch_id`.
+     */
+    public function hasPendingStockOutSubmission(): bool
+    {
+        return OperationalSubmission::query()
+            ->where('status', OperationalSubmission::STATUS_PENDING)
+            ->whereJsonContains('payload->details', ['batch_id' => (int) $this->batch_id])
+            ->exists();
+    }
+
     public function deletionBlockers(): array
     {
         $checks = [
@@ -642,6 +668,14 @@ class Batch extends Model
             if ($exists) {
                 $blockers[] = $label;
             }
+        }
+
+        if ($this->hasOperationalSubmissionReference()) {
+            $blockers[] = 'operational submissions';
+        }
+
+        if ($this->hasPendingStockOutSubmission()) {
+            $blockers[] = 'pending stock-out submissions';
         }
 
         return $blockers;
