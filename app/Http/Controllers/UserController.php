@@ -132,7 +132,9 @@ class UserController extends Controller
                 ->with('error', 'You cannot change your own role. Ask another administrator.');
         }
 
-        if ($user->isAdministrator() && $validated['role'] !== Role::ADMINISTRATOR && $this->administratorCount() <= 1) {
+        // Defence-in-depth check: under the current rules a single valid
+        // request cannot reach this state (see isLastAdministratorDemotion()).
+        if ($this->isLastAdministratorDemotion($user, $validated['role'])) {
             return redirect()
                 ->route('users.index')
                 ->with('error', 'This administrator cannot be demoted because it is the last administrator account.');
@@ -254,7 +256,22 @@ class UserController extends Controller
         }
     }
 
-    private function administratorCount(): int
+    /**
+     * Whether demoting this account would remove the last Administrator.
+     *
+     * Defence in depth: under the current rules (manage_users is
+     * Administrator-only and the self-role guard runs first) a single valid
+     * request cannot reach this state; it remains for future rule changes and
+     * concurrent requests.
+     */
+    protected function isLastAdministratorDemotion(User $user, string $role): bool
+    {
+        return $user->isAdministrator()
+            && $role !== Role::ADMINISTRATOR
+            && $this->administratorCount() <= 1;
+    }
+
+    protected function administratorCount(): int
     {
         return User::where('role', Role::ADMINISTRATOR)->count();
     }
