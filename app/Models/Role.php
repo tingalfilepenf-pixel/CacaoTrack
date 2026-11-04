@@ -145,7 +145,7 @@ class Role
     ];
 
     /**
-     * Access restrictions that are administrator-only by default.
+     * Access restrictions that only the canonical Administrator role may hold.
      *
      * @var list<string>
      */
@@ -154,6 +154,73 @@ class Role
     public static function isSystem(string $roleName): bool
     {
         return in_array($roleName, self::SYSTEM_ROLES, true);
+    }
+
+    /**
+     * Whether a role name is the reserved Administrator identity in any
+     * capitalization or with surrounding whitespace.
+     */
+    public static function isReservedRoleName(?string $roleName): bool
+    {
+        return $roleName !== null
+            && mb_strtolower(trim($roleName)) === mb_strtolower(self::ADMINISTRATOR);
+    }
+
+    /**
+     * Whether a stored role name is the exact canonical Administrator identity.
+     */
+    public static function isCanonicalAdministrator(?string $roleName): bool
+    {
+        return $roleName === self::ADMINISTRATOR;
+    }
+
+    /**
+     * Validation errors for assigning a role name. A reserved variant is never
+     * normalized or renamed automatically.
+     *
+     * @return list<string>
+     */
+    public static function roleNameErrors(?string $roleName, bool $actorIsAdministrator): array
+    {
+        if (! self::isReservedRoleName($roleName)) {
+            return [];
+        }
+
+        if (! self::isCanonicalAdministrator($roleName)) {
+            return ['The Administrator role name is reserved and cannot use different capitalization or surrounding spaces.'];
+        }
+
+        if (! $actorIsAdministrator) {
+            return ['Only an existing Administrator may assign or edit the Administrator role.'];
+        }
+
+        return [];
+    }
+
+    /**
+     * Hard-restriction violations for a stored role name and permission list.
+     * Read-only: never rewrites the role or the permissions.
+     *
+     * @param  list<string>  $permissions
+     * @return list<string>
+     */
+    public static function hardRestrictionViolations(?string $roleName, array $permissions): array
+    {
+        $violations = [];
+
+        if ($roleName !== null && self::isReservedRoleName($roleName) && ! self::isCanonicalAdministrator($roleName)) {
+            $violations[] = 'The Administrator role name is reserved; this account needs a corrected role name.';
+        }
+
+        if (! self::isCanonicalAdministrator($roleName)) {
+            foreach (self::ADMIN_ONLY_PERMISSIONS as $key) {
+                if (in_array($key, $permissions, true)) {
+                    $violations[] = (self::PERMISSIONS[$key] ?? $key).' is restricted to the Administrator role.';
+                }
+            }
+        }
+
+        return $violations;
     }
 
     /**

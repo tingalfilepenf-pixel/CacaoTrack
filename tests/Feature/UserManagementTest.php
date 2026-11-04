@@ -223,7 +223,7 @@ class UserManagementTest extends TestCase
         $this->assertSame(Role::ADMINISTRATOR, $admin->fresh()->roleLabel());
     }
 
-    public function test_last_administrator_cannot_be_demoted(): void
+    public function test_a_non_administrator_cannot_demote_an_administrator(): void
     {
         $admin = $this->admin();
         $manager = User::factory()->create([
@@ -238,8 +238,7 @@ class UserManagementTest extends TestCase
                 'role' => Role::STAFF,
                 'permissions' => ['view_activity'],
             ])
-            ->assertRedirect(route('users.index'))
-            ->assertSessionHas('error');
+            ->assertForbidden();
 
         $this->assertSame(Role::ADMINISTRATOR, $admin->fresh()->roleLabel());
     }

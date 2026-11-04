@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Validator as ValidationValidator;
 use Illuminate\View\View;
 
 class UserController extends Controller
@@ -82,6 +83,7 @@ class UserController extends Controller
         $this->requireManageUsers();
 
         $validator = Validator::make($request->all(), User::managementCreateRules());
+        $this->validateHardRestrictions($validator, $request->user());
 
         if ($validator->fails()) {
             return redirect()
@@ -113,6 +115,7 @@ class UserController extends Controller
         $this->requireManageUsers();
 
         $validator = Validator::make($request->all(), User::managementUpdateRules($user->id));
+        $this->validateHardRestrictions($validator, $request->user(), $user);
 
         if ($validator->fails()) {
             return redirect()
@@ -207,6 +210,34 @@ class UserController extends Controller
         }
 
         return $permissions;
+    }
+
+    /**
+     * Re-check the hard restrictions on save. Validation reports violations;
+     * it never rewrites the stored role or permissions.
+     */
+    private function validateHardRestrictions(ValidationValidator $validator, ?User $actor, ?User $target = null): void
+    {
+        $validator->after(function (ValidationValidator $validator) use ($actor, $target): void {
+            $data = $validator->getData();
+            $role = (string) ($data['role'] ?? '');
+            $permissions = array_values(array_filter(
+                (array) ($data['permissions'] ?? []),
+                fn (mixed $permission): bool => is_string($permission),
+            ));
+
+            foreach (Role::roleNameErrors($role, (bool) $actor?->isAdministrator()) as $message) {
+                $validator->errors()->add('role', $message);
+            }
+
+            if ($target?->isAdministrator() && ! $actor?->isAdministrator()) {
+                $validator->errors()->add('role', 'Only an existing Administrator may edit an Administrator account.');
+            }
+
+            foreach (Role::hardRestrictionViolations($role, $this->normalizePermissions($role, $permissions)) as $message) {
+                $validator->errors()->add('permissions', $message);
+            }
+        });
     }
 
     /**

@@ -56,6 +56,21 @@ class User extends Authenticatable
     }
 
     /**
+     * Hard-restriction violations for this account (read-only).
+     *
+     * @return list<string>
+     */
+    public function hardRestrictionViolations(): array
+    {
+        return Role::hardRestrictionViolations($this->roleLabel(), $this->permissions ?? []);
+    }
+
+    public function needsPermissionCorrection(): bool
+    {
+        return $this->hardRestrictionViolations() !== [];
+    }
+
+    /**
      * Whether the user may permanently delete checklist tasks. This is a
      * Manager/Administrator role restriction (FR-03 refinement) centralized on
      * `Role::CHECKLIST_DELETE_ROLES` (RULE 6).

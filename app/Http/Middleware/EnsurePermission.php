@@ -29,6 +29,17 @@ class EnsurePermission
     {
         $user = $request->user();
 
+        // Recheck the hard restrictions on every protected request, before the
+        // any-of loop, so an invalid account cannot pass through a route that
+        // accepts several keys.
+        if ($user && $user->needsPermissionCorrection()) {
+            if ($request->hasSession()) {
+                $request->session()->flash('required_permission', 'a corrected account');
+            }
+
+            abort(403, 'This account needs an access correction.');
+        }
+
         foreach ($permissions as $permission) {
             if ($user && $user->hasPermission($permission)) {
                 return $next($request);
