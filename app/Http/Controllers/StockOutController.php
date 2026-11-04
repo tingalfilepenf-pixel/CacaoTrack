@@ -10,6 +10,8 @@ use App\Models\Client;
 use App\Models\StockOut;
 use App\Models\StockOutDetail;
 use App\Support\DuplicateSubmissionGuard;
+use App\Support\OperationalSubmissionVisibility;
+use App\Support\SubmissionWorkflowSwitch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -25,6 +27,10 @@ class StockOutController extends Controller
      */
     public function index(Request $request): View
     {
+        if (SubmissionWorkflowSwitch::enabled() && ! OperationalSubmissionVisibility::canViewAll($request->user())) {
+            abort(403);
+        }
+
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
             'client_id' => ['nullable', 'integer', 'exists:clients,client_id'],

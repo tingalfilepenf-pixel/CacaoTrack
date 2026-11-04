@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\DisableDirectPilotWrites;
 use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\EnsureSubmissionWorkflowEnabled;
 use Illuminate\Foundation\Application;
@@ -17,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'permission' => EnsurePermission::class,
             'submissions.enabled' => EnsureSubmissionWorkflowEnabled::class,
+            'submissions.direct-writes' => DisableDirectPilotWrites::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -10,9 +10,15 @@
             <i class="bi bi-person-plus me-1"></i> New Client
         </button>
     @endif
-    <button type="button" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#stockOutModal">
-        <i class="bi bi-box-arrow-right me-1"></i> New Stock Out
-    </button>
+    @if (\App\Support\SubmissionWorkflowSwitch::enabled())
+        <a href="{{ route('operational.submissions.stock-out.create') }}" class="btn btn-secondary">
+            <i class="bi bi-box-arrow-right me-1"></i> Submit Stock Out
+        </a>
+    @else
+        <button type="button" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#stockOutModal">
+            <i class="bi bi-box-arrow-right me-1"></i> New Stock Out
+        </button>
+    @endif
 </div>
 @endsection
 

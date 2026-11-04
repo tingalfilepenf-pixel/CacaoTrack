@@ -33,9 +33,9 @@
             <div class="mb-3">
                 <label for="submissionBatch" class="form-label text-muted small fw-bold">Batch <span class="text-danger">*</span></label>
                 <select class="form-select @error('batch_id', 'submission_mortality') is-invalid @enderror" id="submissionBatch" name="batch_id" required>
-                    <option value="" disabled @selected(old('batch_id', $original['batch_id'] ?? null) === null)>Select an active batch</option>
+                    <option value="" disabled @selected(old('batch_id', request('batch_id', $original['batch_id'] ?? null)) === null)>Select an active batch</option>
                     @foreach ($batches as $batch)
-                        <option value="{{ $batch->batch_id }}" @selected(old('batch_id', $original['batch_id'] ?? null) == $batch->batch_id)>
+                        <option value="{{ $batch->batch_id }}" @selected(old('batch_id', request('batch_id', $original['batch_id'] ?? null)) == $batch->batch_id)>
                             {{ $batch->batch_code }} ({{ $batch->scionVariety?->scion_variety_name ?? 'Not assigned' }}) — Available: {{ number_format($batch->survivingQuantity()) }}
                         </option>
                     @endforeach

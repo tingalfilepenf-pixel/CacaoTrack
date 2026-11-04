@@ -8,6 +8,8 @@ use App\Models\Batch;
 use App\Models\MortalityRecord;
 use App\Models\ScionVariety;
 use App\Support\DuplicateSubmissionGuard;
+use App\Support\OperationalSubmissionVisibility;
+use App\Support\SubmissionWorkflowSwitch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,6 +26,10 @@ class MortalityController extends Controller
      */
     public function index(Request $request): View
     {
+        if (SubmissionWorkflowSwitch::enabled() && ! OperationalSubmissionVisibility::canViewAll($request->user())) {
+            abort(403);
+        }
+
         $filters = $request->validate([
             'batch_id' => ['nullable', 'integer', 'exists:batches,batch_id'],
             'scion_variety_id' => ['nullable', 'integer', 'exists:scion_varieties,scion_variety_id'],

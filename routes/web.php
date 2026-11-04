@@ -105,7 +105,9 @@ Route::prefix('operational')->middleware('auth')->group(function () {
         // Mortality is record-only: the adjustment route was removed with the
         // Mortality_Adjustments entity (revised ERD §6).
         Route::get('/mortality', [MortalityController::class, 'index'])->name('operational.mortality');
-        Route::post('/mortality/records', [MortalityController::class, 'store'])->name('operational.mortality.records.store');
+        Route::post('/mortality/records', [MortalityController::class, 'store'])
+            ->middleware('submissions.direct-writes')
+            ->name('operational.mortality.records.store');
 
         Route::get('/regraft', [RegraftController::class, 'index'])->name('operational.regraft');
         Route::post('/regraft/records', [RegraftController::class, 'store'])->name('operational.regraft.records.store');
@@ -160,7 +162,9 @@ Route::prefix('inventory')->group(function () {
         Route::post('/stock-in', [StockInController::class, 'store'])->name('inventory.stock-in.store');
 
         Route::get('/stock-out', [StockOutController::class, 'index'])->name('inventory.stock-out');
-        Route::post('/stock-out', [StockOutController::class, 'store'])->name('inventory.stock-out.store');
+        Route::post('/stock-out', [StockOutController::class, 'store'])
+            ->middleware('submissions.direct-writes')
+            ->name('inventory.stock-out.store');
     });
 
     // Inline Supplier/Client creation from the stock forms is master-data
