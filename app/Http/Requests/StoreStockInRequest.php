@@ -150,7 +150,6 @@ class StoreStockInRequest extends AppFormRequest
             'seedling.date_received.required' => 'Seedlings tab: enter the date received.',
             'seedling.date_received.date' => 'Seedlings tab: enter a valid date received.',
             'seedling.date_received.before_or_equal' => 'Seedlings tab: the date received cannot be in the future.',
-            'scion.supplier_id.required' => 'Scion tab: select a supplier.',
             'scion.supplier_id.exists' => 'Scion tab: the selected supplier is not available.',
             'scion.quantity.required' => 'Scion tab: enter the received quantity.',
             'scion.quantity.integer' => 'Scion tab: the quantity must be a whole number.',
@@ -175,7 +174,11 @@ class StoreStockInRequest extends AppFormRequest
     private function rulesForTab(string $tab, bool $isScion): array
     {
         $rules = [
-            "{$tab}.supplier_id" => ['required', 'integer', Supplier::activeExistsRule('supplier_id')],
+            "{$tab}.supplier_id" => [
+                $isScion ? 'nullable' : 'required',
+                'integer',
+                Supplier::activeExistsRule('supplier_id'),
+            ],
             "{$tab}.quantity" => ['required', 'integer', 'min:1'],
             "{$tab}.origin" => ['required', 'string', 'max:255'],
             "{$tab}.notes" => ['nullable', 'string', 'max:1000'],

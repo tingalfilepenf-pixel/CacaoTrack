@@ -299,7 +299,7 @@ class CorrectRecord
             }
 
             $changes = $this->diff([
-                'supplier_id' => [$locked->supplier_id, $data['supplier_id']],
+                'supplier_id' => [$locked->supplier_id, $data['supplier_id'] ?? null],
                 'scion_variety_id' => [$locked->scion_variety_id, $data['scion_variety_id'] ?? null],
                 'quantity' => [(int) $locked->quantity, (int) $data['quantity']],
                 'unit_price' => [$locked->unit_price, $data['unit_price'] ?? null],
@@ -310,7 +310,7 @@ class CorrectRecord
 
             $this->assertChanged('stockin_correction', $changes);
 
-            $locked->supplier_id = $data['supplier_id'];
+            $locked->supplier_id = $data['supplier_id'] ?? null;
             $locked->scion_variety_id = $data['scion_variety_id'] ?? null;
             $locked->quantity = (int) $data['quantity'];
             $locked->unit_price = $data['unit_price'] ?? null;

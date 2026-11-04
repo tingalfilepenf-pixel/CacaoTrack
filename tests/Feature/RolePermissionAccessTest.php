@@ -617,7 +617,7 @@ class RolePermissionAccessTest extends TestCase
             ->assertSee('Reports')
             ->assertDontSee('Stock In');
 
-        $minimal = $this->userWith(['manage_users']);
+        $minimal = $this->userWith(['generate_reports']);
 
         $this->actingAs($minimal)->get(route('dashboard'))
             ->assertOk()

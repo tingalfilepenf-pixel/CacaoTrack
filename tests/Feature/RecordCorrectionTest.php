@@ -311,6 +311,53 @@ class RecordCorrectionTest extends TestCase
         $this->assertSame(500, (int) $stockIn->fresh()->quantity);
     }
 
+    public function test_a_scion_stock_in_correction_does_not_require_a_supplier(): void
+    {
+        $variety = $this->scionVariety('No Supplier Correction Scion');
+        $stockIn = $this->scionReceipt($variety, 100, ['supplier_id' => null]);
+
+        $this->actingAs($this->admin)
+            ->post(route('corrections.stock-in', $stockIn), [
+                'supplier_id' => '',
+                'quantity' => 120,
+                'scion_variety_id' => $variety->scion_variety_id,
+                'unit_price' => 12,
+                'origin' => 'Test nursery',
+                'date_received' => '2026-08-15',
+            ])
+            ->assertRedirect(route('inventory.stock-in'))
+            ->assertSessionHas('success');
+
+        $stockIn->refresh();
+        $this->assertNull($stockIn->supplier_id);
+        $this->assertSame(120, (int) $stockIn->quantity);
+    }
+
+    public function test_a_seedling_stock_in_correction_still_requires_a_supplier(): void
+    {
+        $stockIn = StockIn::create([
+            'supplier_id' => Supplier::query()->value('supplier_id'),
+            'scion_variety_id' => null,
+            'user_id' => $this->admin->id,
+            'quantity' => 100,
+            'unit_price' => null,
+            'origin' => 'Seedling nursery',
+            'notes' => null,
+            'date_received' => '2026-08-15',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->post(route('corrections.stock-in', $stockIn), [
+                'supplier_id' => '',
+                'quantity' => 120,
+                'origin' => 'Seedling nursery',
+                'date_received' => '2026-08-15',
+            ])
+            ->assertSessionHasErrors('supplier_id', null, 'stockin_correction');
+
+        $this->assertSame(100, (int) $stockIn->fresh()->quantity);
+    }
+
     public function test_an_administrator_can_correct_a_stock_out_and_balances_are_restored(): void
     {
         $header = StockOut::query()->with('details')->firstOrFail();
@@ -643,9 +690,9 @@ class RecordCorrectionTest extends TestCase
         ]);
     }
 
-    private function scionReceipt(ScionVariety $variety, int $quantity): StockIn
+    private function scionReceipt(ScionVariety $variety, int $quantity, array $overrides = []): StockIn
     {
-        return StockIn::create([
+        return StockIn::create(array_merge([
             'supplier_id' => Supplier::query()->value('supplier_id'),
             'scion_variety_id' => $variety->scion_variety_id,
             'user_id' => $this->admin->id,
@@ -654,7 +701,7 @@ class RecordCorrectionTest extends TestCase
             'origin' => 'Test nursery',
             'notes' => null,
             'date_received' => '2026-08-15',
-        ]);
+        ], $overrides));
     }
 
     /**

@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Validator as ValidationValidator;
 use Illuminate\View\View;
 
 class UserController extends Controller
@@ -82,6 +83,7 @@ class UserController extends Controller
         $this->requireManageUsers();
 
         $validator = Validator::make($request->all(), User::managementCreateRules());
+        $this->validateHardRestrictions($validator, $request->user());
 
         if ($validator->fails()) {
             return redirect()
@@ -113,6 +115,7 @@ class UserController extends Controller
         $this->requireManageUsers();
 
         $validator = Validator::make($request->all(), User::managementUpdateRules($user->id));
+        $this->validateHardRestrictions($validator, $request->user(), $user);
 
         if ($validator->fails()) {
             return redirect()
@@ -129,7 +132,9 @@ class UserController extends Controller
                 ->with('error', 'You cannot change your own role. Ask another administrator.');
         }
 
-        if ($user->isAdministrator() && $validated['role'] !== Role::ADMINISTRATOR && $this->administratorCount() <= 1) {
+        // Defence-in-depth check: under the current rules a single valid
+        // request cannot reach this state (see isLastAdministratorDemotion()).
+        if ($this->isLastAdministratorDemotion($user, $validated['role'])) {
             return redirect()
                 ->route('users.index')
                 ->with('error', 'This administrator cannot be demoted because it is the last administrator account.');
@@ -210,6 +215,34 @@ class UserController extends Controller
     }
 
     /**
+     * Re-check the hard restrictions on save. Validation reports violations;
+     * it never rewrites the stored role or permissions.
+     */
+    private function validateHardRestrictions(ValidationValidator $validator, ?User $actor, ?User $target = null): void
+    {
+        $validator->after(function (ValidationValidator $validator) use ($actor, $target): void {
+            $data = $validator->getData();
+            $role = (string) ($data['role'] ?? '');
+            $permissions = array_values(array_filter(
+                (array) ($data['permissions'] ?? []),
+                fn (mixed $permission): bool => is_string($permission),
+            ));
+
+            foreach (Role::roleNameErrors($role, (bool) $actor?->isAdministrator()) as $message) {
+                $validator->errors()->add('role', $message);
+            }
+
+            if ($target?->isAdministrator() && ! $actor?->isAdministrator()) {
+                $validator->errors()->add('role', 'Only an existing Administrator may edit an Administrator account.');
+            }
+
+            foreach (Role::hardRestrictionViolations($role, $this->normalizePermissions($role, $permissions)) as $message) {
+                $validator->errors()->add('permissions', $message);
+            }
+        });
+    }
+
+    /**
      * Server-side authorization (FR-02/PRD §21): only holders of the
      * `manage_users` access restriction may mutate accounts (RULE 3 — no
      * invented permissions; the catalog is the single source).
@@ -223,7 +256,22 @@ class UserController extends Controller
         }
     }
 
-    private function administratorCount(): int
+    /**
+     * Whether demoting this account would remove the last Administrator.
+     *
+     * Defence in depth: under the current rules (manage_users is
+     * Administrator-only and the self-role guard runs first) a single valid
+     * request cannot reach this state; it remains for future rule changes and
+     * concurrent requests.
+     */
+    protected function isLastAdministratorDemotion(User $user, string $role): bool
+    {
+        return $user->isAdministrator()
+            && $role !== Role::ADMINISTRATOR
+            && $this->administratorCount() <= 1;
+    }
+
+    protected function administratorCount(): int
     {
         return User::where('role', Role::ADMINISTRATOR)->count();
     }

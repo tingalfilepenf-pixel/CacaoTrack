@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\UserController;
 use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\Role;
 use App\Models\ScionVariety;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Tests\TestCase;
 
 class UserManagementTest extends TestCase
@@ -17,6 +19,44 @@ class UserManagementTest extends TestCase
     private function admin(): User
     {
         return User::factory()->admin()->create();
+    }
+
+    private function lastAdministratorDemotion(User $target, string $role): bool
+    {
+        $controller = new class extends UserController
+        {
+            public function check(User $target, string $role): bool
+            {
+                return $this->isLastAdministratorDemotion($target, $role);
+            }
+        };
+
+        return $controller->check($target, $role);
+    }
+
+    private function controllerWithAdministratorCount(int $count): UserController
+    {
+        return new class($count) extends UserController
+        {
+            public function __construct(private int $count) {}
+
+            protected function administratorCount(): int
+            {
+                return $this->count;
+            }
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function requestAs(User $actor, string $method, string $uri, array $data = []): Request
+    {
+        $request = Request::create($uri, $method, $data);
+        $request->setUserResolver(fn () => $actor);
+        $this->app->instance('request', $request);
+
+        return $request;
     }
 
     /**
@@ -223,7 +263,7 @@ class UserManagementTest extends TestCase
         $this->assertSame(Role::ADMINISTRATOR, $admin->fresh()->roleLabel());
     }
 
-    public function test_last_administrator_cannot_be_demoted(): void
+    public function test_a_non_administrator_cannot_demote_an_administrator(): void
     {
         $admin = $this->admin();
         $manager = User::factory()->create([
@@ -238,10 +278,75 @@ class UserManagementTest extends TestCase
                 'role' => Role::STAFF,
                 'permissions' => ['view_activity'],
             ])
-            ->assertRedirect(route('users.index'))
-            ->assertSessionHas('error');
+            ->assertForbidden();
 
         $this->assertSame(Role::ADMINISTRATOR, $admin->fresh()->roleLabel());
+    }
+
+    public function test_the_last_administrator_demotion_predicate_is_true_for_manager_and_staff(): void
+    {
+        $admin = $this->admin();
+
+        $this->assertTrue($this->lastAdministratorDemotion($admin, Role::MANAGER));
+        $this->assertTrue($this->lastAdministratorDemotion($admin, Role::STAFF));
+    }
+
+    public function test_the_last_administrator_demotion_predicate_is_false_when_the_role_stays_administrator(): void
+    {
+        $admin = $this->admin();
+
+        $this->assertFalse($this->lastAdministratorDemotion($admin, Role::ADMINISTRATOR));
+    }
+
+    public function test_the_last_administrator_demotion_predicate_is_false_with_two_administrators(): void
+    {
+        $admin = $this->admin();
+        User::factory()->admin()->create();
+
+        $this->assertFalse($this->lastAdministratorDemotion($admin, Role::STAFF));
+    }
+
+    public function test_the_last_administrator_demotion_guard_redirects_with_the_exact_message(): void
+    {
+        $actor = $this->admin();
+        $target = User::factory()->admin()->create();
+
+        $this->actingAs($actor);
+
+        $request = $this->requestAs($actor, 'PUT', route('users.update', $target), [
+            'name' => $target->name,
+            'email' => $target->email,
+            'role' => Role::STAFF,
+            'permissions' => ['view_activity'],
+        ]);
+
+        $response = $this->controllerWithAdministratorCount(1)->update($request, $target);
+
+        $this->assertSame(route('users.index'), $response->getTargetUrl());
+        $this->assertSame(
+            'This administrator cannot be demoted because it is the last administrator account.',
+            $response->getSession()->get('error'),
+        );
+        $this->assertSame(Role::ADMINISTRATOR, $target->fresh()->roleLabel());
+    }
+
+    public function test_the_last_administrator_delete_guard_redirects_with_the_exact_message(): void
+    {
+        $actor = $this->admin();
+        $target = User::factory()->admin()->create();
+
+        $this->actingAs($actor);
+
+        $request = $this->requestAs($actor, 'DELETE', route('users.destroy', $target));
+
+        $response = $this->controllerWithAdministratorCount(1)->destroy($request, $target);
+
+        $this->assertSame(route('users.index'), $response->getTargetUrl());
+        $this->assertSame(
+            'This administrator cannot be deleted because it is the last administrator account.',
+            $response->getSession()->get('error'),
+        );
+        $this->assertDatabaseHas('users', ['id' => $target->id]);
     }
 
     public function test_admin_cannot_delete_their_own_account(): void

@@ -98,7 +98,7 @@ class StockInController extends Controller
 
                 if (is_array($seedling)) {
                     $record = StockIn::create([
-                        'supplier_id' => $seedling['supplier_id'],
+                        'supplier_id' => $seedling['supplier_id'] ?? null,
                         'scion_variety_id' => null,
                         'user_id' => Auth::id(),
                         'quantity' => $seedling['quantity'],
@@ -115,7 +115,7 @@ class StockInController extends Controller
 
                 if (is_array($scion)) {
                     $record = StockIn::create([
-                        'supplier_id' => $scion['supplier_id'],
+                        'supplier_id' => $scion['supplier_id'] ?? null,
                         'scion_variety_id' => $scion['scion_variety_id'],
                         'user_id' => Auth::id(),
                         'quantity' => $scion['quantity'],
@@ -162,7 +162,7 @@ class StockInController extends Controller
      */
     private function recordReceiving(StockIn $record, array $entry, bool $isScion): void
     {
-        $supplier = Supplier::find($entry['supplier_id']);
+        $supplier = Supplier::find($entry['supplier_id'] ?? null);
 
         if ($isScion) {
             $scionVariety = ScionVariety::find($entry['scion_variety_id']);

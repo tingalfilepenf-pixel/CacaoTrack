@@ -398,19 +398,19 @@
                     <div class="tab-pane fade {{ $activeEntry === 'scion' ? 'show active' : '' }}" id="scionPane" role="tabpanel" aria-labelledby="scionTab">
                         <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2 mb-2">
                             <div class="fw-bold text-info-emphasis"><i class="bi bi-flower1 me-1"></i>Scion entry</div>
-                            <div class="text-muted small">Required when you fill in this tab.</div>
+                            <div class="text-muted small">The supplier is optional; the other fields are required when you fill in this tab.</div>
                         </div>
 
                         <div class="mb-3">
                             <div class="d-flex align-items-center justify-content-between">
-                                <label class="form-label text-muted small fw-bold" for="scionSupplier">Supplier <span class="text-danger">*</span></label>
+                                <label class="form-label text-muted small fw-bold" for="scionSupplier">Supplier <span class="text-muted fw-normal">(optional)</span></label>
                                 @if (auth()->user()->hasPermission('manage_inventory'))
                                     <button type="button" class="btn btn-sm btn-link p-0 js-add-supplier" data-supplier-target="scion"
                                         data-bs-toggle="modal" data-bs-target="#supplierModal">+ Add Supplier</button>
                                 @endif
                             </div>
                             <select class="form-select @error('scion.supplier_id', 'stockin') is-invalid @enderror" id="scionSupplier" name="scion[supplier_id]">
-                                <option value="" @selected((string) old('scion.supplier_id', '') === '')>Select Supplier</option>
+                                <option value="" @selected((string) old('scion.supplier_id', '') === '')>Select Supplier (optional)</option>
                                 @foreach ($suppliers as $supplier)
                                     <option value="{{ $supplier->supplier_id }}" @selected((string) old('scion.supplier_id') === (string) $supplier->supplier_id)>
                                         {{ $supplier->supplier_name }}
@@ -660,11 +660,13 @@
                 <div class="modal-body">
                     <p class="text-muted small">
                         The corrected receiving is validated exactly like a new entry (a scion variety and a unit price go
-                        together, or neither does) and the before/after values are recorded in Activity History.
+                        together, or neither does) and the before/after values are recorded in Activity History. The supplier
+                        is optional for a scion receipt and required for a seedling receipt.
                     </p>
                     <div class="mb-3">
-                        <label for="correctStockInSupplier" class="form-label text-muted small fw-bold">Supplier <span class="text-danger">*</span></label>
-                        <select class="form-select @error('supplier_id', 'stockin_correction') is-invalid @enderror" id="correctStockInSupplier" name="supplier_id" required>
+                        <label for="correctStockInSupplier" class="form-label text-muted small fw-bold">Supplier <span class="text-danger" id="correctStockInSupplierRequired">*</span></label>
+                        <select class="form-select @error('supplier_id', 'stockin_correction') is-invalid @enderror" id="correctStockInSupplier" name="supplier_id">
+                            <option value="">— No supplier —</option>
                             @foreach ($suppliers as $supplier)
                                 <option value="{{ $supplier->supplier_id }}">{{ $supplier->supplier_name }}</option>
                             @endforeach
@@ -1084,6 +1086,23 @@
             }
         @endif
 
+        const syncCorrectStockInSupplierRequired = function () {
+            const variety = document.getElementById('correctStockInVariety');
+            const supplier = document.getElementById('correctStockInSupplier');
+            const marker = document.getElementById('correctStockInSupplierRequired');
+
+            if (!variety || !supplier) {
+                return;
+            }
+
+            const seedlingOnly = String(variety.value || '') === '';
+            supplier.required = seedlingOnly;
+
+            if (marker) {
+                marker.classList.toggle('d-none', !seedlingOnly);
+            }
+        };
+
         const correctStockInModalEl = document.getElementById('correctStockInModal');
         if (correctStockInModalEl) {
             correctStockInModalEl.addEventListener('show.bs.modal', function (event) {
@@ -1100,7 +1119,14 @@
                 document.getElementById('correctStockInOrigin').value = button.getAttribute('data-origin') || '';
                 document.getElementById('correctStockInNotes').value = button.getAttribute('data-notes') || '';
                 document.getElementById('correctStockInDate').value = button.getAttribute('data-date-received') || '';
+
+                syncCorrectStockInSupplierRequired();
             });
+
+            const correctStockInVariety = document.getElementById('correctStockInVariety');
+            if (correctStockInVariety) {
+                correctStockInVariety.addEventListener('change', syncCorrectStockInSupplierRequired);
+            }
         }
     });
 </script>

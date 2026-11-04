@@ -252,6 +252,7 @@
                         @php
                             $isSelf = $viewer && (int) $viewer->getKey() === (int) $user->getKey();
                             $userPermissions = $user->permissions ?? [];
+                            $violations = $user->hardRestrictionViolations();
                             $details = [
                                 'id' => $user->id,
                                 'name' => $user->name,
@@ -271,7 +272,12 @@
                                 @endif
                             </td>
                             <td class="text-muted text-break">{{ $user->email }}</td>
-                            <td><span class="badge {{ $roleBadge($user->roleLabel()) }}">{{ $user->roleLabel() }}</span></td>
+                            <td>
+                                <span class="badge {{ $roleBadge($user->roleLabel()) }}">{{ $user->roleLabel() }}</span>
+                                @if ($violations !== [])
+                                    <span class="badge bg-danger ms-1" title="{{ implode(' ', $violations) }}">Needs correction</span>
+                                @endif
+                            </td>
                             <td>
                                 @forelse ($userPermissions as $key)
                                     <span class="badge bg-light text-dark border mb-1">{{ $permissionCatalog[$key] ?? $key }}</span>
