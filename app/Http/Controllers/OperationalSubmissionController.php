@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\ApproveOperationalSubmission;
 use App\Actions\SubmitOperationalSubmission;
 use App\Http\Requests\StoreMortalitySubmissionRequest;
 use App\Http\Requests\StoreStockOutSubmissionRequest;
@@ -12,9 +13,11 @@ use App\Models\OperationalSubmission;
 use App\Models\StockOutDetail;
 use App\Support\DuplicateSubmissionGuard;
 use App\Support\OperationalSubmissionVisibility;
+use DomainException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -25,7 +28,10 @@ use Illuminate\View\View;
  */
 class OperationalSubmissionController extends Controller
 {
-    public function __construct(private readonly SubmitOperationalSubmission $submissions) {}
+    public function __construct(
+        private readonly SubmitOperationalSubmission $submissions,
+        private readonly ApproveOperationalSubmission $approvals,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -77,6 +83,23 @@ class OperationalSubmissionController extends Controller
             'canSubmit' => $user->hasPermission('submit_operations'),
             'canViewAll' => OperationalSubmissionVisibility::canViewAll($user),
         ]);
+    }
+
+    public function approve(Request $request, OperationalSubmission $submission): RedirectResponse
+    {
+        try {
+            $this->approvals->execute($submission, (int) $request->user()->id);
+        } catch (DomainException|ValidationException $exception) {
+            return redirect()
+                ->route('operational.submissions.show', $submission)
+                ->with('error', $exception instanceof ValidationException
+                    ? collect($exception->errors())->flatten()->first()
+                    : $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('operational.submissions.show', $submission)
+            ->with('success', 'Submission approved; official record created.');
     }
 
     public function createMortality(): View

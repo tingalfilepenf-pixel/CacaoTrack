@@ -100,6 +100,12 @@
             </dl>
         @else
             <p class="text-muted mb-0">This submission is waiting for Manager verification.</p>
+            @if ($canVerify && (int) $submission->submitted_by_id !== (int) auth()->id())
+                <form method="POST" action="{{ route('operational.submissions.approve', $submission) }}" class="mt-3">
+                    @csrf
+                    <button type="submit" class="btn btn-success">Approve Submission</button>
+                </form>
+            @endif
         @endif
     </div>
 </div>

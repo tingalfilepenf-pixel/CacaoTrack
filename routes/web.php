@@ -68,6 +68,10 @@ Route::prefix('operational')->middleware('auth')->group(function () {
         Route::middleware('permission:verify_operations')->group(function () {
             Route::get('/queue', [OperationalSubmissionController::class, 'queue'])
                 ->name('operational.submissions.queue');
+
+            Route::post('/{submission}/approve', [OperationalSubmissionController::class, 'approve'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.approve');
         });
 
         Route::middleware('permission:submit_operations')->group(function () {
