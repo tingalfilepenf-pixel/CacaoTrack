@@ -268,7 +268,7 @@ class UserManagementTest extends TestCase
         $admin = $this->admin();
         $manager = User::factory()->create([
             'role' => Role::MANAGER,
-            'permissions' => array_keys(Role::PERMISSIONS),
+            'permissions' => Role::defaultPermissionsFor(Role::MANAGER),
         ]);
 
         $this->actingAs($manager)
