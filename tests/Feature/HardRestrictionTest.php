@@ -205,4 +205,49 @@ class HardRestrictionTest extends TestCase
             ->get(route('inventory.index'))
             ->assertForbidden();
     }
+
+    public function test_user_management_flags_invalid_accounts_read_only(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $invalid = User::factory()->create([
+            'role' => Role::MANAGER,
+            'permissions' => ['manage_users', 'manage_inventory'],
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('users.index'))
+            ->assertOk()
+            ->assertSee('Needs correction')
+            ->assertSee($invalid->name);
+
+        $this->assertSame(Role::MANAGER, $invalid->fresh()->roleLabel());
+        $this->assertEqualsCanonicalizing(['manage_users', 'manage_inventory'], $invalid->fresh()->permissions);
+    }
+
+    public function test_user_management_does_not_flag_valid_accounts(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('users.index'))
+            ->assertOk()
+            ->assertDontSee('Needs correction');
+    }
+
+    public function test_user_management_flags_reserved_role_name_variants_without_rewriting_them(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $padded = User::factory()->create([
+            'role' => ' Administrator ',
+            'permissions' => ['view_activity'],
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('users.index'))
+            ->assertOk()
+            ->assertSee('Needs correction');
+
+        $this->assertSame(' Administrator ', $padded->fresh()->role);
+        $this->assertSame(['view_activity'], $padded->fresh()->permissions);
+    }
 }
