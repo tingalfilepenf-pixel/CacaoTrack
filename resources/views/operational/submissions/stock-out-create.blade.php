@@ -1,7 +1,13 @@
 @extends('layouts.app')
 
-@section('title', 'Submit Stock Out')
-@section('page_title', 'Submit Stock Out')
+@php
+    $resubmissionOf = $resubmissionOf ?? null;
+    $originalPayload = $resubmissionOf->payload ?? [];
+    $isResubmission = $resubmissionOf !== null;
+@endphp
+
+@section('title', $isResubmission ? 'Resubmit Stock Out' : 'Submit Stock Out')
+@section('page_title', $isResubmission ? 'Resubmit Stock Out' : 'Submit Stock Out')
 
 @section('page_actions')
 <a href="{{ route('operational.submissions.index') }}" class="btn btn-outline-secondary">Back to Submissions</a>
@@ -9,7 +15,10 @@
 
 @section('content')
 @php
-    $oldDetails = old('details', [['batch_id' => '', 'quantity' => 1, 'unit' => $units[0] ?? 'pots', 'unit_price' => '']]);
+    $defaultDetails = ! empty($originalPayload['details'])
+        ? $originalPayload['details']
+        : [['batch_id' => '', 'quantity' => 1, 'unit' => $units[0] ?? 'pots', 'unit_price' => '']];
+    $oldDetails = old('details', $defaultDetails);
 @endphp
 
 @if ($errors->any())
@@ -23,7 +32,7 @@
     </div>
 @endif
 
-<form method="POST" action="{{ route('operational.submissions.stock-out.store') }}" id="submissionStockOutForm">
+<form method="POST" action="{{ $isResubmission ? route('operational.submissions.resubmit.stock-out', $resubmissionOf) : route('operational.submissions.stock-out.store') }}" id="submissionStockOutForm">
     @csrf
     <div class="card">
         <div class="card-header bg-white py-3"><h6 class="m-0 font-weight-bold text-primary">Stock-out details</h6></div>
@@ -32,16 +41,16 @@
                 <div class="col-md-6">
                     <label for="submissionClient" class="form-label text-muted small fw-bold">Client <span class="text-danger">*</span></label>
                     <select class="form-select @error('client_id', 'submission_stockout') is-invalid @enderror" id="submissionClient" name="client_id" required>
-                        <option value="" disabled @selected(old('client_id') === null)>Select Client</option>
+                        <option value="" disabled @selected(old('client_id', $originalPayload['client_id'] ?? null) === null)>Select Client</option>
                         @foreach ($clients as $client)
-                            <option value="{{ $client->client_id }}" @selected(old('client_id') == $client->client_id)>{{ $client->client_name }}</option>
+                            <option value="{{ $client->client_id }}" @selected(old('client_id', $originalPayload['client_id'] ?? null) == $client->client_id)>{{ $client->client_name }}</option>
                         @endforeach
                     </select>
                     @error('client_id', 'submission_stockout')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
                 <div class="col-md-6">
                     <label for="submissionReleaseDate" class="form-label text-muted small fw-bold">Release Date <span class="text-danger">*</span></label>
-                    <input type="date" class="form-control @error('release_date', 'submission_stockout') is-invalid @enderror" id="submissionReleaseDate" name="release_date" max="{{ now()->toDateString() }}" value="{{ old('release_date', now()->toDateString()) }}" required>
+                    <input type="date" class="form-control @error('release_date', 'submission_stockout') is-invalid @enderror" id="submissionReleaseDate" name="release_date" max="{{ now()->toDateString() }}" value="{{ old('release_date', $originalPayload['release_date'] ?? now()->toDateString()) }}" required>
                     @error('release_date', 'submission_stockout')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
             </div>

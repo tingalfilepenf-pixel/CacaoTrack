@@ -107,6 +107,11 @@
                 <dt class="col-sm-3">Reason</dt><dd class="col-sm-9">{{ $submission->decision_reason ?: '—' }}</dd>
                 <dt class="col-sm-3">Automatic</dt><dd class="col-sm-9">{{ $submission->decision_automatic ? 'Yes' : 'No' }}</dd>
             </dl>
+            @if ($canSubmit && $submission->isRejected() && (int) $submission->submitted_by_id === (int) auth()->id())
+                <a href="{{ route('operational.submissions.resubmit.create', $submission) }}" class="btn btn-outline-primary mt-3">
+                    Resubmit this request
+                </a>
+            @endif
         @else
             <p class="text-muted mb-0">This submission is waiting for Manager verification.</p>
             @if ($canVerify && (int) $submission->submitted_by_id !== (int) auth()->id())

@@ -87,6 +87,16 @@ Route::prefix('operational')->middleware('auth')->group(function () {
                 ->name('operational.submissions.stock-out.create');
             Route::post('/stock-out', [OperationalSubmissionController::class, 'storeStockOut'])
                 ->name('operational.submissions.stock-out.store');
+
+            Route::get('/{submission}/resubmit', [OperationalSubmissionController::class, 'createResubmission'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.resubmit.create');
+            Route::post('/{submission}/resubmit/mortality', [OperationalSubmissionController::class, 'storeMortalityResubmission'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.resubmit.mortality');
+            Route::post('/{submission}/resubmit/stock-out', [OperationalSubmissionController::class, 'storeStockOutResubmission'])
+                ->whereNumber('submission')
+                ->name('operational.submissions.resubmit.stock-out');
         });
     });
 

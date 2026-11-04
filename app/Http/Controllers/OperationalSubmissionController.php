@@ -152,6 +152,83 @@ class OperationalSubmissionController extends Controller
         ]);
     }
 
+    public function createResubmission(Request $request, OperationalSubmission $submission): View
+    {
+        $this->assertResubmittable($request, $submission);
+
+        if ($submission->submission_type === OperationalSubmission::TYPE_MORTALITY) {
+            return view('operational.submissions.mortality-create', [
+                'batches' => Batch::submissionEligible()
+                    ->with('scionVariety')
+                    ->orderBy('batch_code')
+                    ->get(),
+                'causes' => MortalityRecord::CAUSES,
+                'resubmissionOf' => $submission,
+            ]);
+        }
+
+        return view('operational.submissions.stock-out-create', [
+            'clients' => Client::active()->orderBy('client_name')->get(),
+            'batches' => Batch::submissionEligible()
+                ->with('scionVariety')
+                ->orderBy('batch_code')
+                ->get(),
+            'units' => StockOutDetail::UNITS,
+            'resubmissionOf' => $submission,
+        ]);
+    }
+
+    public function storeMortalityResubmission(
+        StoreMortalitySubmissionRequest $request,
+        OperationalSubmission $submission,
+    ): RedirectResponse {
+        $this->assertResubmittable($request, $submission, OperationalSubmission::TYPE_MORTALITY);
+
+        $validated = $request->validated();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh('mortality_resubmission', $validated, 'submission_mortality');
+
+        try {
+            $newSubmission = $this->submissions->mortality($validated, $request->user(), $submission);
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('mortality_resubmission', $fingerprint);
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('operational.submissions.show', $newSubmission)
+            ->with('success', 'Mortality resubmitted for Manager verification.');
+    }
+
+    public function storeStockOutResubmission(
+        StoreStockOutSubmissionRequest $request,
+        OperationalSubmission $submission,
+    ): RedirectResponse {
+        $this->assertResubmittable($request, $submission, OperationalSubmission::TYPE_STOCK_OUT);
+
+        $validated = $request->validated();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh('stock_out_resubmission', $validated, 'submission_stockout');
+
+        try {
+            $newSubmission = $this->submissions->stockOut($validated, $request->user(), $submission);
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('stock_out_resubmission', $fingerprint);
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('operational.submissions.show', $newSubmission)
+            ->with('success', 'Stock-out resubmitted for Manager verification.');
+    }
+
+    private function assertResubmittable(Request $request, OperationalSubmission $submission, ?string $type = null): void
+    {
+        abort_unless((int) $submission->submitted_by_id === (int) $request->user()->id, 404);
+        abort_unless($submission->isRejected(), 404);
+        abort_unless($type === null || $submission->submission_type === $type, 404);
+    }
+
     public function storeMortality(StoreMortalitySubmissionRequest $request): RedirectResponse
     {
         $validated = $request->validated();
