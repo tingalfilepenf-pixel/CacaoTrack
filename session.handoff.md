@@ -1,16 +1,93 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: Phase 3 live deployment — **2026-11-05; `db_capstone` MIGRATED + FOUR-ACCOUNT PERMISSIONS APPLIED; SWITCH OFF; HANDOFF COMMITTED `1d447c1`, UNPUSHED**)
+> ### ▶ Continue here (latest: PHASE 4a MERGED + PUSHED — **2026-11-06; `master` = `origin/master` = `b2089df`; feature branch merged with `--no-ff`; UI redesign and tests committed; full suite 625 passed / 3,629 assertions; no live `db_capstone` write**)
+>
+> - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. Tests only on `db_capstone_test`; never write to `db_capstone` without a fresh verified backup and explicit sign-off. The demo DB is **`db_capstone_demo` only**.
+> - **Git:** `master` and `origin/master` are both **`b2089df`** — `Merge branch 'feat/phase-4a-stock-in-approval'`; pushed `77aea32..b2089df`. The merge brings in Phase 4a (5 commits ending `50264de`) plus the two new commits `9cab311` (`feat(submissions): redesign the submission list, queue and review screens`) and `2faffc8` (`test(submissions): cover the queue tabs, search and review screens`). The feature branch remains at `2faffc8` (not deleted). Working tree: `M session.handoff.md` (this update) + untracked `docs/CacaoTrack_Phase2_Decision_Register.md`; nothing staged. Commit/push only with explicit approval.
+> - **Verification:** after commit 1 (61.4 s) and commit 2 (49.1 s), the full MySQL suite on `db_capstone_test` was **625 passed / 3,629 assertions** each time; `git diff --stat feat/phase-4a-stock-in-approval master` is empty, so the merge tree equals the tested branch tip. `vendor\bin\pint --test`, `php artisan view:cache`, `git diff --check` and `npm run build` were clean before the commits (only the existing Vite chunk-size warning).
+> - **Committed content:** commit 1 = the three submission screens (`index`, `queue`, `show`), `resources/css/app.css`, `resources/views/layouts/app.blade.php` and `OperationalSubmissionController.php` (presentation + search/filter/display query helpers only); commit 2 = `OperationalSubmissionReviewTest.php` (3 new tests / 18 assertions) and new `OperationalSubmissionIndexTest.php` (6 tests / 22 assertions). No approval logic, D6 path, permission check, route, model, migration, seeder or Stock In behavior changed.
+> - **Live / demo:** no write, migration, seeder or permission edit on `db_capstone`. The demo server on `:8001` was stopped (PIDs 3276, 22980 and parents 12696, 22244); the live `:8000` server is untouched (`GET /login` **200**). Restart the demo in a separate shell with
+>   `Set-Location 'C:\laragon\www\Capstone\Capstone'; $env:DB_DATABASE='db_capstone_demo'; $env:CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED='true'; $env:CACAOTRACK_STOCK_IN_SUBMISSION_ENABLED='true'; php artisan serve --host=127.0.0.1 --port=8001`
+>   — do not edit `.env` and do not disturb `:8000`.
+> - **Phase 4b (Batch Creation approval):** Step 0 (read-only inspection/design) was requested but stopped at the baseline gate because Phase 4a was still branch-only. That blocker is now cleared: `master` at `b2089df` contains the Phase 3 pilot, the template fix and Phase 4a. Resume Phase 4b Step 0 on this baseline; it is still INSPECT AND DESIGN ONLY until the owner approves implementation.
+> - **Docs status:** `AGENTS.md` still carries the older Phase 3 "branch only" banner and does not record Phase 4a or the UI redesign; PRD/ERD/Design and the untracked decision register were not edited. Canonical PRD/ERD and their `_REVISED` mirrors must stay byte-identical; `docs/*_UPDATED.md` is frozen. Update only with owner approval.
+> - **Next:** (1) run Phase 4b Batch Creation approval Step 0 (read-only design) on `master` `b2089df`; (2) owner review of the redesigned screens and the controlled demo walk-through; (3) owner decides whether to update AGENTS/PRD/ERD/Design and the register for Phase 4a; (4) keep tests on `db_capstone_test` and never touch `db_capstone` without a fresh verified backup + explicit sign-off; (5) commit/push this handoff only with explicit approval.
+> - **Handoff hash:** run `git hash-object session.handoff.md` after this edit and record it if committing later.
+>
+> ### ▶ Previous snapshot (OPERATIONAL SUBMISSIONS UI REDESIGN — **2026-11-06; branch `feat/phase-4a-stock-in-approval`; HEAD `50264de`; 5 commits on top of `77aea32`; NOT merged/pushed; UI-only session; full suite 625 passed / 3,629 assertions; demo DB only; no live `db_capstone` write**)
+>
+> - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. Tests only on `db_capstone_test`; never write to `db_capstone` without a fresh verified backup and explicit sign-off. The demo DB is **`db_capstone_demo` only**.
+> - **Git:** branch `feat/phase-4a-stock-in-approval`; HEAD `50264de` (`feat(guards): protect pending Stock In references`); 5 commits on top of `77aea32`; **not merged/pushed**; `master` is `77aea32`. Working tree now **8 modified + 2 untracked, nothing staged**: modified `app/Http/Controllers/OperationalSubmissionController.php`, `resources/css/app.css`, `resources/views/layouts/app.blade.php`, `resources/views/operational/submissions/{index,queue,show}.blade.php`, `tests/Feature/OperationalSubmissionReviewTest.php`, `session.handoff.md`; untracked `tests/Feature/OperationalSubmissionIndexTest.php` and `docs/CacaoTrack_Phase2_Decision_Register.md`. Do not commit/push without explicit approval.
+> - **Session scope (UI only):** redesigned the three Operational Submission screens to the owner-supplied mockups; no migration, model, route, permission, seeder, `.env`, official-record, approval-logic or live-data change. `AGENTS.md`, PRD/ERD/Design and the untracked register were not edited.
+> - **Index `/operational/submissions`:** green hero + Submit Mortality/Stock Out/Stock In actions, 4-step workflow strip, redesigned table (type/status pills, batch-code chips, decision details, empty state). Functional search (subject/batch/client/supplier/submitter/ID) and Type/Status filter; pagination preserved.
+> - **Queue `/operational/submissions/queue`:** light-green hero, Pending/Approved/Rejected status tabs with live counts, search + Type filter, card list with type icon/status/batch/submitter/timestamp/details, Review/View action, dynamic empty states. Queue now shows decided submissions too; default is Pending.
+> - **Show `/operational/submissions/{id}`:** hero with **Back to Queue** (fixed: art now `z-index:0`, button `z-index:2` + `flex-shrink:0`), Submission Details bar (type/batch/submitter/time/status), Frozen Request for all three types (Mortality 3 fields; Stock Out lines table; Stock In seedling/scion entries), Decision card with waiting note and Cancel/Approve/Reject. Reject uses a required-reason Bootstrap modal (reopens on validation error); decided submissions show decision summary, reason, resubmit link and official records.
+> - **Controller refactor:** extracted shared `applySearch()` and `displayData()` in `OperationalSubmissionController`; `queue()` now supports `status`, `q`, `type` and status counts; `show()` passes `batchCodes`, `clientNames` and `supplierNames`. `layouts/app.blade.php` now skips the default page-title row when `page_title` is empty, allowing the custom heroes.
+> - **Verification:** full MySQL suite **625 passed / 3,629 assertions** on `db_capstone_test`; `vendor\bin\pint`, `php artisan view:cache`, `git diff --check` and `npm run build` clean (only the existing Vite chunk-size warning). Focused sets: `OperationalSubmissionReviewTest` 7/34, `OperationalSubmissionIndexTest` 6/22, and the six submission-related test classes 40/281.
+> - **Demo:** owner tested the redesigned detail page at `http://127.0.0.1:8001/operational/submissions/1`; the intended environment remains `DB_DATABASE=db_capstone_demo` with master + Stock In module ON. No listener on `:8001` was detected at handoff time; restart in a separate shell with
+>   `Set-Location 'C:\laragon\www\Capstone\Capstone'; $env:DB_DATABASE='db_capstone_demo'; $env:CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED='true'; $env:CACAOTRACK_STOCK_IN_SUBMISSION_ENABLED='true'; php artisan serve --host=127.0.0.1 --port=8001`
+>   (or use the previous process IDs if still alive). Do not edit `.env`.
+> - **Live `db_capstone`:** no write, migration, seeder, permission edit or test run against it in this session. Standing rule unchanged.
+> - **Not done / next:** (1) owner review of the three redesigned screens and the rejection modal; (2) finish the controlled demo walk-through as Staff submit + Manager approve/reject + Administrator read-only; (3) owner decides merge/push and whether to record Phase 4a + the UI in AGENTS/docs; (4) keep tests on `db_capstone_test` and never touch `db_capstone` without a fresh verified backup + explicit sign-off.
+> - **Handoff hash:** run `git hash-object session.handoff.md` after this edit and record it if committing later.
+>
+> ### ▶ Previous snapshot (PHASE 4a STOCK IN APPROVAL IMPLEMENTED — **2026-11-06; branch `feat/phase-4a-stock-in-approval`; 5 commits on top of `77aea32`; NOT merged or pushed; full suite 616 passed / 3,589 assertions; module OFF by default; demo server running on `:8001`; `db_capstone` read-only only**)
+>
+> - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. Tests only on `db_capstone_test`; never write to `db_capstone` without a fresh verified backup and explicit sign-off. The demo DB is **`db_capstone_demo` only**.
+> - **Git:** current branch `feat/phase-4a-stock-in-approval`, 5 commits on top of `77aea32`: `30f03c0` (RecordStockIn extraction), `18b39d9` (independent Stock In module switch), `e6f141b` (Stock In capture/approval/D6), `f035fae` (Stock In resubmission), `50264de` (pending-reference guards). **Not merged and not pushed.** `master` remains at `77aea32`. Working tree: `M session.handoff.md` (this update) + untracked `docs/CacaoTrack_Phase2_Decision_Register.md`; nothing staged. Do not commit/push without explicit approval.
+> - **Verification:** every commit ran the full MySQL suite on `db_capstone_test` (database printed first): final **616 passed / 3,589 assertions**, 73.3 s. Pint, `view:cache` and `git diff --check` clean after each commit. Commit 1 focused direct set (`StockInTest`, `ActivityLogTest`, `RolePermissionAccessTest`, `SupplierTest`, `StockLedger*`, `RegraftTest`) was **126 passed / 895 assertions / 17.2 s before** and **126 / 895 / 16.6 s after**; no direct test changed.
+> - **Implemented:** `OperationalSubmission::TYPE_STOCK_IN = 'stock_in'` and `OperationalSubmissionRecord::RECORD_TYPE_STOCK_IN = 'stock_in'`; new `StoreStockInSubmissionRequest` (error bag `submission_stockin`); new `App\Actions\RecordStockIn` shared by the direct form and approval; grouped payload `seedling`/`scion` (only populated tabs, frozen); separate fingerprint scopes `stock_in_submission` and `stock_in_resubmission` (direct remains `stock_in`); capture, Manager queue/review, approve, reject, D6 automatic rejection, and linked resubmission; index/queue/show render Stock In and both entries; factory/catalog test updated/renamed.
+> - **Switch:** `CACAOTRACK_STOCK_IN_SUBMISSION_ENABLED` (`cacaotrack.operational_submission.modules.stock_in`) default **false**, ANDed with the master `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED`. Module OFF: direct Stock In and `/inventory/stock-in` behave exactly as before, including Managers still 403. Module ON (master must also be ON): direct `POST /inventory/stock-in` returns 404; `/inventory/stock-in` history is 403 for non-all-scope users, mirroring Stock Out; submission routes are active. Existing pending Stock In submissions can still be approved/rejected after the module is turned OFF; queue/sidebar/Dashboard pending counts include all types regardless of the module flag.
+> - **History parity:** Phase 3 Stock Out `GET /inventory/stock-out` uses `permission:manage_stock` plus `StockOutController@index` `enabled() && ! canViewAll` → 403; Stock In now uses `permission:manage_stock` plus `StockInController@index` `stockInEnabled() && ! canViewAll` → 403. No switch-OFF behavior change.
+> - **Guards:** pending Stock In submissions block permanent Scion Variety deletion via `OperationalSubmission::hasPendingStockInScionVariety()` and a preloaded `pending_stock_in_submission_exists` attribute (no N+1); supplier archive stays allowed and D6 handles an archived supplier. Approval is atomic and exactly-once via `operational_submission_records` links; Pending/Rejected never write `stock_ins`, analytics or ledger.
+> - **No migration:** `submission_type` and `record_type` are `varchar(50)`; no schema change. Live `db_capstone` was not migrated, seeded or written. Read-only live check: users **5**, batches **12**, stock_ins **9**, activity_logs **39**, `operational_submissions` **0**, `operational_submission_records` **0**.
+> - **Demo server:** running on `http://127.0.0.1:8001` with `DB_DATABASE=db_capstone_demo`, master ON and Stock In module ON. Verified `/login` **200**; demo DB sessions **10** while live `db_capstone` sessions stayed **2**. Stop with `Stop-Process -Id 12696,3276,22244,22980 -ErrorAction SilentlyContinue` (or find the process tree by command line). Do not edit `.env`.
+> - **Not done / next:** no merge/push; no docs edits except this handoff (AGENTS.md, the decision register and PRD/ERD/Design untouched); no live write. Next: (1) exercise the demo as Staff submit + Manager approve/reject + Administrator read-only, including a two-tab Stock In; (2) confirm live `:8000`/`db_capstone` untouched; (3) owner decides merge/push and whether to record Phase 4a in AGENTS/docs; (4) keep tests on `db_capstone_test` and never touch `db_capstone` without backup + sign-off.
+> - **Handoff hash:** run `git hash-object session.handoff.md` after this edit and record it if committing later.
+>
+> ### ▶ Previous snapshot (DEMO COPY READY — **2026-11-06 (host date; MySQL `NOW()` showed 2026-11-05 04:57 UTC+8); HEAD `77aea32`; `master` 0/0 vs `origin/master`; `db_capstone_demo` CREATED + IMPORTED + DEMO PERMISSIONS APPLIED; `db_capstone` NOT WRITTEN; DEMO SERVER NOT STARTED**)
+>
+> - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. Tests only on `db_capstone_test`; never write to `db_capstone` without a fresh verified backup and explicit sign-off. The demo DB is **`db_capstone_demo` only**.
+> - **Git:** HEAD `77aea32`; `master` in sync with `origin/master` (0/0). Working tree: `M session.handoff.md` (this update) + untracked `docs/CacaoTrack_Phase2_Decision_Register.md`; nothing staged. Do not commit/push without explicit approval.
+> - **Demo copy created:** `db_capstone_demo` (utf8mb4 / utf8mb4_unicode_ci) from
+>   `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_phase3_permissions_20261105_021957.sql` —
+>   **45,349 B**, SHA-256 `AD686C204A9DCE80BF8F6F131FD46DCB7C3ADF9C439B87DC29C08BC6836289DE`. The dump was filtered to remove
+>   **1 `CREATE DATABASE` + 1 `USE`** before import (826 lines → 824; residual `CREATE/USE/DROP DATABASE` = 0); import exit 0.
+> - **Demo verification:** **25 tables**; backup counts match — users **4**, batches **11**, activity_logs **33**,
+>   mortality_records **4**, regraft_records **5**, stock_ins **5**, stock_outs **1**, stock_out_details **1**;
+>   `operational_submissions` and `operational_submission_records` exist and are **empty**.
+> - **Demo permissions (applied to `db_capstone_demo` only):** id 1 Administrator + `view_operational_records` (**8** keys);
+>   id 2 Staff + `submit_operations` (**4**); ids 3–4 Manager + `verify_operations` (**6** each). Used the plain-string form
+>   `JSON_ARRAY_APPEND(permissions, '$', 'key')`; `JSON_QUOTE` only inside `JSON_CONTAINS`. Arrays are valid JSON with
+>   **no backslashes and no `""`** (`LOCATE(CHAR(92), permissions)` and `LOCATE(CONCAT(CHAR(34),CHAR(34)), permissions)` both **0** for all four).
+> - **Demo server (NOT started):** use a separate PowerShell window; do not edit `.env` and do not disturb the live `:8000` server:
+>   `Set-Location 'C:\laragon\www\Capstone\Capstone'; $env:DB_DATABASE='db_capstone_demo'; $env:CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED='true'; php artisan serve --host=127.0.0.1 --port=8001`.
+>   Stop with `Ctrl+C`, or `Get-NetTCPConnection -LocalPort 8001 -State Listen | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ }`.
+>   Process env wins over `.env` (immutable `Env` repository; `bootstrap/cache/config.php` absent) and Symfony passes it to the serve child
+>   (both verified). Because sessions/cache/queue drivers are `database`, demo writes go to `db_capstone_demo`.
+> - **Live `db_capstone` moved since the backup:** read-only counts are now users **5**, batches **12**, activity_logs **37**,
+>   stock_ins **7**, sessions **2** (backup: 4 / 11 / 33 / 5 / 6); mortality/regraft/stock_outs/stock_out_details are unchanged.
+>   The deltas are the new user id 5 `staff1` (displayed `2026-11-04 18:36:34`), batch id 12 `B007` (user 5, `2026-11-04 18:37:03`),
+>   two stock-ins and activity rows **34–37**; sessions **−4** is driver churn. The literal `created_at > '2026-11-05 02:19:57'`
+>   filter returns **0 rows** because the session TZ is `SYSTEM` (UTC+8) while the dump wrote TIMESTAMP text under `TIME_ZONE='+00:00'`;
+>   use IDs/activity sequence, not that literal string. **No write of any kind was made to `db_capstone` in this session — SELECTs only.**
+> - **Not done:** demo server not started; no migrate/seed/tests run; `.env`, config and project files unchanged; nothing staged/committed.
+>   Temp helpers outside the repo: `...\Temp\opencode\env_probe.php`, `...\Temp\opencode\stage_b_permissions.sql`.
+> - **Next:** (1) start the demo on `:8001` with the switch ON and run the controlled test — one Mortality and one Stock Out submission
+>   as Staff, Manager queue/approve/reject, Administrator read-only; (2) confirm the live `:8000` app and `db_capstone` stay untouched;
+>   (3) refresh `db_capstone_demo` from a newer backup only with explicit approval; (4) commit/push this handoff and the register only with explicit approval.
+>
+> ### ▶ Previous snapshot (RBAC template alignment merged + pushed — **2026-11-05; HEAD `77aea32`; `master` IN SYNC WITH `origin/master`; SWITCH OFF; LIVE DB MIGRATED + FOUR-ACCOUNT PERMISSIONS APPLIED**)
 >
 > - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read
 >   `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. The live DB is already
 >   migrated and permission-updated — **do not re-apply either change**. Tests only on
 >   `db_capstone_test`; no live SQL/write without a fresh verified backup and explicit sign-off.
-> - **Git:** HEAD `1d447c1` — `docs(handoff): record the live Phase 3 deployment state`; `master` is
->   **1 commit ahead of `origin/master`** (the handoff commit only), **not pushed**. The Phase 3 merge
->   `7035b64` is already on `origin/master`; the local feature branch remains at `f6a0db2` (not
->   deleted). This new handoff edit is uncommitted; the untracked
->   `docs/CacaoTrack_Phase2_Decision_Register.md` remains beside it.
+> - **Git:** HEAD `77aea32` — `Merge branch 'fix/admin-template-wording'`; `master` is **in sync with
+>   `origin/master` (0/0)**, pushed `7035b64..77aea32`. The feature commit is `7b7a43e`
+>   (`fix(rbac): align the Administrator and Manager default templates`); the local branch
+>   `fix/admin-template-wording` remains at `7b7a43e` (not deleted). This handoff edit is uncommitted;
+>   the untracked `docs/CacaoTrack_Phase2_Decision_Register.md` remains beside it.
 > - **Commit stack:** the merged Phase 3 branch contains the switch, RBAC/hard rules, shared direct
 >   actions, submission capture, Staff list / Manager queue, approve, reject/D6, resubmission,
 >   switch-on guards/navigation, deletion guards, docs, and the raw-SQL guard `f6a0db2`.
@@ -25,9 +102,12 @@
 >   date-based `OperationalCutover`. New routes 404 while OFF; submission links and the Manager
 >   pending count appear on the sidebar/Dashboard only while ON.
 > - **Permissions:** added `submit_operations`, `verify_operations`, `view_operational_records`
->   (temporary 13-key catalog). Defaults: Staff + submit, Manager + verify, Administrator + view;
->   Administrator holds neither submit nor verify. `record_operations` and `manage_stock` remain.
->   User Management shows the new keys while the switch is OFF (owner decision).
+>   (temporary 13-key catalog). Defaults: Staff + submit, Manager + verify + `view_operational_records`,
+>   Administrator + `view_operational_records`; Administrator holds neither submit nor verify.
+>   `record_operations` and `manage_stock` remain in the catalog. New Administrator accounts from the
+>   template no longer receive `manage_stock` or `record_operations`; existing accounts that have them
+>   stored keep them (including live Administrator id 1). User Management shows the new keys while the
+>   switch is OFF (owner decision).
 > - **Hard rules:** submit + verify mutually exclusive for every role; canonical Administrator cannot
 >   hold submit/verify; existing Administrator-only `manage_users`/`correct_records` and reserved
 >   role-name rules remain. **A custom role holding `verify_operations` may verify** — the model is
@@ -43,8 +123,8 @@
 >   tests were unchanged: focused Mortality/Stock Out/Inventory/Regraft/Ledger **126 passed / 725
 >   assertions** before and after the extraction.
 > - **Verification:** every commit ran the full MySQL suite on `db_capstone_test`, Pint,
->   `view:cache` and `git diff --check`. Final suite after `f6a0db2`: **587 passed / 3,383
->   assertions**, 48.7 s; Pint passed.
+>   `view:cache` and `git diff --check`. Latest full suite (after `7b7a43e`): **587 passed / 3,398
+>   assertions**, 64.0 s; Pint passed, `view:cache` cached successfully, `git diff --check` clean.
 > - **Live DB (2026-11-05):** the two additive Phase 2 migrations are **applied** to `db_capstone` —
 >   `2026_11_04_000001_create_operational_submissions_table` and
 >   `2026_11_04_000002_create_operational_submission_records_table`. `migrate:status` is **0 Pending**;
@@ -59,13 +139,16 @@
 >   holds neither. Pre-update backup:
 >   `db_capstone_pre_phase3_permissions_20261105_021957.sql` (**45,349 bytes**, SHA-256
 >   `AD686C204A9DCE80BF8F6F131FD46DCB7C3ADF9C439B87DC29C08BC6836289DE`).
-> - **Live deployment scope:** no application code, route, view, seeder or test file changed; the live
->   changes were the two additive migrations and the four permission updates only. Do not re-apply them.
-> - **Template fix (branch `fix/admin-template-wording`, 2026-11-05):** new Administrator accounts from
->   the role template no longer receive `manage_stock` or `record_operations`; the Manager template now
->   includes `view_operational_records`. An existing account with `manage_stock` and/or
->   `record_operations` stored keeps them — including live Administrator id 1 — and no stored
->   permission, hard rule, migration or live data was changed.
+> - **Live deployment scope (2026-11-05):** no application code, route, view, seeder or test file changed
+>   at deployment time; the live changes were the two additive migrations and the four permission updates
+>   only. Do not re-apply them. The template fix below is a later code-only change; it did not touch the
+>   live DB or stored permissions.
+> - **Template fix (merged `77aea32`, 2026-11-05):** new Administrator accounts from the role template
+>   no longer receive `manage_stock` or `record_operations`; the Manager template now includes
+>   `view_operational_records`. An existing account with `manage_stock` and/or `record_operations`
+>   stored keeps them — including live Administrator id 1 — and no stored permission, hard rule,
+>   migration or live data was changed. Tests use the shared `userWithPermissions()` helper for
+>   operation routes instead of borrowing the Administrator template.
 > - **Switch remains OFF:** `cacaotrack.operational_submission.enabled` /
 >   `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED` is still **false**, so direct Mortality and Stock Out
 >   writes are unchanged. **Next:** owner check of each role with the switch off, then a controlled
@@ -85,17 +168,19 @@
 >   still use them); permission migration; corrections workflow / `record_corrections`; the other
 >   operational modules; COR-01; D11 mortality future-date; and the SCHEMA-01/SCHEMA-02 documentation
 >   items. Do not implement these without sign-off.
-> - **Next session order:** (1) review this handoff edit and commit/push it only with explicit owner
->   approval (it sits on top of `1d447c1`; the Phase 3 merge is already pushed); (2) owner check of
+> - **Next session order:** (1) commit/push this handoff edit only with explicit owner approval (it sits
+>   on top of `77aea32`; the template fix and Phase 3 merge are already pushed); (2) owner check of
 >   each role with the switch OFF; (3) controlled switch-on test with one Mortality and one Stock Out
 >   submission; (4) have the owner decide whether to update the decision register/canonical
->   PRD/ERD/Design/AGENTS for the implemented decisions (panelist/client confirmation is not sought);
->   (5) keep tests on `db_capstone_test` and never touch `db_capstone` without a fresh verified backup
->   and explicit sign-off.
-> - **Note:** `AGENTS.md` still carries the earlier Phase 3 “branch only” banner; update it in the
->   next docs commit if the owner wants AGENTS to match this merged/pushed state.
+>   PRD/ERD/Design/AGENTS for the implemented decisions, including the merged template change
+>   (panelist/client confirmation is not sought); (5) keep tests on `db_capstone_test` and never touch
+>   `db_capstone` without a fresh verified backup and explicit sign-off.
+> - **Note:** `AGENTS.md` still carries the earlier Phase 3 “branch only” banner and does not record the
+>   merged template change; update it in a docs commit if the owner wants AGENTS to match the current
+>   state.
 > - **Working tree:** `M session.handoff.md` (this update) + untracked
->   `docs/CacaoTrack_Phase2_Decision_Register.md`; nothing staged.
+>   `docs/CacaoTrack_Phase2_Decision_Register.md`; nothing staged. Do not commit/push either without
+>   explicit approval.
 >
 > ### ▶ Previous snapshot (Phase 2 foundation implemented — **OPERATIONAL SUBMISSION TABLES, MODELS, GUARDS, DECISIONS; MERGED `d17b686`; PUSHED; APPROVAL WORKFLOW STILL NOT IMPLEMENTED**)
 >
