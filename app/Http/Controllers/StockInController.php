@@ -9,6 +9,8 @@ use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\Supplier;
 use App\Support\DuplicateSubmissionGuard;
+use App\Support\OperationalSubmissionVisibility;
+use App\Support\SubmissionWorkflowSwitch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -27,6 +29,11 @@ class StockInController extends Controller
      */
     public function index(Request $request): View
     {
+        if (SubmissionWorkflowSwitch::stockInEnabled()
+            && ! OperationalSubmissionVisibility::canViewAll($request->user())) {
+            abort(403);
+        }
+
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,supplier_id'],
