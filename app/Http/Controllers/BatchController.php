@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\RecordBatch;
+use App\Exceptions\BatchCodeLockTimeoutException;
 use App\Http\Requests\StoreBatchRequest;
 use App\Http\Requests\UpdateBatchRequest;
 use App\Models\ActivityLog;
@@ -94,34 +96,19 @@ class BatchController extends Controller
         ]);
     }
 
-    public function store(StoreBatchRequest $request): RedirectResponse
+    public function store(StoreBatchRequest $request, RecordBatch $batches): RedirectResponse
     {
-        $validated = $request->validated();
-
-        DB::transaction(function () use ($validated): void {
+        try {
             // FR-06: Batch Code and Grafted Date are system-assigned when a
             // batch is established — the next free root code and today's date
             // (see Batch::storeRules()). The operator supplies only the batch's
             // own choices (Scion Variety / Total Grafted / Status).
-            $batch = Batch::create([
-                'batch_code' => Batch::nextBatchCode(),
-                'grafted_date' => now()->toDateString(),
-                'scion_variety_id' => $validated['scion_variety_id'] ?? null,
-                'total_grafted' => $validated['total_grafted'],
-                'status' => $validated['status'],
-                'user_id' => Auth::id(),
-                // Provisional default 1 (pending PRD `OD-3`): a new batch
-                // starts with its full grafted population available.
-                'available_count' => $validated['total_grafted'],
-                'created_at' => now(),
-            ]);
-
-            ActivityLog::record(
-                null,
-                ActivityLog::TYPE_BATCH_CREATED,
-                "Created batch {$batch->batch_code}."
-            );
-        });
+            $batches->createDirect($request->validated(), (int) Auth::id());
+        } catch (BatchCodeLockTimeoutException $exception) {
+            return redirect()
+                ->route('operational.batches')
+                ->with('error', $exception->getMessage());
+        }
 
         return redirect()
             ->route('operational.batches')

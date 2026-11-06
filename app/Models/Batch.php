@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Actions\RecordBatch;
 use App\Actions\RegraftBatch;
 use App\Models\Concerns\Archivable;
 use Illuminate\Database\Eloquent\Builder;
@@ -566,26 +567,33 @@ class Batch extends Model
     }
 
     /**
-     * The next free root batch code (FR-06): `B` + the next sequential
-     * 3-digit number (`B001`, `B002`, …). Regraft sub-batch codes
-     * (`B001-R1`) and any other non-`B<digits>` codes are ignored, so the
-     * sequence always continues past the highest established root batch.
+     * The next free root batch code for a prefix. Own-nursery batches use `B`
+     * and supplier deliveries use `S` (Phase 4b); each sequence is independent.
+     * Regraft sub-batch codes (`B001-R1`, `S001-R1`) and any other
+     * non-`<prefix><digits>` codes are ignored, so the sequence always continues
+     * past the highest established root batch.
      *
-     * Called inside the create transaction; the `batch_code` unique index
-     * remains the final guard against a duplicate.
+     * The shared {@see RecordBatch} action takes the named MySQL
+     * lock for the prefix before calling this, so same-prefix assignments are
+     * serialized. The `batch_code` unique index remains the final guard against
+     * a duplicate (one retry is performed by the action).
      */
-    public static function nextBatchCode(): string
+    public static function nextBatchCode(string $prefix = 'B'): string
     {
+        if (! in_array($prefix, ['B', 'S'], true)) {
+            throw new \InvalidArgumentException('Unsupported batch code prefix.');
+        }
+
         $highest = self::query()
-            ->where('batch_code', 'like', 'B%')
+            ->where('batch_code', 'like', $prefix.'%')
             ->pluck('batch_code')
-            ->reduce(function (int $carry, string $code): int {
-                return preg_match('/^B(\d+)$/', $code, $matches)
+            ->reduce(function (int $carry, string $code) use ($prefix): int {
+                return preg_match('/^'.$prefix.'(\d+)$/', $code, $matches)
                     ? max($carry, (int) $matches[1])
                     : $carry;
             }, 0);
 
-        return 'B'.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
+        return $prefix.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /**
