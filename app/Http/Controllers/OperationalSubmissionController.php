@@ -6,6 +6,7 @@ use App\Actions\ApproveOperationalSubmission;
 use App\Actions\RejectOperationalSubmission;
 use App\Actions\SubmitOperationalSubmission;
 use App\Exceptions\ApprovalRevalidationException;
+use App\Exceptions\BatchCodeLockTimeoutException;
 use App\Http\Requests\RejectOperationalSubmissionRequest;
 use App\Http\Requests\StoreBatchCreationSubmissionRequest;
 use App\Http\Requests\StoreMortalitySubmissionRequest;
@@ -378,6 +379,11 @@ class OperationalSubmissionController extends Controller
 
         try {
             $this->approvals->execute($submission, $managerId);
+        } catch (BatchCodeLockTimeoutException $exception) {
+            // Infrastructure error: leave the submission Pending; never auto-reject.
+            return redirect()
+                ->route('operational.submissions.show', $submission)
+                ->with('error', $exception->getMessage());
         } catch (ApprovalRevalidationException $exception) {
             try {
                 $this->rejections->automatic($submission, $managerId, $exception->getMessage());

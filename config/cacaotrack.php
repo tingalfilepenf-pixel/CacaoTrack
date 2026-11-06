@@ -33,6 +33,8 @@ return [
     'operational_submission' => [
         'enabled' => env('CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED', false),
 
+        'batch_code_lock_timeout' => env('CACAOTRACK_BATCH_CODE_LOCK_TIMEOUT', 10),
+
         'modules' => [
             'stock_in' => env('CACAOTRACK_STOCK_IN_SUBMISSION_ENABLED', false),
             'batch_creation' => env('CACAOTRACK_BATCH_SUBMISSION_ENABLED', false),

@@ -495,7 +495,13 @@
                         <h3>Official records created</h3>
                         <ul>
                             @foreach ($submission->records as $record)
-                                <li>{{ $record->record_type }} #{{ $record->record_id }}</li>
+                                <li>
+                                    @if ($record->record_type === \App\Models\OperationalSubmissionRecord::RECORD_TYPE_BATCH)
+                                        Batch {{ $officialBatchCodes[$submission->submission_id] ?? '#'.$record->record_id }}
+                                    @else
+                                        {{ $record->record_type }} #{{ $record->record_id }}
+                                    @endif
+                                </li>
                             @endforeach
                         </ul>
                     </div>
