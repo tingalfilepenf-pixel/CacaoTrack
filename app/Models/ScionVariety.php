@@ -228,6 +228,14 @@ class ScionVariety extends Model
             $blockers[] = 'pending stock-in submissions';
         }
 
+        $hasPendingBatchCreation = array_key_exists('pending_batch_creation_submission_exists', $this->attributes)
+            ? (bool) $this->attributes['pending_batch_creation_submission_exists']
+            : OperationalSubmission::hasPendingBatchCreationScionVariety((int) $this->scion_variety_id);
+
+        if ($hasPendingBatchCreation) {
+            $blockers[] = 'pending batch-creation submissions';
+        }
+
         return $blockers;
     }
 

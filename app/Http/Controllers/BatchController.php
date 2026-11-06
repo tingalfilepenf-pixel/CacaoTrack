@@ -120,7 +120,7 @@ class BatchController extends Controller
 
     public function update(UpdateBatchRequest $request, Batch $batch): RedirectResponse
     {
-        $used = $batch->hasOperationalRecords();
+        $used = $batch->hasOperationalRecords() || $batch->hasTrackedStockUse();
 
         $validated = $request->validated();
 

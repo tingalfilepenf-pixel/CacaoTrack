@@ -263,6 +263,10 @@
                         <i class="bi bi-lock me-1"></i>
                         This batch already has operational records, so total grafted is locked.
                     </div>
+                    <div class="alert alert-warning small" id="editTrackedStockNotice" style="display: none;">
+                        <i class="bi bi-lock me-1"></i>
+                        This batch was created from recorded stock use, so its code, scion variety and total grafted are locked.
+                    </div>
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label text-muted small fw-bold" for="editBatchCode">Batch Code <span class="text-danger">*</span></label>
@@ -484,6 +488,7 @@
                 }
 
                 const used = button.getAttribute('data-used') === '1';
+                const tracked = button.getAttribute('data-tracked') === '1';
                 applyAction(document.getElementById('editBatchForm'), button.getAttribute('data-batch-id'));
                 document.getElementById('editBatchCode').value = button.getAttribute('data-batch-code') || '';
                 document.getElementById('editScionVariety').value = button.getAttribute('data-scion-variety-id') || '';
@@ -492,8 +497,11 @@
 
                 const totalInput = document.getElementById('editTotalGrafted');
                 totalInput.value = button.getAttribute('data-total-grafted') || '';
-                totalInput.disabled = used;
+                totalInput.disabled = used || tracked;
                 document.getElementById('editCountsLockedNotice').style.display = used ? 'block' : 'none';
+                document.getElementById('editTrackedStockNotice').style.display = tracked ? 'block' : 'none';
+                document.getElementById('editBatchCode').disabled = tracked;
+                document.getElementById('editScionVariety').disabled = tracked;
             });
         }
 

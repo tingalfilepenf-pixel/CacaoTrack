@@ -1,5 +1,6 @@
 @php
     $used = $batch->hasOperationalRecords();
+    $tracked = $batch->hasTrackedStockUse();
     $deletable = $batch->canBeDeleted();
     $latestInventory = $batch->latestInventory;
     $stockOutCount = array_key_exists('stock_out_details_count', $batch->getAttributes())
@@ -22,6 +23,7 @@
         'inventory_status' => $latestInventory?->status,
         'stock_outs' => $stockOutCount,
         'used' => $used,
+        'tracked' => $tracked,
     ];
 
     // Every nested row carries a class for each ancestor so a parent's toggle
@@ -48,6 +50,12 @@
 
         @if ($batch->isSubBatch())
             <span class="badge bg-info-subtle text-info-emphasis ms-1">Sub-batch</span>
+        @endif
+
+        @if (\App\Support\SubmissionWorkflowSwitch::batchCreationEnabled())
+            <span class="badge ms-1 {{ $batch->source === \App\Models\Batch::SOURCE_SUPPLIER ? 'bg-primary-subtle text-primary-emphasis' : 'bg-success-subtle text-success-emphasis' }}">
+                {{ $batch->sourceLabel() }}
+            </span>
         @endif
 
         @if ($parentMissing && $parentCode)
@@ -78,7 +86,8 @@
             data-total-grafted="{{ $batch->total_grafted }}"
             data-grafted-date="{{ $batch->grafted_date?->format('Y-m-d') }}"
             data-status="{{ $batch->status }}"
-            data-used="{{ $used ? '1' : '0' }}" title="Edit">
+            data-used="{{ $used ? '1' : '0' }}"
+            data-tracked="{{ $tracked ? '1' : '0' }}" title="Edit">
             <i class="bi bi-pencil"></i>
         </button>
         @if ($deletable)

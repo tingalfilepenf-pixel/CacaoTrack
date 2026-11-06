@@ -744,6 +744,10 @@ class Batch extends Model
             $blockers[] = 'pending stock-out submissions';
         }
 
+        if ($this->hasTrackedStockUse()) {
+            $blockers[] = 'nursery stock used';
+        }
+
         return $blockers;
     }
 

@@ -186,6 +186,20 @@ class OperationalSubmission extends Model
             ->exists();
     }
 
+    /**
+     * Whether a pending Batch Creation submission references this scion
+     * variety. The pending row has not created an official Batch yet, so the
+     * master-data deletion guard must read the frozen payload.
+     */
+    public static function hasPendingBatchCreationScionVariety(int $scionVarietyId): bool
+    {
+        return static::query()
+            ->where('submission_type', self::TYPE_BATCH_CREATION)
+            ->where('status', self::STATUS_PENDING)
+            ->where('payload->scion_variety_id', $scionVarietyId)
+            ->exists();
+    }
+
     public function stockInSummary(): string
     {
         $parts = [];

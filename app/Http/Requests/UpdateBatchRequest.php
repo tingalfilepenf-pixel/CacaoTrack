@@ -25,6 +25,13 @@ class UpdateBatchRequest extends AppFormRequest
             unset($rules['total_grafted']);
         }
 
+        if ($batch instanceof Batch && $batch->hasTrackedStockUse()) {
+            // The approved own-nursery batch's quantity, variety and code are
+            // tied to the stock it consumed. Status and grafted date stay
+            // editable as before.
+            unset($rules['total_grafted'], $rules['scion_variety_id'], $rules['batch_code']);
+        }
+
         return $rules;
     }
 

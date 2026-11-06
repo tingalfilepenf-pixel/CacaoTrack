@@ -10,6 +10,7 @@ use App\Models\RegraftRecord;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\StockOut;
+use App\Support\StockBalances;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -260,6 +261,21 @@ class CorrectRecord
     public function stockIn(StockIn $record, array $data, ?int $actorId = null): array
     {
         return DB::transaction(function () use ($record, $data, $actorId): array {
+            // Lock the seedling pool first. There is no single balance row, so
+            // every seedling-only Stock In row is locked in ascending id order;
+            // this keeps corrections and batch approval on the same
+            // deterministic pool -> variety order.
+            StockBalances::lockSeedlingPool();
+
+            // Lock every variety whose received stock this correction can
+            // change, in ascending id order, before reading consumption.
+            $varieties = ScionVariety::lockForScionStock([
+                $record->scion_variety_id !== null ? (int) $record->scion_variety_id : null,
+                isset($data['scion_variety_id']) && $data['scion_variety_id'] !== null
+                    ? (int) $data['scion_variety_id']
+                    : null,
+            ]);
+
             $locked = StockIn::query()->lockForUpdate()->findOrFail($record->stock_in_id);
 
             $oldQuantity = (int) $locked->quantity;
@@ -271,9 +287,23 @@ class CorrectRecord
                 ? (int) $data['scion_variety_id']
                 : null;
 
-            // Lock every variety whose received stock this correction can
-            // change, in ascending id order, before reading consumption.
-            $varieties = ScionVariety::lockForScionStock([$oldVarietyId, $newVarietyId]);
+            if ($oldVarietyId !== null && ! $varieties->has($oldVarietyId)) {
+                $varieties = $varieties->merge(ScionVariety::lockForScionStock([$oldVarietyId]));
+            }
+
+            // A correction must never leave the seedling pool with less
+            // received stock than approved own-nursery batches already used.
+            $seedlingsAfter = StockBalances::seedlingsReceived()
+                - ($oldVarietyId === null ? $oldQuantity : 0)
+                + ($newVarietyId === null ? $newQuantity : 0);
+
+            if ($seedlingsAfter < StockBalances::seedlingsUsed()) {
+                $used = StockBalances::seedlingsUsed();
+
+                $this->fail('stockin_correction', [
+                    ($oldVarietyId === null && $newVarietyId === null ? 'quantity' : 'scion_variety_id') => "This correction would leave {$seedlingsAfter} seedlings received, below the {$used} already used by nursery batches.",
+                ]);
+            }
 
             // Reducing, re-assigning or removing this receipt must never leave
             // the old variety with less received stock than it has consumed.

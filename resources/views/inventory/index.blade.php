@@ -224,6 +224,11 @@
                                     @if ($batch->isSubBatch())
                                         <span class="badge bg-info-subtle text-info-emphasis ms-1">Regrafted</span>
                                     @endif
+                                    @if ($batchCreationEnabled)
+                                        <span class="badge ms-1 {{ $batch->source === \App\Models\Batch::SOURCE_SUPPLIER ? 'bg-primary-subtle text-primary-emphasis' : 'bg-success-subtle text-success-emphasis' }}">
+                                            {{ $batch->sourceLabel() }}
+                                        </span>
+                                    @endif
                                     @if ($parentMissing && $parentCode)
                                         <span class="text-muted small">(parent: {{ $parentCode }})</span>
                                     @endif
