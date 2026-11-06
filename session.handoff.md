@@ -1,6 +1,50 @@
 # Session Handoff — CacaoTrack
 
-> ### ▶ Continue here (latest: PHASE 4a MERGED + PUSHED — **2026-11-06; `master` = `origin/master` = `b2089df`; feature branch merged with `--no-ff`; UI redesign and tests committed; full suite 625 passed / 3,629 assertions; no live `db_capstone` write**)
+> ### ▶ Continue here (latest: LIVE APPROVAL MODE + PHASE 4b MIGRATION ON `db_capstone` — **2026-11-06; `master` = `origin/master` = `f575eb9`; migration `2026_11_06_000001` applied to live DB; all three `CACAOTRACK_*SUBMISSION_ENABLED` flags **true** in live `.env`; live `:8000` runs approval for Mortality, Stock Out, Stock In and Batch Creation; direct forms for those four are disabled; no commit/push**)
+>
+> - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. Tests only on `db_capstone_test`; never write to `db_capstone` without a fresh verified backup and explicit sign-off. The demo DB is **`db_capstone_demo` only**.
+> - **Git:** `master` and `origin/master` are both **`f575eb9`** (0 ahead / 0 behind). Working tree: `M session.handoff.md` + untracked `docs/CacaoTrack_Phase2_Decision_Register.md`; `docs/phase4b_step0.md` and `docs/phase4b_live_migration.md` were moved outside the repo to `C:\Users\Filepen\AppData\Local\Temp\opencode\`. Nothing staged or committed. Commit/push only with explicit approval.
+> - **Live Phase 4b migration (2026-11-06):** `php artisan migrate --path=database/migrations/2026_11_06_000001_add_source_and_stock_use_to_batches_table.php --force` against **`db_capstone` only** (442.72 ms). `migrate:status` is now **0 Pending** (**56** migrations). `batches` gained `source` varchar(20) NOT NULL DEFAULT `'own'`, nullable `supplier_id` FK → `suppliers.supplier_id` **ON DELETE RESTRICT**, nullable `seedlings_used` and `scion_used`, and `batches_source_index`. All **12** existing batches have `source = 'own'` and `supplier_id` / `seedlings_used` / `scion_used` **NULL**; no other table's row count changed (migrations **55 → 56** only). `php artisan cacao:health` **PASSED** — 12 batches satisfy all invariants.
+> - **Backup (verified, outside the repository):** `C:\Users\Filepen\AppData\Local\Temp\opencode\db_capstone_pre_phase4b_20261106_190332.sql` — **49,685 B**, SHA-256 `0B595A08DE3522DE67B9216D6DF35D97744DD2C509B16DC8B4B7E33801DAE797`, trailer `-- Dump completed on 2026-11-06 19:03:32`, **25 `CREATE TABLE`** (matches the 25 live tables), and every non-empty table's dump row count matched the live count before migration.
+> - **Staged execution:** the instruction file `C:\Users\Filepen\AppData\Local\Temp\opencode\phase4b_live_migration.md` was missing; the session used the untracked repo copy `docs/phase4b_live_migration.md` (content supplied by the owner). Stage A was read-only inspection, Stage B was backup + `migrate --pretend`, and Stage C was the single-file apply and verification above. Nothing else was migrated, seeded, truncated or altered.
+> - **Live flags are ON:** on 2026-11-06 the live `.env` sets `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED=true`, `CACAOTRACK_STOCK_IN_SUBMISSION_ENABLED=true` and `CACAOTRACK_BATCH_SUBMISSION_ENABLED=true`. The live app on `:8000` therefore runs approval for Mortality, Stock Out, Stock In and Batch Creation; the direct forms for those four are disabled and their direct POSTs return 404.
+> - **Deployment status:** master code matches the live schema. The demo DB `db_capstone_demo` already had this migration applied earlier (11 batches); live `db_capstone` now has 12 batches and is migrated.
+> - **Rollback:** set the three flags to `false` (or remove the lines) in `.env` and restart the server; direct recording returns. Nothing is deleted.
+> - **Supersedes older entries:** any older statement in this handoff that describes the live app as saving directly or the submission flags as OFF is historical; this entry is the current state.
+> - **Docs status:** only this handoff is edited. `AGENTS.md` still carries the Phase 3 “branch only” banner and does not record Phase 4a/4b or this live migration; PRD/ERD/Design and the untracked register were not edited. Canonical PRD/ERD and `_REVISED` must stay byte-identical; `docs/*_UPDATED.md` is frozen. Update only with owner approval.
+> - **Next:** (1) owner review and controlled demo walk-through as Staff submit + Manager approve/reject + Administrator read-only, including own-nursery and supplier-delivery, now that the live app is in approval mode; (2) decide and schedule the documentation pass below; (3) decide on the optional Manager opening adjustment below; (4) keep tests on `db_capstone_test` and never touch live data without backup + sign-off; (5) commit/push this handoff and the untracked register only with explicit approval.
+> - **Open item — Own nursery balances:** the old batches used more seedlings and scion than the Stock In records hold (**1,538** grafted vs **1,200** seedlings received; Batangas **953** vs **905**; Toledo **200** vs **50**), so Own nursery balances can look larger than real stock. The existing batches remain undeducted and no opening adjustment was created; an optional Manager opening adjustment can be recorded later.
+> - **Open item — documentation pass:** the ERD, PRD, `AGENTS.md` (its old “Phase 3 branch only” banner) and Design still need the documentation pass, including the reversal of OD-8 and OD-14.
+> - **Handoff hash:** pre-edit `752bd55ca0048e354599ca0873cfa35c0f52e1b2`; run `git hash-object session.handoff.md` after this edit and record it if committing later.
+>
+> ### ▶ Previous snapshot (PHASE 4b BATCH CREATION APPROVAL MERGED + PUSHED — **2026-11-06; `master` = `origin/master` = `f575eb9`; six commits on `feat/phase-4b-batch-creation-approval`; full suite 666 passed / 3,913 assertions; demo DB migrated, live `db_capstone` was NOT migrated at that time**)
+>
+> - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. Tests only on `db_capstone_test`; never write to `db_capstone` without a fresh verified backup and explicit sign-off. The demo DB is **`db_capstone_demo` only**.
+> - **Git:** `master` and `origin/master` are both **`f575eb9`** (`Merge branch 'feat/phase-4b-batch-creation-approval'`), pushed `76eb581..f575eb9`. The six feature commits are `73b7ac9` (source/stock-use columns), `dd345c2` (RecordBatch + named code lock), `7e4154b` (derived seedling/scion balances), `397f8d7` (capture), `4c42eea` (approval), `a398fa6` (guards). The feature branch remains at `a398fa6` (not deleted). Working tree: `M session.handoff.md` + untracked `docs/CacaoTrack_Phase2_Decision_Register.md` and `docs/phase4b_step0.md`; nothing staged. Commit/push only with explicit approval.
+> - **Phase 4b implemented (owner decisions):** only Batch Creation became a submission; own-nursery vs supplier-delivery sources; `source`/`supplier_id`/`seedlings_used`/`scion_used` backfilled `own`; own grafted date frozen at submission, supplier date = delivery date; named MySQL lock `cacaotrack:batch_code:B`/`:S` taken first in `RecordBatch`, released in `finally`, unique index + one retry; approval lock order = named code lock → submission → seedling pool rows (ascending) → scion variety (ascending) → supplier; lock timeout leaves the submission Pending (not auto-rejected); D6 for revalidation failures; supplier archive stays allowed with the two owner messages; tracked own batches lock code/variety/total on edit and cannot be deleted; pending Batch Creation blocks scion-variety deletion; Stock In corrections cannot reduce seedling/scion below own-batch use; source badges only while the module is ON.
+> - **New flags/routes:** `CACAOTRACK_BATCH_SUBMISSION_ENABLED` (`cacaotrack.operational_submission.modules.batch_creation`) default **false**, ANDed with the master switch; new `GET/POST /operational/submissions/batch-creation` + resubmit routes; direct `POST /operational/batches/manage` returns 404 only when the batch module is ON. OFF behavior is unchanged.
+> - **Verification:** final full MySQL suite on `db_capstone_test` **666 passed / 3,913 assertions, 80,661 ms** on the post-merge tree; each of the six commits was green. Focused direct set for commits 2 and 3: **226 passed / 1,202 assertions** before/after each (31.7/25.6 s and 31.0/24.9 s). Pint, `view:cache`, `git diff --check` clean after every commit and finally. The only existing test file changed was `OperationalSubmissionFoundationTest` (catalog lists); `OperationalSubmissionFactory` was extended, and `RegraftFlowTest` assertions were untouched.
+> - **Asset note:** `resources/css/app.css` gained `.type-batch`; `npm run build` was not run in the Phase 4b gate. Run it before a production/build-based UI review if needed.
+> - **Demo DB (`db_capstone_demo` only):** migration `2026_11_06_000001_add_source_and_stock_use_to_batches_table` applied **only** there (up 412.45 ms); batch count before/after **11/11**, every row `source = 'own'`, `supplier_id`/`seedlings_used`/`scion_used` null; 1 operational submission. Derived balances: seedlings received **1,050**, used **0**, available **1,050**; Batangas received **705**, regraft-used **705**, available **0**; Toledo received **0**, regraft-used **50**, signed balance **−50**, available **0** (pre-existing demo inconsistency). The demo server was NOT started and port 8000 was not touched.
+> - **Live gap report (read-only `db_capstone`, no write):** 7 root batches, root `total_grafted` **1,538**; per variety Batangas **953**, Toledo **200**, no variety **385**; received seedlings **1,200** vs 1,538 → **−338**; Batangas **905** vs 953 → **−48**; Toledo **50** vs 200 → **−150**. Existing batches remain undeducted; no opening adjustment created.
+> - **LIVE DEPLOYMENT PRECONDITION — SUPERSEDED 2026-11-06:** at the time of this snapshot the new batches migration was **NOT** applied to live `db_capstone`. The migration is now applied and the live app runs in approval mode (see the entry above). No live migration, seeder, permission edit, HTTP request or test was run against `db_capstone` in this snapshot's session.
+> - **Docs status:** only this handoff is edited. `AGENTS.md` still carries the Phase 3 “branch only” banner and does not record Phase 4a/4b; PRD/ERD/Design and the untracked register were not edited. Canonical PRD/ERD and `_REVISED` must stay byte-identical; `docs/*_UPDATED.md` is frozen. Update only with owner approval.
+> - **Next:** (1) owner review and controlled demo walk-through as Staff submit + Manager approve/reject + Administrator read-only, including own-nursery and supplier-delivery; (2) live `db_capstone` migration — **DONE 2026-11-06**, see the entry above; (3) decide whether to update AGENTS/PRD/ERD/Design and the register for Phase 4a/4b; (4) keep tests on `db_capstone_test` and never touch live data without backup + sign-off; (5) commit/push this handoff only with explicit approval.
+> - **Handoff hash:** pre-edit `b7c0113fd0257565c4f3adef0e4e7f5ac3c9bc2f`; run `git hash-object session.handoff.md` after this edit and record it if committing later.
+>
+> ### ▶ Previous snapshot (PHASE 4b STEP 0 READY — **2026-11-06; `master` = `origin/master` = `76eb581`; Phase 4a merged + handoff pushed; Phase 4b Step 0 instructions available; no live `db_capstone` write**)
+>
+> - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. Tests only on `db_capstone_test`; never write to `db_capstone` without a fresh verified backup and explicit sign-off. The demo DB is **`db_capstone_demo` only**.
+> - **Git:** `master` and `origin/master` are both **`76eb581`** (`docs(handoff): record the Phase 4a merge and redesign`), pushed `b2089df..76eb581`; the Phase 4a merge is `b2089df` (pushed `77aea32..b2089df`). The feature branch `feat/phase-4a-stock-in-approval` remains at `2faffc8` (not deleted). Working tree: nothing staged; untracked `docs/CacaoTrack_Phase2_Decision_Register.md` and `docs/phase4b_step0.md`. Commit/push only with explicit approval.
+> - **Phase 4b Step 0 is ready:** the earlier attempt was blocked because `C:\Users\Filepen\AppData\Local\Temp\opencode\phase4b_step0.md` was missing (a recursive Temp search found no `*phase4b*` file). A copy now exists in the repo at **`docs/phase4b_step0.md`** (11,344 B, SHA-1 `67bb646dd2e35bcb026087c00e8e641cb838f08e`), untracked. It is the read-only Step 0 inspection/design brief for Batch Creation approval (Own nursery stock deduction + Supplier delivery). Do not stage/commit it without owner approval; do not copy it elsewhere into the repo.
+> - **Next:** (1) read `docs/phase4b_step0.md` in full; (2) run its baseline check against `master` `76eb581` (Phase 3 + template fix + Phase 4a merged; the tree normally shows only the two untracked docs), then produce the 12-part read-only report and stop at "waiting for continue"; (3) no edits, no migrations, no live `db_capstone` access; (4) owner review of the redesigned submission screens/demo remains pending; (5) docs updates (AGENTS/PRD/ERD/Design/register) still require owner approval.
+> - **Live / demo:** no write, migration, seeder or permission edit on `db_capstone`. The demo server on `:8001` was stopped; the live `:8000` server is untouched (`GET /login` **200**). Restart the demo in a separate shell with
+>   `Set-Location 'C:\laragon\www\Capstone\Capstone'; $env:DB_DATABASE='db_capstone_demo'; $env:CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED='true'; $env:CACAOTRACK_STOCK_IN_SUBMISSION_ENABLED='true'; php artisan serve --host=127.0.0.1 --port=8001`
+>   — do not edit `.env` and do not disturb `:8000`.
+> - **Docs status:** `AGENTS.md` still carries the older Phase 3 "branch only" banner and does not record Phase 4a or the UI redesign; PRD/ERD/Design and the untracked decision register were not edited. Canonical PRD/ERD and their `_REVISED` mirrors must stay byte-identical; `docs/*_UPDATED.md` is frozen.
+> - **Handoff hash:** run `git hash-object session.handoff.md` after this edit and record it if committing later.
+>
+> ### ▶ Previous snapshot (PHASE 4a MERGED + PUSHED — **2026-11-06; `master` = `origin/master` = `b2089df`; feature branch merged with `--no-ff`; UI redesign and tests committed; full suite 625 passed / 3,629 assertions; no live `db_capstone` write**)
 >
 > - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. Tests only on `db_capstone_test`; never write to `db_capstone` without a fresh verified backup and explicit sign-off. The demo DB is **`db_capstone_demo` only**.
 > - **Git:** `master` and `origin/master` are both **`b2089df`** — `Merge branch 'feat/phase-4a-stock-in-approval'`; pushed `77aea32..b2089df`. The merge brings in Phase 4a (5 commits ending `50264de`) plus the two new commits `9cab311` (`feat(submissions): redesign the submission list, queue and review screens`) and `2faffc8` (`test(submissions): cover the queue tabs, search and review screens`). The feature branch remains at `2faffc8` (not deleted). Working tree: `M session.handoff.md` (this update) + untracked `docs/CacaoTrack_Phase2_Decision_Register.md`; nothing staged. Commit/push only with explicit approval.
@@ -77,7 +121,7 @@
 >   as Staff, Manager queue/approve/reject, Administrator read-only; (2) confirm the live `:8000` app and `db_capstone` stay untouched;
 >   (3) refresh `db_capstone_demo` from a newer backup only with explicit approval; (4) commit/push this handoff and the register only with explicit approval.
 >
-> ### ▶ Previous snapshot (RBAC template alignment merged + pushed — **2026-11-05; HEAD `77aea32`; `master` IN SYNC WITH `origin/master`; SWITCH OFF; LIVE DB MIGRATED + FOUR-ACCOUNT PERMISSIONS APPLIED**)
+> ### ▶ Previous snapshot (RBAC template alignment merged + pushed — **2026-11-05; HEAD `77aea32`; `master` IN SYNC WITH `origin/master`; SWITCH OFF AT THAT TIME (superseded 2026-11-06 — live flags now true, see the entry above); LIVE DB MIGRATED + FOUR-ACCOUNT PERMISSIONS APPLIED**)
 >
 > - **Resume in a new session:** run everything from `C:\laragon\www\Capstone\Capstone`; read
 >   `AGENTS.md`, this entry, then `docs/CacaoTrack_Phase2_Decision_Register.md`. The live DB is already
@@ -106,8 +150,8 @@
 >   Administrator + `view_operational_records`; Administrator holds neither submit nor verify.
 >   `record_operations` and `manage_stock` remain in the catalog. New Administrator accounts from the
 >   template no longer receive `manage_stock` or `record_operations`; existing accounts that have them
->   stored keep them (including live Administrator id 1). User Management shows the new keys while the
->   switch is OFF (owner decision).
+>   stored keep them (including live Administrator id 1). User Management showed the new keys while the
+>   switch was OFF (owner decision at that time).
 > - **Hard rules:** submit + verify mutually exclusive for every role; canonical Administrator cannot
 >   hold submit/verify; existing Administrator-only `manage_users`/`correct_records` and reserved
 >   role-name rules remain. **A custom role holding `verify_operations` may verify** — the model is
@@ -149,10 +193,10 @@
 >   stored keeps them — including live Administrator id 1 — and no stored permission, hard rule,
 >   migration or live data was changed. Tests use the shared `userWithPermissions()` helper for
 >   operation routes instead of borrowing the Administrator template.
-> - **Switch remains OFF:** `cacaotrack.operational_submission.enabled` /
->   `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED` is still **false**, so direct Mortality and Stock Out
->   writes are unchanged. **Next:** owner check of each role with the switch off, then a controlled
->   switch-on test with one Mortality and one Stock Out submission.
+> - **Switch state (historical 2026-11-05):** at that time `cacaotrack.operational_submission.enabled` /
+>   `CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED` was **false**, so direct Mortality and Stock Out
+>   writes were unchanged. **Superseded 2026-11-06 — the live `.env` now sets all three submission
+>   flags true (see the entry above).**
 > - **Live account note:** the live Administrator still lacks `correct_records`; the older
 >   checklist-key note in §5a is historical.
 > - **Owner decisions used by this implementation (not yet written into the untracked register):**
@@ -170,8 +214,8 @@
 >   items. Do not implement these without sign-off.
 > - **Next session order:** (1) commit/push this handoff edit only with explicit owner approval (it sits
 >   on top of `77aea32`; the template fix and Phase 3 merge are already pushed); (2) owner check of
->   each role with the switch OFF; (3) controlled switch-on test with one Mortality and one Stock Out
->   submission; (4) have the owner decide whether to update the decision register/canonical
+>   each role under the then-current direct mode; (3) controlled switch-on test with one Mortality and
+>   one Stock Out submission; (4) have the owner decide whether to update the decision register/canonical
 >   PRD/ERD/Design/AGENTS for the implemented decisions, including the merged template change
 >   (panelist/client confirmation is not sought); (5) keep tests on `db_capstone_test` and never touch
 >   `db_capstone` without a fresh verified backup and explicit sign-off.
