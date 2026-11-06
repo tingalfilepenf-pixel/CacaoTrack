@@ -4,9 +4,15 @@
 @section('page_title', 'Batches')
 
 @section('page_actions')
-<button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBatchModal">
-    <i class="bi bi-plus-lg me-1"></i> Add Batch
-</button>
+@if ($batchCreationEnabled && $canSubmitBatch)
+    <a href="{{ route('operational.submissions.batch-creation.create') }}" class="btn btn-primary">
+        <i class="bi bi-send me-1"></i> Submit Batch
+    </a>
+@elseif (! $batchCreationEnabled)
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBatchModal">
+        <i class="bi bi-plus-lg me-1"></i> Add Batch
+    </button>
+@endif
 @endsection
 
 @section('content')
@@ -175,6 +181,7 @@
     </div>
 </div>
 
+@if (! $batchCreationEnabled)
 <!-- Add Batch Modal -->
 <div class="modal fade" id="addBatchModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -238,6 +245,7 @@
         </div>
     </div>
 </div>
+@endif
 
 <!-- Edit Batch Modal -->
 <div class="modal fade" id="editBatchModal" tabindex="-1" aria-hidden="true">
@@ -254,6 +262,10 @@
                     <div class="alert alert-warning small" id="editCountsLockedNotice" style="display: none;">
                         <i class="bi bi-lock me-1"></i>
                         This batch already has operational records, so total grafted is locked.
+                    </div>
+                    <div class="alert alert-warning small" id="editTrackedStockNotice" style="display: none;">
+                        <i class="bi bi-lock me-1"></i>
+                        This batch was created from recorded stock use, so its code, scion variety and total grafted are locked.
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -452,7 +464,7 @@
 
         @if (old('edit_batch_id'))
             new bootstrap.Modal(editModalEl).show();
-        @elseif ($errors->batch->any())
+        @elseif ($errors->batch->any() && $batchCreationEnabled === false)
             new bootstrap.Modal(addModalEl).show();
         @endif
 
@@ -476,6 +488,7 @@
                 }
 
                 const used = button.getAttribute('data-used') === '1';
+                const tracked = button.getAttribute('data-tracked') === '1';
                 applyAction(document.getElementById('editBatchForm'), button.getAttribute('data-batch-id'));
                 document.getElementById('editBatchCode').value = button.getAttribute('data-batch-code') || '';
                 document.getElementById('editScionVariety').value = button.getAttribute('data-scion-variety-id') || '';
@@ -484,8 +497,11 @@
 
                 const totalInput = document.getElementById('editTotalGrafted');
                 totalInput.value = button.getAttribute('data-total-grafted') || '';
-                totalInput.disabled = used;
+                totalInput.disabled = used || tracked;
                 document.getElementById('editCountsLockedNotice').style.display = used ? 'block' : 'none';
+                document.getElementById('editTrackedStockNotice').style.display = tracked ? 'block' : 'none';
+                document.getElementById('editBatchCode').disabled = tracked;
+                document.getElementById('editScionVariety').disabled = tracked;
             });
         }
 

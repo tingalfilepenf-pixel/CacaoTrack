@@ -24,10 +24,18 @@ class ApproveOperationalSubmission
         private readonly RecordMortality $mortality,
         private readonly RecordStockOut $stockOuts,
         private readonly RecordStockIn $stockIns,
+        private readonly RecordBatch $batches,
     ) {}
 
     public function execute(OperationalSubmission $submission, int $managerId): OperationalSubmission
     {
+        // Batch Creation owns the named code lock, which must be taken before
+        // the submission row lock (owner decision). It therefore runs its own
+        // transaction boundary.
+        if ($submission->submission_type === OperationalSubmission::TYPE_BATCH_CREATION) {
+            return $this->batches->approveCreation($submission, $managerId);
+        }
+
         return DB::transaction(function () use ($submission, $managerId): OperationalSubmission {
             /** @var OperationalSubmission $locked */
             $locked = OperationalSubmission::query()

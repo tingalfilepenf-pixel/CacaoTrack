@@ -61,11 +61,29 @@ class ScionVarietyController extends Controller
             ->unique()
             ->values();
 
+        $pendingBatchCreationVarietyIds = OperationalSubmission::query()
+            ->where('submission_type', OperationalSubmission::TYPE_BATCH_CREATION)
+            ->where('status', OperationalSubmission::STATUS_PENDING)
+            ->get(['payload'])
+            ->pluck('payload')
+            ->map(fn (array $payload): ?int => isset($payload['scion_variety_id'])
+                ? (int) $payload['scion_variety_id']
+                : null)
+            ->filter()
+            ->unique()
+            ->values();
+
         $scionVarieties->getCollection()->each(
-            fn (ScionVariety $scionVariety) => $scionVariety->setAttribute(
-                'pending_stock_in_submission_exists',
-                $pendingStockInVarietyIds->contains((int) $scionVariety->scion_variety_id),
-            ),
+            function (ScionVariety $scionVariety) use ($pendingStockInVarietyIds, $pendingBatchCreationVarietyIds): void {
+                $scionVariety->setAttribute(
+                    'pending_stock_in_submission_exists',
+                    $pendingStockInVarietyIds->contains((int) $scionVariety->scion_variety_id),
+                );
+                $scionVariety->setAttribute(
+                    'pending_batch_creation_submission_exists',
+                    $pendingBatchCreationVarietyIds->contains((int) $scionVariety->scion_variety_id),
+                );
+            },
         );
 
         return view('operational.scion-varieties.index', [

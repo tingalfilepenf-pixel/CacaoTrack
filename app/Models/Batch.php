@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Actions\RecordBatch;
 use App\Actions\RegraftBatch;
 use App\Models\Concerns\Archivable;
 use Illuminate\Database\Eloquent\Builder;
@@ -59,6 +60,22 @@ class Batch extends Model
     public const STATUS_INACTIVE = 'inactive';
 
     /**
+     * Where an official Batch came from (Phase 4b). Existing batches are
+     * nursery-produced; supplier deliveries record the supplying company.
+     */
+    public const SOURCE_OWN = 'own';
+
+    public const SOURCE_SUPPLIER = 'supplier';
+
+    /**
+     * @var list<string>
+     */
+    public const SOURCES = [
+        self::SOURCE_OWN,
+        self::SOURCE_SUPPLIER,
+    ];
+
+    /**
      * The company's 21-day production cycle (PRD §2.6, ERD §3.8/§5). The cycle
      * is not stored; its end is derived as `Grafted_Date + 21 days` (OD-7).
      */
@@ -101,11 +118,15 @@ class Batch extends Model
     public const OPERATIONAL_RELATIONS = ['mortalityRecords', 'regraftRecords', 'stockOutDetails', 'subBatches'];
 
     protected $fillable = [
+        'source',
+        'supplier_id',
         'scion_variety_id',
         'parent_batch_id',
         'user_id',
         'batch_code',
         'total_grafted',
+        'seedlings_used',
+        'scion_used',
         'regraft',
         'available_count',
         'grafted_date',
@@ -117,6 +138,8 @@ class Batch extends Model
     protected function casts(): array
     {
         return [
+            'seedlings_used' => 'integer',
+            'scion_used' => 'integer',
             'regraft' => 'integer',
             'grafted_date' => 'date',
             'created_at' => 'datetime',
@@ -124,9 +147,45 @@ class Batch extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $batch): void {
+            if ($batch->source === null) {
+                $batch->source = self::SOURCE_OWN;
+            }
+        });
+    }
+
     public function scionVariety(): BelongsTo
     {
         return $this->belongsTo(ScionVariety::class, 'scion_variety_id', 'scion_variety_id');
+    }
+
+    /**
+     * The external supplier for a supplier-delivery batch (Phase 4b). Null for
+     * own-nursery batches and for historical rows.
+     */
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class, 'supplier_id', 'supplier_id');
+    }
+
+    /**
+     * Human-readable source label for the batch lists.
+     */
+    public function sourceLabel(): string
+    {
+        return $this->source === self::SOURCE_SUPPLIER ? 'Supplier' : 'Own nursery';
+    }
+
+    /**
+     * Whether this batch recorded the stock it consumed when it was created
+     * (Phase 4b own-nursery approval). Historical/direct batches and supplier
+     * deliveries have no used quantities.
+     */
+    public function hasTrackedStockUse(): bool
+    {
+        return $this->seedlings_used !== null || $this->scion_used !== null;
     }
 
     public function user(): BelongsTo
@@ -508,26 +567,33 @@ class Batch extends Model
     }
 
     /**
-     * The next free root batch code (FR-06): `B` + the next sequential
-     * 3-digit number (`B001`, `B002`, …). Regraft sub-batch codes
-     * (`B001-R1`) and any other non-`B<digits>` codes are ignored, so the
-     * sequence always continues past the highest established root batch.
+     * The next free root batch code for a prefix. Own-nursery batches use `B`
+     * and supplier deliveries use `S` (Phase 4b); each sequence is independent.
+     * Regraft sub-batch codes (`B001-R1`, `S001-R1`) and any other
+     * non-`<prefix><digits>` codes are ignored, so the sequence always continues
+     * past the highest established root batch.
      *
-     * Called inside the create transaction; the `batch_code` unique index
-     * remains the final guard against a duplicate.
+     * The shared {@see RecordBatch} action takes the named MySQL
+     * lock for the prefix before calling this, so same-prefix assignments are
+     * serialized. The `batch_code` unique index remains the final guard against
+     * a duplicate (one retry is performed by the action).
      */
-    public static function nextBatchCode(): string
+    public static function nextBatchCode(string $prefix = 'B'): string
     {
+        if (! in_array($prefix, ['B', 'S'], true)) {
+            throw new \InvalidArgumentException('Unsupported batch code prefix.');
+        }
+
         $highest = self::query()
-            ->where('batch_code', 'like', 'B%')
+            ->where('batch_code', 'like', $prefix.'%')
             ->pluck('batch_code')
-            ->reduce(function (int $carry, string $code): int {
-                return preg_match('/^B(\d+)$/', $code, $matches)
+            ->reduce(function (int $carry, string $code) use ($prefix): int {
+                return preg_match('/^'.$prefix.'(\d+)$/', $code, $matches)
                     ? max($carry, (int) $matches[1])
                     : $carry;
             }, 0);
 
-        return 'B'.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
+        return $prefix.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -676,6 +742,10 @@ class Batch extends Model
 
         if ($this->hasPendingStockOutSubmission()) {
             $blockers[] = 'pending stock-out submissions';
+        }
+
+        if ($this->hasTrackedStockUse()) {
+            $blockers[] = 'nursery stock used';
         }
 
         return $blockers;

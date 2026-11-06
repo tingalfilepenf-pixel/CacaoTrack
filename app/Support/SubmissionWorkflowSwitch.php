@@ -35,4 +35,13 @@ final class SubmissionWorkflowSwitch
     {
         return self::moduleEnabled('stock_in');
     }
+
+    /**
+     * The independent Batch Creation module switch, ANDed with the master
+     * switch.
+     */
+    public static function batchCreationEnabled(): bool
+    {
+        return self::moduleEnabled('batch_creation');
+    }
 }

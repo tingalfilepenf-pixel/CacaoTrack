@@ -682,6 +682,11 @@ body {
     background-color: #e9f7ee;
 }
 
+.type-batch {
+    color: #6b4b16;
+    background-color: #fbf1dc;
+}
+
 .submission-subject {
     font-weight: 600;
     color: var(--submission-ink);

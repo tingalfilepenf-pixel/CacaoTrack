@@ -6,7 +6,9 @@ use App\Actions\ApproveOperationalSubmission;
 use App\Actions\RejectOperationalSubmission;
 use App\Actions\SubmitOperationalSubmission;
 use App\Exceptions\ApprovalRevalidationException;
+use App\Exceptions\BatchCodeLockTimeoutException;
 use App\Http\Requests\RejectOperationalSubmissionRequest;
+use App\Http\Requests\StoreBatchCreationSubmissionRequest;
 use App\Http\Requests\StoreMortalitySubmissionRequest;
 use App\Http\Requests\StoreStockInSubmissionRequest;
 use App\Http\Requests\StoreStockOutSubmissionRequest;
@@ -14,11 +16,13 @@ use App\Models\Batch;
 use App\Models\Client;
 use App\Models\MortalityRecord;
 use App\Models\OperationalSubmission;
+use App\Models\OperationalSubmissionRecord;
 use App\Models\ScionVariety;
 use App\Models\StockOutDetail;
 use App\Models\Supplier;
 use App\Support\DuplicateSubmissionGuard;
 use App\Support\OperationalSubmissionVisibility;
+use App\Support\StockBalances;
 use App\Support\SubmissionWorkflowSwitch;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
@@ -88,6 +92,7 @@ class OperationalSubmissionController extends Controller
             'canVerify' => $user->hasPermission('verify_operations'),
             'canViewAll' => OperationalSubmissionVisibility::canViewAll($user),
             'stockInSubmissionEnabled' => SubmissionWorkflowSwitch::stockInEnabled(),
+            'batchCreationEnabled' => SubmissionWorkflowSwitch::batchCreationEnabled(),
             'search' => $search,
             'typeFilter' => $typeFilter,
             'statusFilter' => $statusFilter,
@@ -146,6 +151,7 @@ class OperationalSubmissionController extends Controller
             'statusCounts' => $statusCounts,
             'hasFilters' => $search !== '' || $typeFilter !== '',
             'stockInSubmissionEnabled' => SubmissionWorkflowSwitch::stockInEnabled(),
+            'batchCreationEnabled' => SubmissionWorkflowSwitch::batchCreationEnabled(),
         ], $display));
     }
 
@@ -173,8 +179,12 @@ class OperationalSubmissionController extends Controller
             ->where('supplier_name', 'like', $like)
             ->pluck('supplier_id')
             ->all();
+        $matchingVarietyIds = ScionVariety::query()
+            ->where('scion_variety_name', 'like', $like)
+            ->pluck('scion_variety_id')
+            ->all();
 
-        $query->where(function ($inner) use ($like, $matchingClientIds, $matchingBatchIds, $matchingSupplierIds): void {
+        $query->where(function ($inner) use ($like, $matchingClientIds, $matchingBatchIds, $matchingSupplierIds, $matchingVarietyIds): void {
             $inner->where('submission_id', 'like', $like)
                 ->orWhere('submission_type', 'like', $like)
                 ->orWhereHas('submitter', fn ($submitter) => $submitter->where('name', 'like', $like))
@@ -186,7 +196,13 @@ class OperationalSubmissionController extends Controller
 
             if ($matchingSupplierIds !== []) {
                 $inner->orWhereIn('payload->seedling->supplier_id', $matchingSupplierIds)
-                    ->orWhereIn('payload->scion->supplier_id', $matchingSupplierIds);
+                    ->orWhereIn('payload->scion->supplier_id', $matchingSupplierIds)
+                    ->orWhereIn('payload->supplier_id', $matchingSupplierIds);
+            }
+
+            if ($matchingVarietyIds !== []) {
+                $inner->orWhereIn('payload->scion->scion_variety_id', $matchingVarietyIds)
+                    ->orWhereIn('payload->scion_variety_id', $matchingVarietyIds);
             }
 
             foreach ($matchingBatchIds as $batchId) {
@@ -199,7 +215,7 @@ class OperationalSubmissionController extends Controller
      * Resolve the display names referenced by the submissions on the page.
      *
      * @param  Collection<int, OperationalSubmission>  $pageSubmissions
-     * @return array{clientNames: array<int, string>, batchCodes: array<int, string>, supplierNames: array<int, string>}
+     * @return array{clientNames: array<int, string>, batchCodes: array<int, string>, supplierNames: array<int, string>, varietyNames: array<int, string>, officialBatchCodes: array<int, string|null>}
      */
     private function displayData(Collection $pageSubmissions): array
     {
@@ -230,14 +246,62 @@ class OperationalSubmissionController extends Controller
             ->values();
 
         $supplierIds = $pageSubmissions
-            ->where('submission_type', OperationalSubmission::TYPE_STOCK_IN)
-            ->flatMap(fn (OperationalSubmission $submission): array => [
-                (int) ($submission->payload['seedling']['supplier_id'] ?? 0),
-                (int) ($submission->payload['scion']['supplier_id'] ?? 0),
-            ])
+            ->flatMap(function (OperationalSubmission $submission): array {
+                if ($submission->submission_type === OperationalSubmission::TYPE_STOCK_IN) {
+                    return [
+                        (int) ($submission->payload['seedling']['supplier_id'] ?? 0),
+                        (int) ($submission->payload['scion']['supplier_id'] ?? 0),
+                    ];
+                }
+
+                if ($submission->submission_type === OperationalSubmission::TYPE_BATCH_CREATION) {
+                    return [(int) ($submission->payload['supplier_id'] ?? 0)];
+                }
+
+                return [];
+            })
             ->filter()
             ->unique()
             ->values();
+
+        $varietyIds = $pageSubmissions
+            ->flatMap(function (OperationalSubmission $submission): array {
+                if ($submission->submission_type === OperationalSubmission::TYPE_STOCK_IN) {
+                    return [(int) ($submission->payload['scion']['scion_variety_id'] ?? 0)];
+                }
+
+                if ($submission->submission_type === OperationalSubmission::TYPE_BATCH_CREATION) {
+                    return [(int) ($submission->payload['scion_variety_id'] ?? 0)];
+                }
+
+                return [];
+            })
+            ->filter()
+            ->unique()
+            ->values();
+
+        $batchSubmissionIds = $pageSubmissions
+            ->where('submission_type', OperationalSubmission::TYPE_BATCH_CREATION)
+            ->pluck('submission_id')
+            ->map(fn ($id): int => (int) $id)
+            ->values();
+
+        $officialBatchCodes = [];
+
+        if ($batchSubmissionIds->isNotEmpty()) {
+            $links = OperationalSubmissionRecord::query()
+                ->whereIn('submission_id', $batchSubmissionIds)
+                ->where('record_type', OperationalSubmissionRecord::RECORD_TYPE_BATCH)
+                ->get(['submission_id', 'record_id']);
+
+            $codes = Batch::query()
+                ->whereIn('batch_id', $links->pluck('record_id'))
+                ->pluck('batch_code', 'batch_id');
+
+            foreach ($links as $link) {
+                $officialBatchCodes[(int) $link->submission_id] = $codes[(int) $link->record_id] ?? null;
+            }
+        }
 
         return [
             'clientNames' => Client::query()
@@ -252,6 +316,11 @@ class OperationalSubmissionController extends Controller
                 ->whereIn('supplier_id', $supplierIds)
                 ->pluck('supplier_name', 'supplier_id')
                 ->all(),
+            'varietyNames' => ScionVariety::query()
+                ->whereIn('scion_variety_id', $varietyIds)
+                ->pluck('scion_variety_name', 'scion_variety_id')
+                ->all(),
+            'officialBatchCodes' => $officialBatchCodes,
         ];
     }
 
@@ -266,11 +335,24 @@ class OperationalSubmissionController extends Controller
         $supplierIds = collect([
             $submission->payload['seedling']['supplier_id'] ?? null,
             $submission->payload['scion']['supplier_id'] ?? null,
+            $submission->payload['supplier_id'] ?? null,
         ])->filter()->map(fn ($id) => (int) $id)->unique()->values();
 
         $varietyIds = collect([
             $submission->payload['scion']['scion_variety_id'] ?? null,
+            $submission->payload['scion_variety_id'] ?? null,
         ])->filter()->map(fn ($id) => (int) $id)->unique()->values();
+
+        $batchBalances = null;
+
+        if ($submission->submission_type === OperationalSubmission::TYPE_BATCH_CREATION
+            && ($submission->payload['source'] ?? null) === Batch::SOURCE_OWN) {
+            $variety = ScionVariety::find((int) ($submission->payload['scion_variety_id'] ?? 0));
+            $batchBalances = [
+                'seedlings' => StockBalances::seedlingsAvailable(),
+                'scion' => $variety?->availableScionQuantity(),
+            ];
+        }
 
         $display = $this->displayData(collect([$submission]));
 
@@ -280,6 +362,8 @@ class OperationalSubmissionController extends Controller
             'canSubmit' => $user->hasPermission('submit_operations'),
             'canViewAll' => OperationalSubmissionVisibility::canViewAll($user),
             'stockInSubmissionEnabled' => SubmissionWorkflowSwitch::stockInEnabled(),
+            'batchCreationEnabled' => SubmissionWorkflowSwitch::batchCreationEnabled(),
+            'batchBalances' => $batchBalances,
             'stockInSuppliers' => Supplier::query()
                 ->whereIn('supplier_id', $supplierIds)
                 ->pluck('supplier_name', 'supplier_id'),
@@ -295,6 +379,11 @@ class OperationalSubmissionController extends Controller
 
         try {
             $this->approvals->execute($submission, $managerId);
+        } catch (BatchCodeLockTimeoutException $exception) {
+            // Infrastructure error: leave the submission Pending; never auto-reject.
+            return redirect()
+                ->route('operational.submissions.show', $submission)
+                ->with('error', $exception->getMessage());
         } catch (ApprovalRevalidationException $exception) {
             try {
                 $this->rejections->automatic($submission, $managerId, $exception->getMessage());
@@ -377,6 +466,12 @@ class OperationalSubmissionController extends Controller
                 'units' => StockOutDetail::UNITS,
                 'resubmissionOf' => $submission,
             ]);
+        }
+
+        if ($submission->submission_type === OperationalSubmission::TYPE_BATCH_CREATION) {
+            abort_unless(SubmissionWorkflowSwitch::batchCreationEnabled(), 404);
+
+            return view('operational.submissions.batch-creation-create', $this->batchCreationFormData($submission));
         }
 
         return view('operational.submissions.stock-in-create', $this->stockInFormData($submission));
@@ -532,6 +627,81 @@ class OperationalSubmissionController extends Controller
         return redirect()
             ->route('operational.submissions.index')
             ->with('success', 'Stock-out submitted for Manager verification.');
+    }
+
+    public function createBatchCreation(): View
+    {
+        return view('operational.submissions.batch-creation-create', $this->batchCreationFormData());
+    }
+
+    public function storeBatchCreation(StoreBatchCreationSubmissionRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh(
+            'batch_creation_submission',
+            $validated,
+            'submission_batch',
+        );
+
+        try {
+            $this->submissions->batchCreation($validated, Auth::user());
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('batch_creation_submission', $fingerprint);
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('operational.submissions.index')
+            ->with('success', 'Batch creation submitted for Manager verification.');
+    }
+
+    public function storeBatchCreationResubmission(
+        StoreBatchCreationSubmissionRequest $request,
+        OperationalSubmission $submission,
+    ): RedirectResponse {
+        $this->assertResubmittable($request, $submission, OperationalSubmission::TYPE_BATCH_CREATION);
+
+        $validated = $request->validated();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh(
+            'batch_creation_resubmission',
+            $validated,
+            'submission_batch',
+        );
+
+        try {
+            $newSubmission = $this->submissions->batchCreation($validated, $request->user(), $submission);
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('batch_creation_resubmission', $fingerprint);
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('operational.submissions.show', $newSubmission)
+            ->with('success', 'Batch creation resubmitted for Manager verification.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function batchCreationFormData(?OperationalSubmission $resubmissionOf = null): array
+    {
+        return [
+            'seedlingsAvailable' => StockBalances::seedlingsAvailable(),
+            'receivedScionVarieties' => ScionVariety::query()
+                ->receivedInStockIn()
+                ->withScionAvailability()
+                ->orderBy('scion_variety_name')
+                ->get(),
+            'activeScionVarieties' => ScionVariety::query()
+                ->active()
+                ->withScionAvailability()
+                ->orderBy('scion_variety_name')
+                ->get(),
+            'suppliers' => Supplier::active()->orderBy('supplier_name')->get(),
+            'resubmissionOf' => $resubmissionOf,
+        ];
     }
 
     /**

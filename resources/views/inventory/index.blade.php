@@ -4,7 +4,11 @@
 @section('page_title', 'Inventory')
 
 @section('page_actions')
-@if (auth()->user()->hasPermission('record_operations'))
+@if ($batchCreationEnabled && $canSubmitBatch)
+    <a href="{{ route('operational.submissions.batch-creation.create') }}" class="btn btn-primary">
+        <i class="bi bi-send me-1"></i> Submit Batch
+    </a>
+@elseif (! $batchCreationEnabled && auth()->user()->hasPermission('record_operations'))
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBatchModal">
         <i class="bi bi-plus-lg me-1"></i> Add Batch
     </button>
@@ -220,6 +224,11 @@
                                     @if ($batch->isSubBatch())
                                         <span class="badge bg-info-subtle text-info-emphasis ms-1">Regrafted</span>
                                     @endif
+                                    @if ($batchCreationEnabled)
+                                        <span class="badge ms-1 {{ $batch->source === \App\Models\Batch::SOURCE_SUPPLIER ? 'bg-primary-subtle text-primary-emphasis' : 'bg-success-subtle text-success-emphasis' }}">
+                                            {{ $batch->sourceLabel() }}
+                                        </span>
+                                    @endif
                                     @if ($parentMissing && $parentCode)
                                         <span class="text-muted small">(parent: {{ $parentCode }})</span>
                                     @endif
@@ -411,6 +420,7 @@
 </div>
 
 @if (auth()->user()->hasPermission('record_operations'))
+@if (! $batchCreationEnabled)
 <!-- Add Batch Modal — the same FR-06 form as the Batches page; posts to the single
      `operational.batches.manage.store` route and validates through `StoreBatchRequest`
      (error bag `batch`). Gated like the target route (server-side `record_operations`). -->
@@ -476,6 +486,7 @@
         </div>
     </div>
 </div>
+@endif
 
 <!-- Record Mortality Modal — the same FR-04 form as the Mortality Tracking page; posts to the single
      `operational.mortality.records.store` route and validates through `StoreMortalityRecordRequest`

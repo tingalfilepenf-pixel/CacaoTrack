@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Batch;
 use App\Models\ScionVariety;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,11 +23,15 @@ class BatchFactory extends Factory
         $grafted = $this->faker->numberBetween(50, 400);
 
         return [
+            'source' => Batch::SOURCE_OWN,
+            'supplier_id' => null,
             'scion_variety_id' => ScionVariety::factory(),
             'parent_batch_id' => null,
             'user_id' => User::factory(),
             'batch_code' => 'B'.$this->faker->unique()->numerify('####'),
             'total_grafted' => $grafted,
+            'seedlings_used' => null,
+            'scion_used' => null,
             'regraft' => 0,
             'available_count' => $grafted,
             'grafted_date' => $this->faker->dateTimeBetween('-6 months', '-1 month')->format('Y-m-d'),
@@ -34,6 +39,17 @@ class BatchFactory extends Factory
             'status' => Batch::STATUS_ACTIVE,
             'archived_at' => null,
         ];
+    }
+
+    /**
+     * A supplier-delivery batch (Phase 4b).
+     */
+    public function supplierDelivery(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'source' => Batch::SOURCE_SUPPLIER,
+            'supplier_id' => Supplier::factory(),
+        ]);
     }
 
     /**

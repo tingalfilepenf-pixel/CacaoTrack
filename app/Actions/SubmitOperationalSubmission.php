@@ -6,7 +6,10 @@ use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\Client;
 use App\Models\OperationalSubmission;
+use App\Models\ScionVariety;
+use App\Models\Supplier;
 use App\Models\User;
+use App\Support\StockBalances;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -115,6 +118,50 @@ class SubmitOperationalSubmission
     }
 
     /**
+     * Capture one Batch Creation request. The source decides the frozen payload:
+     * own nursery freezes the submission-date grafted date and the stock used;
+     * supplier delivery freezes the delivery date and the delivered quantity.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function batchCreation(array $data, User $submitter, ?OperationalSubmission $resubmissionOf = null): OperationalSubmission
+    {
+        $source = (string) $data['source'];
+
+        if ($source === Batch::SOURCE_SUPPLIER) {
+            $payload = [
+                'source' => Batch::SOURCE_SUPPLIER,
+                'supplier_id' => (int) $data['supplier_id'],
+                'delivery_date' => $data['delivery_date'],
+                'scion_variety_id' => (int) $data['scion_variety_id'],
+                'plants_delivered' => (int) $data['plants_delivered'],
+                'grafted_date' => $data['delivery_date'],
+            ];
+        } else {
+            $variety = ScionVariety::find((int) $data['scion_variety_id']);
+
+            $payload = [
+                'source' => Batch::SOURCE_OWN,
+                'seedlings_used' => (int) $data['seedlings_used'],
+                'scion_variety_id' => (int) $data['scion_variety_id'],
+                'scion_used' => (int) $data['scion_used'],
+                'plants_grafted' => (int) $data['plants_grafted'],
+                'grafted_date' => now()->toDateString(),
+                'seedlings_available' => StockBalances::seedlingsAvailable(),
+                'scion_available' => $variety?->availableScionQuantity() ?? 0,
+            ];
+        }
+
+        return $this->create(
+            OperationalSubmission::TYPE_BATCH_CREATION,
+            $payload,
+            $submitter,
+            null,
+            $resubmissionOf,
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      */
     private function create(
@@ -169,6 +216,19 @@ class SubmitOperationalSubmission
             }
 
             return 'Submitted stock-in ('.implode(' and ', $parts).').';
+        }
+
+        if ($type === OperationalSubmission::TYPE_BATCH_CREATION) {
+            if (($payload['source'] ?? null) === Batch::SOURCE_SUPPLIER) {
+                $supplier = Supplier::find($payload['supplier_id'] ?? null);
+
+                return 'Submitted batch creation (supplier delivery from '
+                    .($supplier?->supplier_name ?? 'supplier')
+                    .'; '.((int) ($payload['plants_delivered'] ?? 0)).' plants).';
+            }
+
+            return 'Submitted batch creation (own nursery; '
+                .((int) ($payload['plants_grafted'] ?? 0)).' plants grafted).';
         }
 
         $client = Client::find($payload['client_id']);

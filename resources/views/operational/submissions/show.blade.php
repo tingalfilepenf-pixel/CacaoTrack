@@ -9,6 +9,7 @@
     $typeMortality = \App\Models\OperationalSubmission::TYPE_MORTALITY;
     $typeStockOut = \App\Models\OperationalSubmission::TYPE_STOCK_OUT;
     $typeStockIn = \App\Models\OperationalSubmission::TYPE_STOCK_IN;
+    $typeBatchCreation = \App\Models\OperationalSubmission::TYPE_BATCH_CREATION;
 
     $statusLabels = [
         \App\Models\OperationalSubmission::STATUS_PENDING => 'Pending',
@@ -32,6 +33,7 @@
         $typeMortality => 'bi-tree',
         $typeStockOut => 'bi-box-arrow-right',
         $typeStockIn => 'bi-box-arrow-in-right',
+        $typeBatchCreation => 'bi-collection',
     ];
 
     $backRoute = $canVerify
@@ -53,6 +55,8 @@
             ->values();
 
         $batchCode = $codes->isEmpty() ? '—' : $codes->implode(', ');
+    } elseif ($submission->submission_type === $typeBatchCreation) {
+        $batchCode = $officialBatchCodes[$submission->submission_id] ?? 'Assigned at approval';
     }
 
     $batchLabel = $submission->submission_type === $typeStockOut ? 'Batches' : 'Batch';
@@ -67,7 +71,8 @@
     $canResubmit = $canSubmit
         && $submission->isRejected()
         && (int) $submission->submitted_by_id === (int) auth()->id()
-        && ($submission->submission_type !== $typeStockIn || $stockInSubmissionEnabled);
+        && ($submission->submission_type !== $typeStockIn || $stockInSubmissionEnabled)
+        && ($submission->submission_type !== $typeBatchCreation || $batchCreationEnabled);
 
     $totalStockOutQuantity = $submission->submission_type === $typeStockOut
         ? collect($submission->payload['details'] ?? [])->sum('quantity')
@@ -269,7 +274,7 @@
                         </tbody>
                     </table>
                 </div>
-            @else
+            @elseif ($submission->submission_type === $typeStockIn)
                 @foreach (['seedling' => 'Seedlings entry', 'scion' => 'Scion entry'] as $tab => $label)
                     @php
                         $entry = $submission->payload[$tab] ?? null;
@@ -342,6 +347,102 @@
                         </div>
                     @endif
                 @endforeach
+            @else
+                @php
+                    $batchSource = $submission->payload['source'] ?? \App\Models\Batch::SOURCE_OWN;
+                    $batchVariety = $varietyNames[(int) ($submission->payload['scion_variety_id'] ?? 0)] ?? 'Scion variety';
+                    $batchSupplier = $supplierNames[(int) ($submission->payload['supplier_id'] ?? 0)] ?? 'Supplier';
+                @endphp
+
+                <div class="frozen-entry">
+                    <h3 class="frozen-entry-title">
+                        {{ $batchSource === \App\Models\Batch::SOURCE_SUPPLIER ? 'Supplier delivery' : 'Own nursery batch' }}
+                    </h3>
+                    <div class="frozen-grid">
+                        <div class="frozen-item">
+                            <span class="frozen-icon"><i class="bi bi-flower2"></i></span>
+                            <div>
+                                <div class="frozen-label">Scion Variety</div>
+                                <div class="frozen-value">{{ $batchVariety }}</div>
+                            </div>
+                        </div>
+
+                        @if ($batchSource === \App\Models\Batch::SOURCE_SUPPLIER)
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-truck"></i></span>
+                                <div>
+                                    <div class="frozen-label">Supplier</div>
+                                    <div class="frozen-value">{{ $batchSupplier }}</div>
+                                </div>
+                            </div>
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-calendar3"></i></span>
+                                <div>
+                                    <div class="frozen-label">Delivery Date</div>
+                                    <div class="frozen-value">{{ $submission->payload['delivery_date'] ?? '—' }}</div>
+                                </div>
+                            </div>
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-box-seam"></i></span>
+                                <div>
+                                    <div class="frozen-label">Plants Delivered</div>
+                                    <div class="frozen-value">{{ number_format((int) ($submission->payload['plants_delivered'] ?? 0)) }}</div>
+                                </div>
+                            </div>
+                        @else
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-tree"></i></span>
+                                <div>
+                                    <div class="frozen-label">Seedlings Used</div>
+                                    <div class="frozen-value">{{ number_format((int) ($submission->payload['seedlings_used'] ?? 0)) }}</div>
+                                </div>
+                            </div>
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-flower1"></i></span>
+                                <div>
+                                    <div class="frozen-label">Scion Used</div>
+                                    <div class="frozen-value">{{ number_format((int) ($submission->payload['scion_used'] ?? 0)) }}</div>
+                                </div>
+                            </div>
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-box-seam"></i></span>
+                                <div>
+                                    <div class="frozen-label">Plants Grafted</div>
+                                    <div class="frozen-value">{{ number_format((int) ($submission->payload['plants_grafted'] ?? 0)) }}</div>
+                                </div>
+                            </div>
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-calendar3"></i></span>
+                                <div>
+                                    <div class="frozen-label">Grafted Date</div>
+                                    <div class="frozen-value">{{ $submission->payload['grafted_date'] ?? '—' }}</div>
+                                </div>
+                            </div>
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-boxes"></i></span>
+                                <div>
+                                    <div class="frozen-label">Seedlings Available (at submission)</div>
+                                    <div class="frozen-value">{{ number_format((int) ($submission->payload['seedlings_available'] ?? 0)) }}</div>
+                                </div>
+                            </div>
+                            <div class="frozen-item">
+                                <span class="frozen-icon"><i class="bi bi-flower2"></i></span>
+                                <div>
+                                    <div class="frozen-label">Scion Available (at submission)</div>
+                                    <div class="frozen-value">{{ number_format((int) ($submission->payload['scion_available'] ?? 0)) }}</div>
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+
+                @if ($batchSource === \App\Models\Batch::SOURCE_OWN && is_array($batchBalances))
+                    <div class="alert alert-light border small mt-3 mb-0">
+                        <strong>Balances now:</strong>
+                        {{ number_format((int) $batchBalances['seedlings']) }} seedlings available,
+                        {{ number_format((int) ($batchBalances['scion'] ?? 0)) }} {{ $batchVariety }} scion available.
+                    </div>
+                @endif
             @endif
         </div>
     </section>
@@ -394,7 +495,13 @@
                         <h3>Official records created</h3>
                         <ul>
                             @foreach ($submission->records as $record)
-                                <li>{{ $record->record_type }} #{{ $record->record_id }}</li>
+                                <li>
+                                    @if ($record->record_type === \App\Models\OperationalSubmissionRecord::RECORD_TYPE_BATCH)
+                                        Batch {{ $officialBatchCodes[$submission->submission_id] ?? '#'.$record->record_id }}
+                                    @else
+                                        {{ $record->record_type }} #{{ $record->record_id }}
+                                    @endif
+                                </li>
                             @endforeach
                         </ul>
                     </div>

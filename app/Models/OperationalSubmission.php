@@ -51,6 +51,8 @@ class OperationalSubmission extends Model
 
     public const TYPE_STOCK_IN = 'stock_in';
 
+    public const TYPE_BATCH_CREATION = 'batch_creation';
+
     /**
      * Supported submission types. More types may be added later; values are
      * validated in code, never with a database ENUM.
@@ -61,6 +63,7 @@ class OperationalSubmission extends Model
         self::TYPE_MORTALITY,
         self::TYPE_STOCK_OUT,
         self::TYPE_STOCK_IN,
+        self::TYPE_BATCH_CREATION,
     ];
 
     protected $table = 'operational_submissions';
@@ -161,6 +164,7 @@ class OperationalSubmission extends Model
             self::TYPE_MORTALITY => 'Mortality',
             self::TYPE_STOCK_OUT => 'Stock Out',
             self::TYPE_STOCK_IN => 'Stock In',
+            self::TYPE_BATCH_CREATION => 'Batch Creation',
             default => ucfirst(str_replace('_', ' ', $this->submission_type)),
         };
     }
@@ -179,6 +183,20 @@ class OperationalSubmission extends Model
             ->where('submission_type', self::TYPE_STOCK_IN)
             ->where('status', self::STATUS_PENDING)
             ->where('payload->scion->scion_variety_id', $scionVarietyId)
+            ->exists();
+    }
+
+    /**
+     * Whether a pending Batch Creation submission references this scion
+     * variety. The pending row has not created an official Batch yet, so the
+     * master-data deletion guard must read the frozen payload.
+     */
+    public static function hasPendingBatchCreationScionVariety(int $scionVarietyId): bool
+    {
+        return static::query()
+            ->where('submission_type', self::TYPE_BATCH_CREATION)
+            ->where('status', self::STATUS_PENDING)
+            ->where('payload->scion_variety_id', $scionVarietyId)
             ->exists();
     }
 

@@ -95,6 +95,13 @@ Route::prefix('operational')->middleware('auth')->group(function () {
                 ->middleware('submissions.enabled:stock_in')
                 ->name('operational.submissions.stock-in.store');
 
+            Route::get('/batch-creation/create', [OperationalSubmissionController::class, 'createBatchCreation'])
+                ->middleware('submissions.enabled:batch_creation')
+                ->name('operational.submissions.batch-creation.create');
+            Route::post('/batch-creation', [OperationalSubmissionController::class, 'storeBatchCreation'])
+                ->middleware('submissions.enabled:batch_creation')
+                ->name('operational.submissions.batch-creation.store');
+
             Route::get('/{submission}/resubmit', [OperationalSubmissionController::class, 'createResubmission'])
                 ->whereNumber('submission')
                 ->name('operational.submissions.resubmit.create');
@@ -109,6 +116,11 @@ Route::prefix('operational')->middleware('auth')->group(function () {
                 ->whereNumber('submission')
                 ->middleware('submissions.enabled:stock_in')
                 ->name('operational.submissions.resubmit.stock-in');
+
+            Route::post('/{submission}/resubmit/batch-creation', [OperationalSubmissionController::class, 'storeBatchCreationResubmission'])
+                ->whereNumber('submission')
+                ->middleware('submissions.enabled:batch_creation')
+                ->name('operational.submissions.resubmit.batch-creation');
         });
     });
 
@@ -127,7 +139,9 @@ Route::prefix('operational')->middleware('auth')->group(function () {
         // Batches moved from `/inventory/batches` to `/operational/batches` (P3
         // decision f): a batch is the central operational record (PRD §5).
         Route::get('/batches', [BatchController::class, 'index'])->name('operational.batches');
-        Route::post('/batches/manage', [BatchController::class, 'store'])->name('operational.batches.manage.store');
+        Route::post('/batches/manage', [BatchController::class, 'store'])
+            ->middleware('submissions.direct-writes:batch_creation')
+            ->name('operational.batches.manage.store');
         Route::put('/batches/{batch}', [BatchController::class, 'update'])->name('operational.batches.update');
         // Delete replaces the former archive/restore flow (owner-directed); it
         // is guarded server-side — a batch with dependent operational records

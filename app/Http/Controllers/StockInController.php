@@ -146,6 +146,18 @@ class StockInController extends Controller
                 ->with('new_supplier_id', $supplier->supplier_id);
         }
 
+        if ($request->input('return_to') === 'batch_creation_submission') {
+            $resubmissionId = $request->integer('resubmission_of');
+
+            $destination = $resubmissionId > 0
+                ? route('operational.submissions.resubmit.create', $resubmissionId)
+                : route('operational.submissions.batch-creation.create');
+
+            return redirect($destination)
+                ->with('success', 'Supplier added successfully.')
+                ->with('new_supplier_id', $supplier->supplier_id);
+        }
+
         return redirect()
             ->route('inventory.stock-in')
             ->with('success', 'Supplier added successfully.')
