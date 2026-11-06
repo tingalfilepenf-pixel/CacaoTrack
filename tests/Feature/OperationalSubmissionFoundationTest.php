@@ -115,6 +115,7 @@ class OperationalSubmissionFoundationTest extends TestCase
                 OperationalSubmission::TYPE_MORTALITY,
                 OperationalSubmission::TYPE_STOCK_OUT,
                 OperationalSubmission::TYPE_STOCK_IN,
+                OperationalSubmission::TYPE_BATCH_CREATION,
             ],
             OperationalSubmission::TYPES
         );
@@ -125,6 +126,7 @@ class OperationalSubmissionFoundationTest extends TestCase
                 OperationalSubmissionRecord::RECORD_TYPE_STOCK_OUT,
                 OperationalSubmissionRecord::RECORD_TYPE_STOCK_OUT_DETAIL,
                 OperationalSubmissionRecord::RECORD_TYPE_STOCK_IN,
+                OperationalSubmissionRecord::RECORD_TYPE_BATCH,
             ],
             OperationalSubmissionRecord::RECORD_TYPES
         );

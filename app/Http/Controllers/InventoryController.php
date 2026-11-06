@@ -9,6 +9,7 @@ use App\Models\MortalityRecord;
 use App\Models\ScionVariety;
 use App\Support\BatchTree;
 use App\Support\DuplicateSubmissionGuard;
+use App\Support\SubmissionWorkflowSwitch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -193,6 +194,8 @@ class InventoryController extends Controller
             // Preview only for the hosted Add Batch form: the code the server
             // will assign on save (the store action recomputes it).
             'nextBatchCode' => Batch::nextBatchCode(),
+            'batchCreationEnabled' => SubmissionWorkflowSwitch::batchCreationEnabled(),
+            'canSubmitBatch' => (bool) auth()->user()?->hasPermission('submit_operations'),
             'activeBatches' => $activeBatches,
             'activeBatchBreakdowns' => $activeBatchBreakdowns,
             'regraftableBatches' => $regraftableBatches,

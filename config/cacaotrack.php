@@ -35,6 +35,7 @@ return [
 
         'modules' => [
             'stock_in' => env('CACAOTRACK_STOCK_IN_SUBMISSION_ENABLED', false),
+            'batch_creation' => env('CACAOTRACK_BATCH_SUBMISSION_ENABLED', false),
         ],
     ],
 ];

@@ -31,6 +31,8 @@ class OperationalSubmissionRecord extends Model
 
     public const RECORD_TYPE_STOCK_IN = 'stock_in';
 
+    public const RECORD_TYPE_BATCH = 'batch';
+
     /**
      * @var list<string>
      */
@@ -39,6 +41,7 @@ class OperationalSubmissionRecord extends Model
         self::RECORD_TYPE_STOCK_OUT,
         self::RECORD_TYPE_STOCK_OUT_DETAIL,
         self::RECORD_TYPE_STOCK_IN,
+        self::RECORD_TYPE_BATCH,
     ];
 
     public const UPDATED_AT = null;

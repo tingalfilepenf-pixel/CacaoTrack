@@ -10,6 +10,7 @@ use App\Models\ActivityLog;
 use App\Models\Batch;
 use App\Models\ScionVariety;
 use App\Support\BatchTree;
+use App\Support\SubmissionWorkflowSwitch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -89,6 +90,8 @@ class BatchController extends Controller
             // Preview only: the Add Batch form shows the code the server will
             // assign on save (the store action recomputes it).
             'nextBatchCode' => Batch::nextBatchCode(),
+            'batchCreationEnabled' => SubmissionWorkflowSwitch::batchCreationEnabled(),
+            'canSubmitBatch' => (bool) Auth::user()?->hasPermission('submit_operations'),
             'totalBatches' => (clone $visible)->count(),
             'activeBatches' => (clone $visible)->where('status', Batch::STATUS_ACTIVE)->count(),
             'inactiveBatches' => (clone $visible)->where('status', Batch::STATUS_INACTIVE)->count(),

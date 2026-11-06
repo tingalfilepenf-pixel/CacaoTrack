@@ -51,6 +51,8 @@ class OperationalSubmission extends Model
 
     public const TYPE_STOCK_IN = 'stock_in';
 
+    public const TYPE_BATCH_CREATION = 'batch_creation';
+
     /**
      * Supported submission types. More types may be added later; values are
      * validated in code, never with a database ENUM.
@@ -61,6 +63,7 @@ class OperationalSubmission extends Model
         self::TYPE_MORTALITY,
         self::TYPE_STOCK_OUT,
         self::TYPE_STOCK_IN,
+        self::TYPE_BATCH_CREATION,
     ];
 
     protected $table = 'operational_submissions';
@@ -161,6 +164,7 @@ class OperationalSubmission extends Model
             self::TYPE_MORTALITY => 'Mortality',
             self::TYPE_STOCK_OUT => 'Stock Out',
             self::TYPE_STOCK_IN => 'Stock In',
+            self::TYPE_BATCH_CREATION => 'Batch Creation',
             default => ucfirst(str_replace('_', ' ', $this->submission_type)),
         };
     }

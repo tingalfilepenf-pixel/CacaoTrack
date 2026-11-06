@@ -9,6 +9,7 @@
     $typeMortality = \App\Models\OperationalSubmission::TYPE_MORTALITY;
     $typeStockOut = \App\Models\OperationalSubmission::TYPE_STOCK_OUT;
     $typeStockIn = \App\Models\OperationalSubmission::TYPE_STOCK_IN;
+    $typeBatchCreation = \App\Models\OperationalSubmission::TYPE_BATCH_CREATION;
 
     $statusLabels = [
         \App\Models\OperationalSubmission::STATUS_PENDING => 'Pending',
@@ -32,6 +33,7 @@
         $typeMortality => 'bi-tree',
         $typeStockOut => 'bi-box-arrow-right',
         $typeStockIn => 'bi-box-arrow-in-right',
+        $typeBatchCreation => 'bi-collection',
     ];
 
     $activeTypeFilter = $typeFilter !== '';
@@ -42,7 +44,7 @@
         'type' => $typeFilter !== '' ? $typeFilter : null,
     ], fn ($value) => $value !== null && $value !== '');
 
-    $subjectLabel = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $clientNames, $supplierNames): string {
+    $subjectLabel = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $typeBatchCreation, $clientNames, $supplierNames): string {
         if ($submission->submission_type === $typeMortality) {
             return 'Mortality';
         }
@@ -62,10 +64,20 @@
             return $suppliers->isEmpty() ? 'Stock In' : 'Stock In from '.$suppliers->implode(' + ');
         }
 
+        if ($submission->submission_type === $typeBatchCreation) {
+            if (($submission->payload['source'] ?? null) === \App\Models\Batch::SOURCE_SUPPLIER) {
+                $supplierName = $supplierNames[(int) ($submission->payload['supplier_id'] ?? 0)] ?? null;
+
+                return 'Supplier delivery'.($supplierName ? ' from '.$supplierName : '');
+            }
+
+            return 'Own nursery batch';
+        }
+
         return $submission->typeLabel();
     };
 
-    $batchCodeLabel = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $batchCodes): string {
+    $batchCodeLabel = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeBatchCreation, $batchCodes, $officialBatchCodes): string {
         if ($submission->submission_type === $typeMortality) {
             $batchId = (int) ($submission->subject_batch_id ?? ($submission->payload['batch_id'] ?? 0));
 
@@ -89,10 +101,14 @@
                 : $codes->implode(', ');
         }
 
+        if ($submission->submission_type === $typeBatchCreation) {
+            return $officialBatchCodes[$submission->submission_id] ?? 'Assigned at approval';
+        }
+
         return '—';
     };
 
-    $detailsPrimary = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $batchCodeLabel): string {
+    $detailsPrimary = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $typeBatchCreation, $batchCodeLabel): string {
         if ($submission->submission_type === $typeMortality) {
             return 'Batch: '.$batchCodeLabel($submission).' | Quantity: '.number_format((int) ($submission->payload['quantity'] ?? 0));
         }
@@ -107,10 +123,20 @@
             return $submission->stockInSummary();
         }
 
+        if ($submission->submission_type === $typeBatchCreation) {
+            if (($submission->payload['source'] ?? null) === \App\Models\Batch::SOURCE_SUPPLIER) {
+                return 'Plants delivered: '.number_format((int) ($submission->payload['plants_delivered'] ?? 0));
+            }
+
+            return 'Plants grafted: '.number_format((int) ($submission->payload['plants_grafted'] ?? 0))
+                .' | Seedlings: '.number_format((int) ($submission->payload['seedlings_used'] ?? 0))
+                .' | Scion: '.number_format((int) ($submission->payload['scion_used'] ?? 0));
+        }
+
         return '';
     };
 
-    $detailsSecondary = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $clientNames, $supplierNames): string {
+    $detailsSecondary = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $typeBatchCreation, $clientNames, $supplierNames, $varietyNames): string {
         if ($submission->submission_type === $typeMortality) {
             $cause = $submission->payload['cause_other'] ?: ($submission->payload['cause'] ?? null);
 
@@ -132,6 +158,19 @@
             ])->filter()->unique()->values();
 
             return 'Supplier: '.($suppliers->isEmpty() ? '—' : $suppliers->implode(' + '));
+        }
+
+        if ($submission->submission_type === $typeBatchCreation) {
+            $variety = $varietyNames[(int) ($submission->payload['scion_variety_id'] ?? 0)] ?? 'Scion variety';
+
+            if (($submission->payload['source'] ?? null) === \App\Models\Batch::SOURCE_SUPPLIER) {
+                $supplier = $supplierNames[(int) ($submission->payload['supplier_id'] ?? 0)] ?? 'Supplier';
+                $date = $submission->payload['delivery_date'] ?? null;
+
+                return 'Supplier: '.$supplier.' | Variety: '.$variety.' | Delivery: '.($date ?: '—');
+            }
+
+            return 'Variety: '.$variety.' | Grafted: '.($submission->payload['grafted_date'] ?? '—');
         }
 
         return '';
@@ -225,6 +264,9 @@
                             <option value="mortality" @selected($typeFilter === 'mortality')>Mortality</option>
                             <option value="stock_out" @selected($typeFilter === 'stock_out')>Stock Out</option>
                             <option value="stock_in" @selected($typeFilter === 'stock_in')>Stock In</option>
+                            @if ($batchCreationEnabled)
+                                <option value="batch_creation" @selected($typeFilter === 'batch_creation')>Batch Creation</option>
+                            @endif
                         </select>
                     </div>
                     <div class="col-sm-4 d-flex gap-2">

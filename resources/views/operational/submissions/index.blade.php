@@ -9,11 +9,13 @@
     $typeMortality = \App\Models\OperationalSubmission::TYPE_MORTALITY;
     $typeStockOut = \App\Models\OperationalSubmission::TYPE_STOCK_OUT;
     $typeStockIn = \App\Models\OperationalSubmission::TYPE_STOCK_IN;
+    $typeBatchCreation = \App\Models\OperationalSubmission::TYPE_BATCH_CREATION;
 
     $typeClasses = [
         $typeMortality => 'type-mortality',
         $typeStockOut => 'type-stock-out',
         $typeStockIn => 'type-stock-in',
+        $typeBatchCreation => 'type-batch',
     ];
 
     $statusClasses = [
@@ -30,7 +32,7 @@
 
     $activeFilterCount = ($typeFilter !== '' ? 1 : 0) + ($statusFilter !== '' ? 1 : 0);
 
-    $subjectLabel = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $clientNames, $supplierNames): string {
+    $subjectLabel = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $typeBatchCreation, $clientNames, $supplierNames): string {
         if ($submission->submission_type === $typeMortality) {
             return 'Mortality Report';
         }
@@ -50,10 +52,20 @@
             return $suppliers->isEmpty() ? 'Stock In' : 'Stock In from '.$suppliers->implode(' + ');
         }
 
+        if ($submission->submission_type === $typeBatchCreation) {
+            if (($submission->payload['source'] ?? null) === \App\Models\Batch::SOURCE_SUPPLIER) {
+                $supplierName = $supplierNames[(int) ($submission->payload['supplier_id'] ?? 0)] ?? null;
+
+                return 'Supplier delivery'.($supplierName ? ' from '.$supplierName : '');
+            }
+
+            return 'Own nursery batch';
+        }
+
         return $submission->typeLabel();
     };
 
-    $subjectMeta = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn): string {
+    $subjectMeta = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeStockIn, $typeBatchCreation, $varietyNames): string {
         if ($submission->submission_type === $typeMortality) {
             $quantity = (int) ($submission->payload['quantity'] ?? 0);
             $cause = $submission->payload['cause'] ?? null;
@@ -73,10 +85,26 @@
             return $submission->stockInSummary();
         }
 
+        if ($submission->submission_type === $typeBatchCreation) {
+            $varietyName = $varietyNames[(int) ($submission->payload['scion_variety_id'] ?? 0)] ?? 'Scion variety';
+
+            if (($submission->payload['source'] ?? null) === \App\Models\Batch::SOURCE_SUPPLIER) {
+                $plants = (int) ($submission->payload['plants_delivered'] ?? 0);
+
+                return number_format($plants).' '.($plants === 1 ? 'plant' : 'plants').' delivered · '.$varietyName;
+            }
+
+            $plants = (int) ($submission->payload['plants_grafted'] ?? 0);
+            $seedlings = (int) ($submission->payload['seedlings_used'] ?? 0);
+            $scion = (int) ($submission->payload['scion_used'] ?? 0);
+
+            return number_format($plants).' plants grafted · '.number_format($seedlings).' seedlings / '.number_format($scion).' '.$varietyName.' scion used';
+        }
+
         return '';
     };
 
-    $batchCodeLabel = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $batchCodes): string {
+    $batchCodeLabel = function (\App\Models\OperationalSubmission $submission) use ($typeMortality, $typeStockOut, $typeBatchCreation, $batchCodes, $officialBatchCodes): string {
         if ($submission->submission_type === $typeMortality) {
             $batchId = (int) ($submission->subject_batch_id ?? ($submission->payload['batch_id'] ?? 0));
 
@@ -100,6 +128,10 @@
             }
 
             return $codes->implode(', ');
+        }
+
+        if ($submission->submission_type === $typeBatchCreation) {
+            return $officialBatchCodes[$submission->submission_id] ?? 'Assigned at approval';
         }
 
         return '—';
@@ -141,6 +173,11 @@
                     @if ($stockInSubmissionEnabled)
                         <a href="{{ route('operational.submissions.stock-in.create') }}" class="btn btn-primary">
                             <i class="bi bi-box-arrow-in-right"></i> Submit Stock In
+                        </a>
+                    @endif
+                    @if ($batchCreationEnabled)
+                        <a href="{{ route('operational.submissions.batch-creation.create') }}" class="btn btn-success">
+                            <i class="bi bi-tree"></i> Submit Batch
                         </a>
                     @endif
                 </div>
@@ -211,6 +248,9 @@
                                 <option value="stock_out" @selected($typeFilter === 'stock_out')>Stock Out</option>
                                 @if ($stockInSubmissionEnabled)
                                     <option value="stock_in" @selected($typeFilter === 'stock_in')>Stock In</option>
+                                @endif
+                                @if ($batchCreationEnabled)
+                                    <option value="batch_creation" @selected($typeFilter === 'batch_creation')>Batch Creation</option>
                                 @endif
                             </select>
                         </div>
@@ -318,7 +358,7 @@
                                         </a>
                                     @else
                                         <h3>No submissions yet</h3>
-                                        <p>Your Mortality, Stock Out, and Stock In submissions will appear here after you submit them.</p>
+                                        <p>Your Mortality, Stock Out, Stock In and Batch Creation submissions will appear here after you submit them.</p>
                                         <p class="mb-0">Choose an action above to get started.</p>
                                     @endif
                                 </div>

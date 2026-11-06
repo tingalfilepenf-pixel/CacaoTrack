@@ -4,9 +4,15 @@
 @section('page_title', 'Batches')
 
 @section('page_actions')
-<button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBatchModal">
-    <i class="bi bi-plus-lg me-1"></i> Add Batch
-</button>
+@if ($batchCreationEnabled && $canSubmitBatch)
+    <a href="{{ route('operational.submissions.batch-creation.create') }}" class="btn btn-primary">
+        <i class="bi bi-send me-1"></i> Submit Batch
+    </a>
+@elseif (! $batchCreationEnabled)
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBatchModal">
+        <i class="bi bi-plus-lg me-1"></i> Add Batch
+    </button>
+@endif
 @endsection
 
 @section('content')
@@ -175,6 +181,7 @@
     </div>
 </div>
 
+@if (! $batchCreationEnabled)
 <!-- Add Batch Modal -->
 <div class="modal fade" id="addBatchModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -238,6 +245,7 @@
         </div>
     </div>
 </div>
+@endif
 
 <!-- Edit Batch Modal -->
 <div class="modal fade" id="editBatchModal" tabindex="-1" aria-hidden="true">
@@ -452,7 +460,7 @@
 
         @if (old('edit_batch_id'))
             new bootstrap.Modal(editModalEl).show();
-        @elseif ($errors->batch->any())
+        @elseif ($errors->batch->any() && $batchCreationEnabled === false)
             new bootstrap.Modal(addModalEl).show();
         @endif
 

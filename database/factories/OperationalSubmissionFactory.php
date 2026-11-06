@@ -85,6 +85,19 @@ class OperationalSubmissionFactory extends Factory
             ];
         }
 
+        if ($type === OperationalSubmission::TYPE_BATCH_CREATION) {
+            return [
+                'source' => Batch::SOURCE_OWN,
+                'seedlings_used' => 1,
+                'scion_variety_id' => 1,
+                'scion_used' => 1,
+                'plants_grafted' => 1,
+                'grafted_date' => now()->toDateString(),
+                'seedlings_available' => 1,
+                'scion_available' => 1,
+            ];
+        }
+
         return [
             'batch_id' => 1,
             'quantity' => 1,
