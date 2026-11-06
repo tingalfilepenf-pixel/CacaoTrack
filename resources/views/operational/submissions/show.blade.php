@@ -136,7 +136,7 @@
                 <dt class="col-sm-3">Automatic</dt><dd class="col-sm-9">{{ $submission->decision_automatic ? 'Yes' : 'No' }}</dd>
             </dl>
             @if ($canSubmit && $submission->isRejected() && (int) $submission->submitted_by_id === (int) auth()->id()
-                && $submission->submission_type !== \App\Models\OperationalSubmission::TYPE_STOCK_IN)
+                && ($submission->submission_type !== \App\Models\OperationalSubmission::TYPE_STOCK_IN || $stockInSubmissionEnabled))
                 <a href="{{ route('operational.submissions.resubmit.create', $submission) }}" class="btn btn-outline-primary mt-3">
                     Resubmit this request
                 </a>

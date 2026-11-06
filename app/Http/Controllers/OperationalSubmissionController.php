@@ -200,7 +200,7 @@ class OperationalSubmissionController extends Controller
             ]);
         }
 
-        abort(404);
+        return view('operational.submissions.stock-in-create', $this->stockInFormData($submission));
     }
 
     public function storeMortalityResubmission(
@@ -245,6 +245,32 @@ class OperationalSubmissionController extends Controller
         return redirect()
             ->route('operational.submissions.show', $newSubmission)
             ->with('success', 'Stock-out resubmitted for Manager verification.');
+    }
+
+    public function storeStockInResubmission(
+        StoreStockInSubmissionRequest $request,
+        OperationalSubmission $submission,
+    ): RedirectResponse {
+        $this->assertResubmittable($request, $submission, OperationalSubmission::TYPE_STOCK_IN);
+
+        $validated = $request->validated();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh(
+            'stock_in_resubmission',
+            $request->duplicateFingerprintPayload(),
+            'submission_stockin',
+        );
+
+        try {
+            $newSubmission = $this->submissions->stockIn($validated, $request->user(), $submission);
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('stock_in_resubmission', $fingerprint);
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('operational.submissions.show', $newSubmission)
+            ->with('success', 'Stock-in resubmitted for Manager verification.');
     }
 
     private function assertResubmittable(Request $request, OperationalSubmission $submission, ?string $type = null): void
