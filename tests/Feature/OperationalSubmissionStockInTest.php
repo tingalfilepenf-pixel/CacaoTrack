@@ -383,6 +383,25 @@ class OperationalSubmissionStockInTest extends TestCase
         $this->assertSame(2, StockIn::count());
     }
 
+    public function test_rejection_remains_available_when_the_module_flag_is_turned_off_after_capture(): void
+    {
+        $staff = $this->staff();
+        $manager = $this->manager();
+        $submission = $this->capture($staff, $this->bothEntries($this->supplier(), $this->variety()));
+
+        config(['cacaotrack.operational_submission.modules.stock_in' => false]);
+
+        $this->actingAs($manager)
+            ->post(route('operational.submissions.reject', $submission), ['reason' => 'Still reviewable.'])
+            ->assertSessionHas('success');
+
+        $submission->refresh();
+
+        $this->assertTrue($submission->isRejected());
+        $this->assertSame('Still reviewable.', $submission->decision_reason);
+        $this->assertSame(0, StockIn::count());
+    }
+
     public function test_the_queue_pending_count_and_review_include_stock_in_while_the_module_is_off(): void
     {
         $staff = $this->staff();

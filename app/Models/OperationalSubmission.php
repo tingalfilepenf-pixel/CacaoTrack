@@ -168,6 +168,20 @@ class OperationalSubmission extends Model
     /**
      * Short subject summary for a grouped Stock In submission.
      */
+    /**
+     * Whether a pending Stock In submission references this scion variety.
+     * Used by the master-data deletion guard while the request is awaiting
+     * verification, before any official stock_ins row exists.
+     */
+    public static function hasPendingStockInScionVariety(int $scionVarietyId): bool
+    {
+        return static::query()
+            ->where('submission_type', self::TYPE_STOCK_IN)
+            ->where('status', self::STATUS_PENDING)
+            ->where('payload->scion->scion_variety_id', $scionVarietyId)
+            ->exists();
+    }
+
     public function stockInSummary(): string
     {
         $parts = [];
