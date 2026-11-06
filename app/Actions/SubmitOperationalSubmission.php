@@ -68,7 +68,54 @@ class SubmitOperationalSubmission
     }
 
     /**
-     * @param  array<string, mixed>  $payload
+     * Capture one grouped Stock In request. Both populated tabs are frozen in
+     * one payload; no official stock_ins row is written here.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function stockIn(array $data, User $submitter, ?OperationalSubmission $resubmissionOf = null): OperationalSubmission
+    {
+        $payload = [];
+
+        $seedling = $data['seedling'] ?? null;
+
+        if (is_array($seedling)) {
+            $payload['seedling'] = [
+                'supplier_id' => (int) $seedling['supplier_id'],
+                'quantity' => (int) $seedling['quantity'],
+                'origin' => (string) $seedling['origin'],
+                'notes' => $seedling['notes'] ?? null,
+                'date_received' => $seedling['date_received'],
+            ];
+        }
+
+        $scion = $data['scion'] ?? null;
+
+        if (is_array($scion)) {
+            $payload['scion'] = [
+                'supplier_id' => isset($scion['supplier_id']) && $scion['supplier_id'] !== null
+                    ? (int) $scion['supplier_id']
+                    : null,
+                'quantity' => (int) $scion['quantity'],
+                'origin' => (string) $scion['origin'],
+                'scion_variety_id' => (int) $scion['scion_variety_id'],
+                'unit_price' => (float) $scion['unit_price'],
+                'notes' => $scion['notes'] ?? null,
+                'date_received' => $scion['date_received'],
+            ];
+        }
+
+        return $this->create(
+            OperationalSubmission::TYPE_STOCK_IN,
+            $payload,
+            $submitter,
+            null,
+            $resubmissionOf,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
      */
     private function create(
         string $type,
@@ -108,6 +155,20 @@ class SubmitOperationalSubmission
             $batch = Batch::find($payload['batch_id']);
 
             return 'Submitted mortality for '.($batch?->batch_code ?? 'batch')." ({$payload['quantity']}).";
+        }
+
+        if ($type === OperationalSubmission::TYPE_STOCK_IN) {
+            $parts = [];
+
+            if (is_array($payload['seedling'] ?? null)) {
+                $parts[] = 'Seedlings '.(int) ($payload['seedling']['quantity'] ?? 0);
+            }
+
+            if (is_array($payload['scion'] ?? null)) {
+                $parts[] = 'Scion '.(int) ($payload['scion']['quantity'] ?? 0);
+            }
+
+            return 'Submitted stock-in ('.implode(' and ', $parts).').';
         }
 
         $client = Client::find($payload['client_id']);

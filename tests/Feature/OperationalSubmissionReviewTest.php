@@ -110,6 +110,66 @@ class OperationalSubmissionReviewTest extends TestCase
             ->assertSee('waiting for Manager verification');
     }
 
+    public function test_queue_status_tabs_switch_between_pending_and_decided_submissions(): void
+    {
+        $staff = $this->staff();
+        $manager = User::factory()->role(Role::MANAGER)->create();
+        $this->submission($staff, $this->batch($staff, 'PENDING-1'));
+        $approved = $this->submission($staff, $this->batch($staff, 'APPROVED-1'));
+
+        $approved->approve($manager->id);
+
+        $this->actingAs($manager)
+            ->get(route('operational.submissions.queue'))
+            ->assertOk()
+            ->assertSee('PENDING-1')
+            ->assertDontSee('APPROVED-1');
+
+        $this->actingAs($manager)
+            ->get(route('operational.submissions.queue', ['status' => 'approved']))
+            ->assertOk()
+            ->assertSee('APPROVED-1')
+            ->assertDontSee('PENDING-1');
+    }
+
+    public function test_queue_search_and_type_filter_limit_the_cards(): void
+    {
+        $staff = $this->staff();
+        $manager = User::factory()->role(Role::MANAGER)->create();
+        $this->submission($staff, $this->batch($staff, 'B001'));
+        $this->submission($staff, $this->batch($staff, 'B002'));
+
+        $this->actingAs($manager)
+            ->get(route('operational.submissions.queue', ['q' => 'B002']))
+            ->assertOk()
+            ->assertSee('B002')
+            ->assertDontSee('B001');
+
+        $this->actingAs($manager)
+            ->get(route('operational.submissions.queue', ['type' => 'stock_out']))
+            ->assertOk()
+            ->assertSee('No matching submissions')
+            ->assertDontSee('B001')
+            ->assertDontSee('B002');
+    }
+
+    public function test_a_decided_submission_shows_its_decision_and_no_pending_actions(): void
+    {
+        $staff = $this->staff();
+        $manager = User::factory()->role(Role::MANAGER)->create();
+        $submission = $this->submission($staff, $this->batch($staff));
+
+        $submission->approve($manager->id);
+
+        $this->actingAs($manager)
+            ->get(route('operational.submissions.show', $submission))
+            ->assertOk()
+            ->assertSee('Decided By')
+            ->assertSee('Manager decision')
+            ->assertDontSee('Approve Submission')
+            ->assertDontSee('Reject Submission');
+    }
+
     public function test_administrator_can_view_all_submissions_read_only(): void
     {
         $staff = $this->staff();

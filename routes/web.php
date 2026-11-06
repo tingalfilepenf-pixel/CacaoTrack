@@ -88,6 +88,13 @@ Route::prefix('operational')->middleware('auth')->group(function () {
             Route::post('/stock-out', [OperationalSubmissionController::class, 'storeStockOut'])
                 ->name('operational.submissions.stock-out.store');
 
+            Route::get('/stock-in/create', [OperationalSubmissionController::class, 'createStockIn'])
+                ->middleware('submissions.enabled:stock_in')
+                ->name('operational.submissions.stock-in.create');
+            Route::post('/stock-in', [OperationalSubmissionController::class, 'storeStockIn'])
+                ->middleware('submissions.enabled:stock_in')
+                ->name('operational.submissions.stock-in.store');
+
             Route::get('/{submission}/resubmit', [OperationalSubmissionController::class, 'createResubmission'])
                 ->whereNumber('submission')
                 ->name('operational.submissions.resubmit.create');
@@ -97,6 +104,11 @@ Route::prefix('operational')->middleware('auth')->group(function () {
             Route::post('/{submission}/resubmit/stock-out', [OperationalSubmissionController::class, 'storeStockOutResubmission'])
                 ->whereNumber('submission')
                 ->name('operational.submissions.resubmit.stock-out');
+
+            Route::post('/{submission}/resubmit/stock-in', [OperationalSubmissionController::class, 'storeStockInResubmission'])
+                ->whereNumber('submission')
+                ->middleware('submissions.enabled:stock_in')
+                ->name('operational.submissions.resubmit.stock-in');
         });
     });
 
@@ -159,7 +171,9 @@ Route::prefix('inventory')->group(function () {
     // Stock transactions — require the `manage_stock` access restriction.
     Route::middleware(['auth', 'permission:manage_stock'])->group(function () {
         Route::get('/stock-in', [StockInController::class, 'index'])->name('inventory.stock-in');
-        Route::post('/stock-in', [StockInController::class, 'store'])->name('inventory.stock-in.store');
+        Route::post('/stock-in', [StockInController::class, 'store'])
+            ->middleware('submissions.direct-writes:stock_in')
+            ->name('inventory.stock-in.store');
 
         Route::get('/stock-out', [StockOutController::class, 'index'])->name('inventory.stock-out');
         Route::post('/stock-out', [StockOutController::class, 'store'])

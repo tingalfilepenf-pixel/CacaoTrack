@@ -23,13 +23,18 @@ return [
     | Operational submission workflow switch
     |--------------------------------------------------------------------------
     |
-    | One explicit boolean switch for the Phase 3 Mortality / Stock Out
-    | approval workflow. It is OFF by default and is deliberately not a date
-    | check: the live app keeps writing directly until the owner enables it.
+    | One explicit master switch for the approval workflow, plus one explicit
+    | per-module switch for each module that may be turned on independently.
+    | Everything is OFF by default and deliberately not a date check: the live
+    | app keeps writing directly until the owner enables it.
     |
     */
 
     'operational_submission' => [
         'enabled' => env('CACAOTRACK_OPERATIONAL_SUBMISSION_ENABLED', false),
+
+        'modules' => [
+            'stock_in' => env('CACAOTRACK_STOCK_IN_SUBMISSION_ENABLED', false),
+        ],
     ],
 ];

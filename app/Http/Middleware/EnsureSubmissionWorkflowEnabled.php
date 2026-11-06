@@ -16,9 +16,13 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EnsureSubmissionWorkflowEnabled
 {
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next, ?string $module = null): Response
     {
-        if (! SubmissionWorkflowSwitch::enabled()) {
+        $enabled = $module === null
+            ? SubmissionWorkflowSwitch::enabled()
+            : SubmissionWorkflowSwitch::moduleEnabled($module);
+
+        if (! $enabled) {
             abort(404);
         }
 

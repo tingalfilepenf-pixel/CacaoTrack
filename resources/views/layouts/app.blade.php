@@ -19,10 +19,13 @@
 
             <!-- Page Content -->
             <main class="content-wrapper">
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h1 class="h3 mb-0 text-gray-800">@yield('page_title', 'Dashboard')</h1>
-                    @yield('page_actions')
-                </div>
+                @php($pageTitle = trim($__env->yieldContent('page_title')))
+                @if ($pageTitle !== '')
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h1 class="h3 mb-0 text-gray-800">{{ $pageTitle }}</h1>
+                        @yield('page_actions')
+                    </div>
+                @endif
 
                 @yield('content')
             </main>

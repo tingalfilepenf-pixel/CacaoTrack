@@ -8,17 +8,23 @@ use App\Actions\SubmitOperationalSubmission;
 use App\Exceptions\ApprovalRevalidationException;
 use App\Http\Requests\RejectOperationalSubmissionRequest;
 use App\Http\Requests\StoreMortalitySubmissionRequest;
+use App\Http\Requests\StoreStockInSubmissionRequest;
 use App\Http\Requests\StoreStockOutSubmissionRequest;
 use App\Models\Batch;
 use App\Models\Client;
 use App\Models\MortalityRecord;
 use App\Models\OperationalSubmission;
+use App\Models\ScionVariety;
 use App\Models\StockOutDetail;
+use App\Models\Supplier;
 use App\Support\DuplicateSubmissionGuard;
 use App\Support\OperationalSubmissionVisibility;
+use App\Support\SubmissionWorkflowSwitch;
 use DomainException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -41,36 +47,212 @@ class OperationalSubmissionController extends Controller
     {
         $user = $request->user();
 
-        $submissions = OperationalSubmissionVisibility::scope(
+        $search = trim((string) $request->query('q', ''));
+        $typeFilter = (string) $request->query('type', '');
+        $statusFilter = (string) $request->query('status', '');
+
+        if (! in_array($typeFilter, OperationalSubmission::TYPES, true)) {
+            $typeFilter = '';
+        }
+
+        if (! in_array($statusFilter, OperationalSubmission::STATUSES, true)) {
+            $statusFilter = '';
+        }
+
+        $query = OperationalSubmissionVisibility::scope(
             OperationalSubmission::query()->with(['submitter', 'subjectBatch', 'decider', 'resubmissionOf']),
             $user,
-        )
+        );
+
+        $this->applySearch($query, $search);
+
+        if ($typeFilter !== '') {
+            $query->where('submission_type', $typeFilter);
+        }
+
+        if ($statusFilter !== '') {
+            $query->where('status', $statusFilter);
+        }
+
+        $submissions = $query
             ->orderByDesc('submitted_at')
             ->orderByDesc('submission_id')
             ->paginate(10)
             ->withQueryString();
 
-        return view('operational.submissions.index', [
+        $display = $this->displayData($submissions->getCollection());
+
+        return view('operational.submissions.index', array_merge([
             'submissions' => $submissions,
             'canSubmit' => $user->hasPermission('submit_operations'),
             'canVerify' => $user->hasPermission('verify_operations'),
             'canViewAll' => OperationalSubmissionVisibility::canViewAll($user),
-        ]);
+            'stockInSubmissionEnabled' => SubmissionWorkflowSwitch::stockInEnabled(),
+            'search' => $search,
+            'typeFilter' => $typeFilter,
+            'statusFilter' => $statusFilter,
+            'hasFilters' => $search !== '' || $typeFilter !== '' || $statusFilter !== '',
+        ], $display));
     }
 
     public function queue(Request $request): View
     {
-        $submissions = OperationalSubmission::query()
-            ->with(['submitter', 'subjectBatch'])
-            ->where('status', OperationalSubmission::STATUS_PENDING)
-            ->orderBy('submitted_at')
-            ->orderBy('submission_id')
-            ->paginate(10)
-            ->withQueryString();
+        $search = trim((string) $request->query('q', ''));
+        $typeFilter = (string) $request->query('type', '');
+        $statusFilter = (string) $request->query('status', OperationalSubmission::STATUS_PENDING);
 
-        return view('operational.submissions.queue', [
+        if (! in_array($typeFilter, OperationalSubmission::TYPES, true)) {
+            $typeFilter = '';
+        }
+
+        if (! in_array($statusFilter, OperationalSubmission::STATUSES, true)) {
+            $statusFilter = OperationalSubmission::STATUS_PENDING;
+        }
+
+        $baseQuery = OperationalSubmissionVisibility::scope(
+            OperationalSubmission::query()->with(['submitter', 'subjectBatch', 'decider']),
+            $request->user(),
+        );
+
+        $this->applySearch($baseQuery, $search);
+
+        if ($typeFilter !== '') {
+            $baseQuery->where('submission_type', $typeFilter);
+        }
+
+        $statusCounts = [];
+
+        foreach (OperationalSubmission::STATUSES as $status) {
+            $statusCounts[$status] = (clone $baseQuery)->where('status', $status)->count();
+        }
+
+        $query = (clone $baseQuery)->where('status', $statusFilter);
+
+        if ($statusFilter === OperationalSubmission::STATUS_PENDING) {
+            $query->orderBy('submitted_at')->orderBy('submission_id');
+        } else {
+            $query->orderByDesc('decided_at')->orderByDesc('submission_id');
+        }
+
+        $submissions = $query->paginate(10)->withQueryString();
+
+        $display = $this->displayData($submissions->getCollection());
+
+        return view('operational.submissions.queue', array_merge([
             'submissions' => $submissions,
-        ]);
+            'search' => $search,
+            'typeFilter' => $typeFilter,
+            'statusFilter' => $statusFilter,
+            'statusCounts' => $statusCounts,
+            'hasFilters' => $search !== '' || $typeFilter !== '',
+            'stockInSubmissionEnabled' => SubmissionWorkflowSwitch::stockInEnabled(),
+        ], $display));
+    }
+
+    /**
+     * Apply the shared subject/batch/client/supplier search to a submission query.
+     *
+     * @param  Builder<OperationalSubmission>  $query
+     */
+    private function applySearch(Builder $query, string $search): void
+    {
+        if ($search === '') {
+            return;
+        }
+
+        $like = '%'.$search.'%';
+        $matchingClientIds = Client::query()
+            ->where('client_name', 'like', $like)
+            ->pluck('client_id')
+            ->all();
+        $matchingBatchIds = Batch::query()
+            ->where('batch_code', 'like', $like)
+            ->pluck('batch_id')
+            ->all();
+        $matchingSupplierIds = Supplier::query()
+            ->where('supplier_name', 'like', $like)
+            ->pluck('supplier_id')
+            ->all();
+
+        $query->where(function ($inner) use ($like, $matchingClientIds, $matchingBatchIds, $matchingSupplierIds): void {
+            $inner->where('submission_id', 'like', $like)
+                ->orWhere('submission_type', 'like', $like)
+                ->orWhereHas('submitter', fn ($submitter) => $submitter->where('name', 'like', $like))
+                ->orWhereHas('subjectBatch', fn ($batch) => $batch->where('batch_code', 'like', $like));
+
+            if ($matchingClientIds !== []) {
+                $inner->orWhereIn('payload->client_id', $matchingClientIds);
+            }
+
+            if ($matchingSupplierIds !== []) {
+                $inner->orWhereIn('payload->seedling->supplier_id', $matchingSupplierIds)
+                    ->orWhereIn('payload->scion->supplier_id', $matchingSupplierIds);
+            }
+
+            foreach ($matchingBatchIds as $batchId) {
+                $inner->orWhereJsonContains('payload->details', ['batch_id' => (int) $batchId]);
+            }
+        });
+    }
+
+    /**
+     * Resolve the display names referenced by the submissions on the page.
+     *
+     * @param  Collection<int, OperationalSubmission>  $pageSubmissions
+     * @return array{clientNames: array<int, string>, batchCodes: array<int, string>, supplierNames: array<int, string>}
+     */
+    private function displayData(Collection $pageSubmissions): array
+    {
+        $clientIds = $pageSubmissions
+            ->where('submission_type', OperationalSubmission::TYPE_STOCK_OUT)
+            ->map(fn (OperationalSubmission $submission): int => (int) ($submission->payload['client_id'] ?? 0))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $batchIds = $pageSubmissions
+            ->flatMap(function (OperationalSubmission $submission): array {
+                if ($submission->submission_type === OperationalSubmission::TYPE_MORTALITY) {
+                    return [(int) ($submission->subject_batch_id ?? ($submission->payload['batch_id'] ?? 0))];
+                }
+
+                if ($submission->submission_type === OperationalSubmission::TYPE_STOCK_OUT) {
+                    return collect($submission->payload['details'] ?? [])
+                        ->pluck('batch_id')
+                        ->map(fn ($id): int => (int) $id)
+                        ->all();
+                }
+
+                return [];
+            })
+            ->filter()
+            ->unique()
+            ->values();
+
+        $supplierIds = $pageSubmissions
+            ->where('submission_type', OperationalSubmission::TYPE_STOCK_IN)
+            ->flatMap(fn (OperationalSubmission $submission): array => [
+                (int) ($submission->payload['seedling']['supplier_id'] ?? 0),
+                (int) ($submission->payload['scion']['supplier_id'] ?? 0),
+            ])
+            ->filter()
+            ->unique()
+            ->values();
+
+        return [
+            'clientNames' => Client::query()
+                ->whereIn('client_id', $clientIds)
+                ->pluck('client_name', 'client_id')
+                ->all(),
+            'batchCodes' => Batch::query()
+                ->whereIn('batch_id', $batchIds)
+                ->pluck('batch_code', 'batch_id')
+                ->all(),
+            'supplierNames' => Supplier::query()
+                ->whereIn('supplier_id', $supplierIds)
+                ->pluck('supplier_name', 'supplier_id')
+                ->all(),
+        ];
     }
 
     public function show(Request $request, OperationalSubmission $submission): View
@@ -81,12 +263,30 @@ class OperationalSubmissionController extends Controller
 
         $submission->load(['submitter', 'decider', 'subjectBatch', 'resubmissionOf', 'records']);
 
-        return view('operational.submissions.show', [
+        $supplierIds = collect([
+            $submission->payload['seedling']['supplier_id'] ?? null,
+            $submission->payload['scion']['supplier_id'] ?? null,
+        ])->filter()->map(fn ($id) => (int) $id)->unique()->values();
+
+        $varietyIds = collect([
+            $submission->payload['scion']['scion_variety_id'] ?? null,
+        ])->filter()->map(fn ($id) => (int) $id)->unique()->values();
+
+        $display = $this->displayData(collect([$submission]));
+
+        return view('operational.submissions.show', array_merge([
             'submission' => $submission,
             'canVerify' => $user->hasPermission('verify_operations'),
             'canSubmit' => $user->hasPermission('submit_operations'),
             'canViewAll' => OperationalSubmissionVisibility::canViewAll($user),
-        ]);
+            'stockInSubmissionEnabled' => SubmissionWorkflowSwitch::stockInEnabled(),
+            'stockInSuppliers' => Supplier::query()
+                ->whereIn('supplier_id', $supplierIds)
+                ->pluck('supplier_name', 'supplier_id'),
+            'stockInVarieties' => ScionVariety::query()
+                ->whereIn('scion_variety_id', $varietyIds)
+                ->pluck('scion_variety_name', 'scion_variety_id'),
+        ], $display));
     }
 
     public function approve(Request $request, OperationalSubmission $submission): RedirectResponse
@@ -167,15 +367,19 @@ class OperationalSubmissionController extends Controller
             ]);
         }
 
-        return view('operational.submissions.stock-out-create', [
-            'clients' => Client::active()->orderBy('client_name')->get(),
-            'batches' => Batch::submissionEligible()
-                ->with('scionVariety')
-                ->orderBy('batch_code')
-                ->get(),
-            'units' => StockOutDetail::UNITS,
-            'resubmissionOf' => $submission,
-        ]);
+        if ($submission->submission_type === OperationalSubmission::TYPE_STOCK_OUT) {
+            return view('operational.submissions.stock-out-create', [
+                'clients' => Client::active()->orderBy('client_name')->get(),
+                'batches' => Batch::submissionEligible()
+                    ->with('scionVariety')
+                    ->orderBy('batch_code')
+                    ->get(),
+                'units' => StockOutDetail::UNITS,
+                'resubmissionOf' => $submission,
+            ]);
+        }
+
+        return view('operational.submissions.stock-in-create', $this->stockInFormData($submission));
     }
 
     public function storeMortalityResubmission(
@@ -222,6 +426,32 @@ class OperationalSubmissionController extends Controller
             ->with('success', 'Stock-out resubmitted for Manager verification.');
     }
 
+    public function storeStockInResubmission(
+        StoreStockInSubmissionRequest $request,
+        OperationalSubmission $submission,
+    ): RedirectResponse {
+        $this->assertResubmittable($request, $submission, OperationalSubmission::TYPE_STOCK_IN);
+
+        $validated = $request->validated();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh(
+            'stock_in_resubmission',
+            $request->duplicateFingerprintPayload(),
+            'submission_stockin',
+        );
+
+        try {
+            $newSubmission = $this->submissions->stockIn($validated, $request->user(), $submission);
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('stock_in_resubmission', $fingerprint);
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('operational.submissions.show', $newSubmission)
+            ->with('success', 'Stock-in resubmitted for Manager verification.');
+    }
+
     private function assertResubmittable(Request $request, OperationalSubmission $submission, ?string $type = null): void
     {
         abort_unless((int) $submission->submitted_by_id === (int) $request->user()->id, 404);
@@ -245,6 +475,33 @@ class OperationalSubmissionController extends Controller
         return redirect()
             ->route('operational.submissions.index')
             ->with('success', 'Mortality submitted for Manager verification.');
+    }
+
+    public function createStockIn(): View
+    {
+        return view('operational.submissions.stock-in-create', $this->stockInFormData());
+    }
+
+    public function storeStockIn(StoreStockInSubmissionRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh(
+            'stock_in_submission',
+            $request->duplicateFingerprintPayload(),
+            'submission_stockin',
+        );
+
+        try {
+            $this->submissions->stockIn($validated, Auth::user());
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('stock_in_submission', $fingerprint);
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('operational.submissions.index')
+            ->with('success', 'Stock-in submitted for Manager verification.');
     }
 
     public function createStockOut(): View
@@ -275,5 +532,17 @@ class OperationalSubmissionController extends Controller
         return redirect()
             ->route('operational.submissions.index')
             ->with('success', 'Stock-out submitted for Manager verification.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stockInFormData(?OperationalSubmission $resubmissionOf = null): array
+    {
+        return [
+            'suppliers' => Supplier::active()->orderBy('supplier_name')->get(),
+            'scionVarieties' => ScionVariety::query()->active()->orderBy('scion_variety_name')->get(),
+            'resubmissionOf' => $resubmissionOf,
+        ];
     }
 }

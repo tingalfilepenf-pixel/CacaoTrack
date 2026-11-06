@@ -2,21 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\RecordStockIn;
 use App\Http\Requests\StoreStockInRequest;
 use App\Http\Requests\StoreSupplierRequest;
-use App\Models\ActivityLog;
 use App\Models\ScionVariety;
 use App\Models\StockIn;
 use App\Models\Supplier;
 use App\Support\DuplicateSubmissionGuard;
+use App\Support\OperationalSubmissionVisibility;
+use App\Support\SubmissionWorkflowSwitch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class StockInController extends Controller
 {
+    public function __construct(private readonly RecordStockIn $stockIns) {}
+
     /**
      * FR-09 Stock In listing. Stock In records a receiving event and has no
      * `batch_id` (ERD §3.7). Since the client-confirmed merge of Scion_Receiving
@@ -26,6 +29,11 @@ class StockInController extends Controller
      */
     public function index(Request $request): View
     {
+        if (SubmissionWorkflowSwitch::stockInEnabled()
+            && ! OperationalSubmissionVisibility::canViewAll($request->user())) {
+            abort(403);
+        }
+
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,supplier_id'],
@@ -92,46 +100,13 @@ class StockInController extends Controller
             'stockin',
         );
 
+        $entries = array_filter(
+            ['seedling' => $seedling, 'scion' => $scion],
+            fn ($entry): bool => is_array($entry),
+        );
+
         try {
-            $saved = DB::transaction(function () use ($seedling, $scion): array {
-                $saved = [];
-
-                if (is_array($seedling)) {
-                    $record = StockIn::create([
-                        'supplier_id' => $seedling['supplier_id'] ?? null,
-                        'scion_variety_id' => null,
-                        'user_id' => Auth::id(),
-                        'quantity' => $seedling['quantity'],
-                        'unit_price' => null,
-                        'origin' => $seedling['origin'],
-                        'notes' => $seedling['notes'] ?? null,
-                        'date_received' => $seedling['date_received'],
-                    ]);
-
-                    $this->recordReceiving($record, $seedling, false);
-
-                    $saved['seedlings'] = (int) $record->quantity;
-                }
-
-                if (is_array($scion)) {
-                    $record = StockIn::create([
-                        'supplier_id' => $scion['supplier_id'] ?? null,
-                        'scion_variety_id' => $scion['scion_variety_id'],
-                        'user_id' => Auth::id(),
-                        'quantity' => $scion['quantity'],
-                        'unit_price' => $scion['unit_price'],
-                        'origin' => $scion['origin'],
-                        'notes' => $scion['notes'] ?? null,
-                        'date_received' => $scion['date_received'],
-                    ]);
-
-                    $this->recordReceiving($record, $scion, true);
-
-                    $saved['scion'] = (int) $record->quantity;
-                }
-
-                return $saved;
-            });
+            $saved = $this->stockIns->execute($entries, (int) Auth::id());
         } catch (\Throwable $exception) {
             DuplicateSubmissionGuard::release('stock_in', $fingerprint);
 
@@ -140,12 +115,12 @@ class StockInController extends Controller
 
         $parts = [];
 
-        if (isset($saved['seedlings'])) {
-            $parts[] = 'Seedlings '.$saved['seedlings'];
+        if (isset($saved['seedling'])) {
+            $parts[] = 'Seedlings '.(int) $saved['seedling']->quantity;
         }
 
         if (isset($saved['scion'])) {
-            $parts[] = 'Scion '.$saved['scion'];
+            $parts[] = 'Scion '.(int) $saved['scion']->quantity;
         }
 
         return redirect()
@@ -153,41 +128,23 @@ class StockInController extends Controller
             ->with('success', 'Saved: '.implode(' and ', $parts).'.');
     }
 
-    /**
-     * Write the single centralized Activity_Log row for one receiving. The
-     * wording matches the pre-grouping message so Activity History stays
-     * consistent.
-     *
-     * @param  array<string, mixed>  $entry
-     */
-    private function recordReceiving(StockIn $record, array $entry, bool $isScion): void
-    {
-        $supplier = Supplier::find($entry['supplier_id'] ?? null);
-
-        if ($isScion) {
-            $scionVariety = ScionVariety::find($entry['scion_variety_id']);
-            $description = "Received {$record->quantity} scion of "
-                .($scionVariety?->scion_variety_name ?? 'scion variety')
-                .' from '.($supplier?->supplier_name ?? 'supplier')
-                ." (origin: {$record->origin}).";
-        } else {
-            $description = "Received {$record->quantity} seedlings from "
-                .($supplier?->supplier_name ?? 'supplier')
-                ." (origin: {$record->origin}).";
-        }
-
-        ActivityLog::record(
-            null,
-            ActivityLog::TYPE_STOCK_IN_RECORDED,
-            $description,
-            null,
-            $entry['date_received'],
-        );
-    }
-
     public function storeSupplier(StoreSupplierRequest $request): RedirectResponse
     {
-        $supplier = Supplier::create($request->validated());
+        $supplier = Supplier::create(
+            $request->safe()->only(['supplier_name', 'contact_number', 'address'])
+        );
+
+        if ($request->input('return_to') === 'stock_in_submission') {
+            $resubmissionId = $request->integer('resubmission_of');
+
+            $destination = $resubmissionId > 0
+                ? route('operational.submissions.resubmit.create', $resubmissionId)
+                : route('operational.submissions.stock-in.create');
+
+            return redirect($destination)
+                ->with('success', 'Supplier added successfully.')
+                ->with('new_supplier_id', $supplier->supplier_id);
+        }
 
         return redirect()
             ->route('inventory.stock-in')

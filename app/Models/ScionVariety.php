@@ -199,6 +199,14 @@ class ScionVariety extends Model
             }
         }
 
+        $hasPendingStockIn = array_key_exists('pending_stock_in_submission_exists', $this->attributes)
+            ? (bool) $this->attributes['pending_stock_in_submission_exists']
+            : OperationalSubmission::hasPendingStockInScionVariety((int) $this->scion_variety_id);
+
+        if ($hasPendingStockIn) {
+            $blockers[] = 'pending stock-in submissions';
+        }
+
         return $blockers;
     }
 

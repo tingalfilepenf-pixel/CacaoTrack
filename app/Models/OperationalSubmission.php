@@ -49,8 +49,10 @@ class OperationalSubmission extends Model
 
     public const TYPE_STOCK_OUT = 'stock_out';
 
+    public const TYPE_STOCK_IN = 'stock_in';
+
     /**
-     * Pilot submission types. More types may be added later; values are
+     * Supported submission types. More types may be added later; values are
      * validated in code, never with a database ENUM.
      *
      * @var list<string>
@@ -58,6 +60,7 @@ class OperationalSubmission extends Model
     public const TYPES = [
         self::TYPE_MORTALITY,
         self::TYPE_STOCK_OUT,
+        self::TYPE_STOCK_IN,
     ];
 
     protected $table = 'operational_submissions';
@@ -146,6 +149,56 @@ class OperationalSubmission extends Model
     public function isRejected(): bool
     {
         return $this->status === self::STATUS_REJECTED;
+    }
+
+    /**
+     * Human-readable label for the submission type, used by the index, queue
+     * and review screens and by the audit log.
+     */
+    public function typeLabel(): string
+    {
+        return match ($this->submission_type) {
+            self::TYPE_MORTALITY => 'Mortality',
+            self::TYPE_STOCK_OUT => 'Stock Out',
+            self::TYPE_STOCK_IN => 'Stock In',
+            default => ucfirst(str_replace('_', ' ', $this->submission_type)),
+        };
+    }
+
+    /**
+     * Short subject summary for a grouped Stock In submission.
+     */
+    /**
+     * Whether a pending Stock In submission references this scion variety.
+     * Used by the master-data deletion guard while the request is awaiting
+     * verification, before any official stock_ins row exists.
+     */
+    public static function hasPendingStockInScionVariety(int $scionVarietyId): bool
+    {
+        return static::query()
+            ->where('submission_type', self::TYPE_STOCK_IN)
+            ->where('status', self::STATUS_PENDING)
+            ->where('payload->scion->scion_variety_id', $scionVarietyId)
+            ->exists();
+    }
+
+    public function stockInSummary(): string
+    {
+        $parts = [];
+
+        $seedling = $this->payload['seedling'] ?? null;
+
+        if (is_array($seedling)) {
+            $parts[] = 'Seedlings '.number_format((int) ($seedling['quantity'] ?? 0));
+        }
+
+        $scion = $this->payload['scion'] ?? null;
+
+        if (is_array($scion)) {
+            $parts[] = 'Scion '.number_format((int) ($scion['quantity'] ?? 0));
+        }
+
+        return $parts === [] ? 'Stock In' : implode(' + ', $parts);
     }
 
     /**

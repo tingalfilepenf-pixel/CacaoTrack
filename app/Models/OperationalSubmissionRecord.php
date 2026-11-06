@@ -29,6 +29,8 @@ class OperationalSubmissionRecord extends Model
 
     public const RECORD_TYPE_STOCK_OUT_DETAIL = 'stock_out_detail';
 
+    public const RECORD_TYPE_STOCK_IN = 'stock_in';
+
     /**
      * @var list<string>
      */
@@ -36,6 +38,7 @@ class OperationalSubmissionRecord extends Model
         self::RECORD_TYPE_MORTALITY,
         self::RECORD_TYPE_STOCK_OUT,
         self::RECORD_TYPE_STOCK_OUT_DETAIL,
+        self::RECORD_TYPE_STOCK_IN,
     ];
 
     public const UPDATED_AT = null;

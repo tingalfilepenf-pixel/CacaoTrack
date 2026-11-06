@@ -6,6 +6,7 @@ use App\Http\Requests\StoreScionVarietyRequest;
 use App\Http\Requests\UpdateScionVarietyRequest;
 use App\Models\ActivityLog;
 use App\Models\Batch;
+use App\Models\OperationalSubmission;
 use App\Models\ScionVariety;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -47,6 +48,25 @@ class ScionVarietyController extends Controller
             ->orderBy('scion_variety_name')
             ->paginate(10)
             ->withQueryString();
+
+        $pendingStockInVarietyIds = OperationalSubmission::query()
+            ->where('submission_type', OperationalSubmission::TYPE_STOCK_IN)
+            ->where('status', OperationalSubmission::STATUS_PENDING)
+            ->get(['payload'])
+            ->pluck('payload')
+            ->map(fn (array $payload): ?int => isset($payload['scion']['scion_variety_id'])
+                ? (int) $payload['scion']['scion_variety_id']
+                : null)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $scionVarieties->getCollection()->each(
+            fn (ScionVariety $scionVariety) => $scionVariety->setAttribute(
+                'pending_stock_in_submission_exists',
+                $pendingStockInVarietyIds->contains((int) $scionVariety->scion_variety_id),
+            ),
+        );
 
         return view('operational.scion-varieties.index', [
             'scionVarieties' => $scionVarieties,
