@@ -45,7 +45,7 @@
     <div class="card-body">
         <dl class="row mb-0">
             <dt class="col-sm-3">Type</dt>
-            <dd class="col-sm-9">{{ ucfirst(str_replace('_', ' ', $submission->submission_type)) }}</dd>
+            <dd class="col-sm-9">{{ $submission->typeLabel() }}</dd>
             <dt class="col-sm-3">Submitted by</dt>
             <dd class="col-sm-9">{{ $submission->submitter?->name ?? 'Unknown user' }}</dd>
             <dt class="col-sm-3">Submitted at</dt>
@@ -73,7 +73,7 @@
                 <dt class="col-sm-3">Cause</dt><dd class="col-sm-9">{{ $submission->payload['cause'] ?? '—' }}@if (! empty($submission->payload['cause_other'])) — {{ $submission->payload['cause_other'] }}@endif</dd>
                 <dt class="col-sm-3">Recorded date</dt><dd class="col-sm-9">{{ $submission->payload['recorded_at'] ?? '—' }}</dd>
             </dl>
-        @else
+        @elseif ($submission->submission_type === \App\Models\OperationalSubmission::TYPE_STOCK_OUT)
             <dl class="row">
                 <dt class="col-sm-3">Client</dt><dd class="col-sm-9">#{{ $submission->payload['client_id'] ?? '—' }}</dd>
                 <dt class="col-sm-3">Release date</dt><dd class="col-sm-9">{{ $submission->payload['release_date'] ?? '—' }}</dd>
@@ -93,6 +93,34 @@
                     </tbody>
                 </table>
             </div>
+        @else
+            @foreach (['seedling' => 'Seedlings entry', 'scion' => 'Scion entry'] as $tab => $label)
+                @php
+                    $entry = $submission->payload[$tab] ?? null;
+                    $supplierName = is_array($entry) && ! empty($entry['supplier_id'])
+                        ? ($stockInSuppliers[(int) $entry['supplier_id']] ?? '#'.$entry['supplier_id'])
+                        : '—';
+                    $varietyName = is_array($entry) && ! empty($entry['scion_variety_id'])
+                        ? ($stockInVarieties[(int) $entry['scion_variety_id']] ?? '#'.$entry['scion_variety_id'])
+                        : '—';
+                @endphp
+                @if (is_array($entry))
+                    <div class="border rounded p-3 {{ $loop->last ? '' : 'mb-3' }}">
+                        <div class="fw-bold text-primary mb-2">{{ $label }}</div>
+                        <dl class="row mb-0">
+                            <dt class="col-sm-3">Supplier</dt><dd class="col-sm-9">{{ $supplierName }}</dd>
+                            <dt class="col-sm-3">Quantity</dt><dd class="col-sm-9">{{ number_format((int) ($entry['quantity'] ?? 0)) }}</dd>
+                            <dt class="col-sm-3">Origin</dt><dd class="col-sm-9">{{ $entry['origin'] ?? '—' }}</dd>
+                            @if ($tab === 'scion')
+                                <dt class="col-sm-3">Scion variety</dt><dd class="col-sm-9">{{ $varietyName }}</dd>
+                                <dt class="col-sm-3">Unit price</dt><dd class="col-sm-9">{{ isset($entry['unit_price']) ? '₱'.number_format((float) $entry['unit_price'], 2) : '—' }}</dd>
+                            @endif
+                            <dt class="col-sm-3">Date received</dt><dd class="col-sm-9">{{ $entry['date_received'] ?? '—' }}</dd>
+                            <dt class="col-sm-3">Notes</dt><dd class="col-sm-9">{{ $entry['notes'] ?: '—' }}</dd>
+                        </dl>
+                    </div>
+                @endif
+            @endforeach
         @endif
     </div>
 </div>
@@ -107,7 +135,8 @@
                 <dt class="col-sm-3">Reason</dt><dd class="col-sm-9">{{ $submission->decision_reason ?: '—' }}</dd>
                 <dt class="col-sm-3">Automatic</dt><dd class="col-sm-9">{{ $submission->decision_automatic ? 'Yes' : 'No' }}</dd>
             </dl>
-            @if ($canSubmit && $submission->isRejected() && (int) $submission->submitted_by_id === (int) auth()->id())
+            @if ($canSubmit && $submission->isRejected() && (int) $submission->submitted_by_id === (int) auth()->id()
+                && $submission->submission_type !== \App\Models\OperationalSubmission::TYPE_STOCK_IN)
                 <a href="{{ route('operational.submissions.resubmit.create', $submission) }}" class="btn btn-outline-primary mt-3">
                     Resubmit this request
                 </a>

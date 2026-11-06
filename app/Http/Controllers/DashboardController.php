@@ -70,6 +70,7 @@ class DashboardController extends Controller
 
         $actions = [];
         $submissionWorkflow = SubmissionWorkflowSwitch::enabled();
+        $stockInSubmissionWorkflow = SubmissionWorkflowSwitch::stockInEnabled();
 
         // Staff see the four approved shortcuts only; Mortality and Regraft
         // remain reachable from the Inventory page and their own routes.
@@ -83,7 +84,9 @@ class DashboardController extends Controller
             }
 
             if ($user->hasPermission('manage_stock')) {
-                $actions[] = ['label' => 'Stock In', 'route' => 'inventory.stock-in', 'icon' => 'bi-box-arrow-in-right', 'class' => 'btn-outline-primary'];
+                if (! $stockInSubmissionWorkflow) {
+                    $actions[] = ['label' => 'Stock In', 'route' => 'inventory.stock-in', 'icon' => 'bi-box-arrow-in-right', 'class' => 'btn-outline-primary'];
+                }
 
                 if (! $submissionWorkflow) {
                     $actions[] = ['label' => 'Stock Out', 'route' => 'inventory.stock-out', 'icon' => 'bi-box-arrow-right', 'class' => 'btn-outline-secondary'];
@@ -93,6 +96,10 @@ class DashboardController extends Controller
             if ($submissionWorkflow && $user->hasPermission('submit_operations')) {
                 $actions[] = ['label' => 'Submit Mortality', 'route' => 'operational.submissions.mortality.create', 'icon' => 'bi-clipboard-plus', 'class' => 'btn-outline-danger'];
                 $actions[] = ['label' => 'Submit Stock Out', 'route' => 'operational.submissions.stock-out.create', 'icon' => 'bi-box-arrow-right', 'class' => 'btn-outline-secondary'];
+
+                if ($stockInSubmissionWorkflow) {
+                    $actions[] = ['label' => 'Submit Stock In', 'route' => 'operational.submissions.stock-in.create', 'icon' => 'bi-box-arrow-in-right', 'class' => 'btn-outline-primary'];
+                }
             }
 
             if ($user->hasPermission('manage_checklist') || $user->hasPermission('complete_checklist')) {
@@ -110,7 +117,9 @@ class DashboardController extends Controller
         }
 
         if ($user->hasPermission('manage_stock')) {
-            $actions[] = ['label' => 'Stock In', 'route' => 'inventory.stock-in', 'icon' => 'bi-box-arrow-in-right', 'class' => 'btn-outline-primary'];
+            if (! $stockInSubmissionWorkflow) {
+                $actions[] = ['label' => 'Stock In', 'route' => 'inventory.stock-in', 'icon' => 'bi-box-arrow-in-right', 'class' => 'btn-outline-primary'];
+            }
 
             if (! $submissionWorkflow) {
                 $actions[] = ['label' => 'Stock Out', 'route' => 'inventory.stock-out', 'icon' => 'bi-box-arrow-right', 'class' => 'btn-outline-secondary'];

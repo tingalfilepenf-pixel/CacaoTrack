@@ -130,7 +130,21 @@ class StockInController extends Controller
 
     public function storeSupplier(StoreSupplierRequest $request): RedirectResponse
     {
-        $supplier = Supplier::create($request->validated());
+        $supplier = Supplier::create(
+            $request->safe()->only(['supplier_name', 'contact_number', 'address'])
+        );
+
+        if ($request->input('return_to') === 'stock_in_submission') {
+            $resubmissionId = $request->integer('resubmission_of');
+
+            $destination = $resubmissionId > 0
+                ? route('operational.submissions.resubmit.create', $resubmissionId)
+                : route('operational.submissions.stock-in.create');
+
+            return redirect($destination)
+                ->with('success', 'Supplier added successfully.')
+                ->with('new_supplier_id', $supplier->supplier_id);
+        }
 
         return redirect()
             ->route('inventory.stock-in')

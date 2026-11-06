@@ -73,6 +73,18 @@ class OperationalSubmissionFactory extends Factory
             ];
         }
 
+        if ($type === OperationalSubmission::TYPE_STOCK_IN) {
+            return [
+                'seedling' => [
+                    'supplier_id' => 1,
+                    'quantity' => 1,
+                    'origin' => 'Test Origin',
+                    'notes' => null,
+                    'date_received' => now()->toDateString(),
+                ],
+            ];
+        }
+
         return [
             'batch_id' => 1,
             'quantity' => 1,

@@ -23,6 +23,7 @@ class ApproveOperationalSubmission
     public function __construct(
         private readonly RecordMortality $mortality,
         private readonly RecordStockOut $stockOuts,
+        private readonly RecordStockIn $stockIns,
     ) {}
 
     public function execute(OperationalSubmission $submission, int $managerId): OperationalSubmission
@@ -44,11 +45,12 @@ class ApproveOperationalSubmission
 
             $payload = $locked->payload;
 
-            if ($locked->submission_type === OperationalSubmission::TYPE_MORTALITY) {
-                $this->approveMortality($locked, $payload, $managerId);
-            } else {
-                $this->approveStockOut($locked, $payload, $managerId);
-            }
+            match ($locked->submission_type) {
+                OperationalSubmission::TYPE_MORTALITY => $this->approveMortality($locked, $payload, $managerId),
+                OperationalSubmission::TYPE_STOCK_OUT => $this->approveStockOut($locked, $payload, $managerId),
+                OperationalSubmission::TYPE_STOCK_IN => $this->approveStockIn($locked, $payload, $managerId),
+                default => throw new DomainException('Unsupported submission type.'),
+            };
 
             $locked->approve($managerId);
 
@@ -85,6 +87,43 @@ class ApproveOperationalSubmission
             $batch->batch_id,
             ActivityLog::TYPE_OPERATIONAL_SUBMISSION_APPROVED,
             "Approved mortality submission #{$submission->submission_id} for {$batch->batch_code}; official record #{$record->mortality_id}.",
+            $managerId,
+        );
+    }
+
+    /**
+     * Approve a grouped Stock In request: one official stock_ins row per
+     * populated tab, all in the same transaction. The official rows and their
+     * activity rows belong to the submitter.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function approveStockIn(OperationalSubmission $submission, array $payload, int $managerId): void
+    {
+        try {
+            $records = $this->stockIns->execute($payload, (int) $submission->submitted_by_id);
+        } catch (ValidationException $exception) {
+            throw new ApprovalRevalidationException(
+                (string) collect($exception->errors())->flatten()->first()
+            );
+        }
+
+        $references = [];
+
+        foreach ($records as $record) {
+            OperationalSubmissionRecord::create([
+                'submission_id' => $submission->submission_id,
+                'record_type' => OperationalSubmissionRecord::RECORD_TYPE_STOCK_IN,
+                'record_id' => $record->stock_in_id,
+            ]);
+
+            $references[] = '#'.$record->stock_in_id;
+        }
+
+        ActivityLog::record(
+            null,
+            ActivityLog::TYPE_OPERATIONAL_SUBMISSION_APPROVED,
+            "Approved stock-in submission #{$submission->submission_id}; official record(s) ".implode(', ', $references).'.',
             $managerId,
         );
     }

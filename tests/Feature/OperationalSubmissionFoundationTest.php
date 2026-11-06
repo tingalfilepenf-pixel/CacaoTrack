@@ -108,10 +108,14 @@ class OperationalSubmissionFoundationTest extends TestCase
         ]);
     }
 
-    public function test_pilot_catalogs_are_limited_and_centralized(): void
+    public function test_pilot_catalogs_are_centralized(): void
     {
         $this->assertSame(
-            [OperationalSubmission::TYPE_MORTALITY, OperationalSubmission::TYPE_STOCK_OUT],
+            [
+                OperationalSubmission::TYPE_MORTALITY,
+                OperationalSubmission::TYPE_STOCK_OUT,
+                OperationalSubmission::TYPE_STOCK_IN,
+            ],
             OperationalSubmission::TYPES
         );
 
@@ -120,6 +124,7 @@ class OperationalSubmissionFoundationTest extends TestCase
                 OperationalSubmissionRecord::RECORD_TYPE_MORTALITY,
                 OperationalSubmissionRecord::RECORD_TYPE_STOCK_OUT,
                 OperationalSubmissionRecord::RECORD_TYPE_STOCK_OUT_DETAIL,
+                OperationalSubmissionRecord::RECORD_TYPE_STOCK_IN,
             ],
             OperationalSubmissionRecord::RECORD_TYPES
         );

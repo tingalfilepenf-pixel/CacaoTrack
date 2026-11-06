@@ -12,6 +12,11 @@
         <a href="{{ route('operational.submissions.stock-out.create') }}" class="btn btn-secondary">
             <i class="bi bi-box-arrow-right me-1"></i> Submit Stock Out
         </a>
+        @if ($stockInSubmissionEnabled)
+            <a href="{{ route('operational.submissions.stock-in.create') }}" class="btn btn-primary">
+                <i class="bi bi-box-arrow-in-right me-1"></i> Submit Stock In
+            </a>
+        @endif
     @endif
 </div>
 @endsection
@@ -23,9 +28,12 @@
         \App\Models\OperationalSubmission::STATUS_REJECTED => 'bg-danger',
         default => 'bg-warning text-dark',
     };
-    $typeLabel = fn (string $type) => $type === \App\Models\OperationalSubmission::TYPE_MORTALITY
-        ? 'Mortality'
-        : 'Stock Out';
+    $typeLabel = fn (string $type) => match ($type) {
+        \App\Models\OperationalSubmission::TYPE_MORTALITY => 'Mortality',
+        \App\Models\OperationalSubmission::TYPE_STOCK_OUT => 'Stock Out',
+        \App\Models\OperationalSubmission::TYPE_STOCK_IN => 'Stock In',
+        default => ucfirst(str_replace('_', ' ', $type)),
+    };
 @endphp
 
 @if (session('success'))
@@ -70,9 +78,11 @@
                                 @if ($submission->submission_type === \App\Models\OperationalSubmission::TYPE_MORTALITY)
                                     {{ $submission->subjectBatch?->batch_code ?? 'Batch #'.($submission->payload['batch_id'] ?? '—') }}
                                     <span class="text-muted small">({{ number_format((int) ($submission->payload['quantity'] ?? 0)) }})</span>
-                                @else
+                                @elseif ($submission->submission_type === \App\Models\OperationalSubmission::TYPE_STOCK_OUT)
                                     Client #{{ $submission->payload['client_id'] ?? '—' }}
                                     <span class="text-muted small">({{ count($submission->payload['details'] ?? []) }} line(s))</span>
+                                @else
+                                    {{ $submission->stockInSummary() }}
                                 @endif
                             </td>
                             <td class="text-muted small">{{ $submission->submitter?->name ?? 'Unknown user' }}</td>

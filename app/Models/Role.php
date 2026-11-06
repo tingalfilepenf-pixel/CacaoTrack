@@ -83,7 +83,7 @@ class Role
         'manage_inventory' => 'Keep the Scion Variety, Client and Supplier lists up to date.',
         'manage_stock' => 'Record seedlings and scions received and released.',
         'record_operations' => 'Record mortality, regraft sub-batches, batches and monthly inventory snapshots.',
-        'submit_operations' => 'Submit mortality and stock-out entries for Manager verification.',
+        'submit_operations' => 'Submit mortality, stock-out and stock-in entries for Manager verification.',
         'verify_operations' => 'Review, approve or reject operational submissions from other users.',
         'view_operational_records' => 'Read operational submissions and the official records they create.',
         'manage_checklist' => 'Create, edit, delete and verify Daily Checklist tasks.',

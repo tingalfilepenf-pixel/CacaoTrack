@@ -8,14 +8,18 @@ use App\Actions\SubmitOperationalSubmission;
 use App\Exceptions\ApprovalRevalidationException;
 use App\Http\Requests\RejectOperationalSubmissionRequest;
 use App\Http\Requests\StoreMortalitySubmissionRequest;
+use App\Http\Requests\StoreStockInSubmissionRequest;
 use App\Http\Requests\StoreStockOutSubmissionRequest;
 use App\Models\Batch;
 use App\Models\Client;
 use App\Models\MortalityRecord;
 use App\Models\OperationalSubmission;
+use App\Models\ScionVariety;
 use App\Models\StockOutDetail;
+use App\Models\Supplier;
 use App\Support\DuplicateSubmissionGuard;
 use App\Support\OperationalSubmissionVisibility;
+use App\Support\SubmissionWorkflowSwitch;
 use DomainException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -55,6 +59,7 @@ class OperationalSubmissionController extends Controller
             'canSubmit' => $user->hasPermission('submit_operations'),
             'canVerify' => $user->hasPermission('verify_operations'),
             'canViewAll' => OperationalSubmissionVisibility::canViewAll($user),
+            'stockInSubmissionEnabled' => SubmissionWorkflowSwitch::stockInEnabled(),
         ]);
     }
 
@@ -81,11 +86,27 @@ class OperationalSubmissionController extends Controller
 
         $submission->load(['submitter', 'decider', 'subjectBatch', 'resubmissionOf', 'records']);
 
+        $supplierIds = collect([
+            $submission->payload['seedling']['supplier_id'] ?? null,
+            $submission->payload['scion']['supplier_id'] ?? null,
+        ])->filter()->map(fn ($id) => (int) $id)->unique()->values();
+
+        $varietyIds = collect([
+            $submission->payload['scion']['scion_variety_id'] ?? null,
+        ])->filter()->map(fn ($id) => (int) $id)->unique()->values();
+
         return view('operational.submissions.show', [
             'submission' => $submission,
             'canVerify' => $user->hasPermission('verify_operations'),
             'canSubmit' => $user->hasPermission('submit_operations'),
             'canViewAll' => OperationalSubmissionVisibility::canViewAll($user),
+            'stockInSubmissionEnabled' => SubmissionWorkflowSwitch::stockInEnabled(),
+            'stockInSuppliers' => Supplier::query()
+                ->whereIn('supplier_id', $supplierIds)
+                ->pluck('supplier_name', 'supplier_id'),
+            'stockInVarieties' => ScionVariety::query()
+                ->whereIn('scion_variety_id', $varietyIds)
+                ->pluck('scion_variety_name', 'scion_variety_id'),
         ]);
     }
 
@@ -167,15 +188,19 @@ class OperationalSubmissionController extends Controller
             ]);
         }
 
-        return view('operational.submissions.stock-out-create', [
-            'clients' => Client::active()->orderBy('client_name')->get(),
-            'batches' => Batch::submissionEligible()
-                ->with('scionVariety')
-                ->orderBy('batch_code')
-                ->get(),
-            'units' => StockOutDetail::UNITS,
-            'resubmissionOf' => $submission,
-        ]);
+        if ($submission->submission_type === OperationalSubmission::TYPE_STOCK_OUT) {
+            return view('operational.submissions.stock-out-create', [
+                'clients' => Client::active()->orderBy('client_name')->get(),
+                'batches' => Batch::submissionEligible()
+                    ->with('scionVariety')
+                    ->orderBy('batch_code')
+                    ->get(),
+                'units' => StockOutDetail::UNITS,
+                'resubmissionOf' => $submission,
+            ]);
+        }
+
+        abort(404);
     }
 
     public function storeMortalityResubmission(
@@ -247,6 +272,33 @@ class OperationalSubmissionController extends Controller
             ->with('success', 'Mortality submitted for Manager verification.');
     }
 
+    public function createStockIn(): View
+    {
+        return view('operational.submissions.stock-in-create', $this->stockInFormData());
+    }
+
+    public function storeStockIn(StoreStockInSubmissionRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $fingerprint = DuplicateSubmissionGuard::assertFresh(
+            'stock_in_submission',
+            $request->duplicateFingerprintPayload(),
+            'submission_stockin',
+        );
+
+        try {
+            $this->submissions->stockIn($validated, Auth::user());
+        } catch (\Throwable $exception) {
+            DuplicateSubmissionGuard::release('stock_in_submission', $fingerprint);
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('operational.submissions.index')
+            ->with('success', 'Stock-in submitted for Manager verification.');
+    }
+
     public function createStockOut(): View
     {
         return view('operational.submissions.stock-out-create', [
@@ -275,5 +327,17 @@ class OperationalSubmissionController extends Controller
         return redirect()
             ->route('operational.submissions.index')
             ->with('success', 'Stock-out submitted for Manager verification.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stockInFormData(?OperationalSubmission $resubmissionOf = null): array
+    {
+        return [
+            'suppliers' => Supplier::active()->orderBy('supplier_name')->get(),
+            'scionVarieties' => ScionVariety::query()->active()->orderBy('scion_variety_name')->get(),
+            'resubmissionOf' => $resubmissionOf,
+        ];
     }
 }

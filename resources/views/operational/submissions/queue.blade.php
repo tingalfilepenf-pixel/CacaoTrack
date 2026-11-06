@@ -23,12 +23,14 @@
                 <tbody>
                     @forelse ($submissions as $submission)
                         <tr>
-                            <td class="ps-4 fw-medium">{{ ucfirst(str_replace('_', ' ', $submission->submission_type)) }}</td>
+                            <td class="ps-4 fw-medium">{{ $submission->typeLabel() }}</td>
                             <td>
                                 @if ($submission->submission_type === \App\Models\OperationalSubmission::TYPE_MORTALITY)
                                     {{ $submission->subjectBatch?->batch_code ?? 'Batch #'.($submission->payload['batch_id'] ?? '—') }}
-                                @else
+                                @elseif ($submission->submission_type === \App\Models\OperationalSubmission::TYPE_STOCK_OUT)
                                     Client #{{ $submission->payload['client_id'] ?? '—' }}
+                                @else
+                                    {{ $submission->stockInSummary() }}
                                 @endif
                             </td>
                             <td class="text-muted small">{{ $submission->submitter?->name ?? 'Unknown user' }}</td>
