@@ -90,14 +90,15 @@ class ScionVariety extends Model
     }
 
     /**
-     * Eager-load the two figures behind {@see availableScionQuantity()} without
-     * one query per variety in a regraft dropdown.
+     * Eager-load the figures behind {@see availableScionQuantity()} without one
+     * query per variety in a regraft/batch-creation dropdown.
      */
     public function scopeWithScionAvailability(Builder $query): Builder
     {
         return $query
             ->withSum('stockIns as received_scion_quantity', 'quantity')
-            ->withSum('regraftRecords as used_scion_quantity', 'quantity');
+            ->withSum('regraftRecords as used_scion_quantity', 'quantity')
+            ->withSum('batches as batch_scion_used_quantity', 'scion_used');
     }
 
     /**
@@ -109,18 +110,38 @@ class ScionVariety extends Model
     }
 
     /**
-     * Quantity already consumed by regrafts into sub-batches of this variety.
+     * Quantity consumed by regrafts into sub-batches of this variety.
      */
-    public function usedScionQuantity(): int
+    public function regraftScionUsedQuantity(): int
     {
         return (int) ($this->used_scion_quantity ?? $this->regraftRecords()->sum('quantity'));
     }
 
     /**
+     * Quantity consumed by approved own-nursery batch creation (Phase 4b).
+     * Historical/direct batches and supplier deliveries have null used
+     * quantities and therefore contribute nothing.
+     */
+    public function batchScionUsedQuantity(): int
+    {
+        return (int) ($this->batch_scion_used_quantity ?? $this->batches()->sum('scion_used'));
+    }
+
+    /**
+     * Total scion consumed by regrafts and approved own-nursery batches. Both
+     * are real, separate consumption events; existing data (null batch use)
+     * keeps its previous value.
+     */
+    public function usedScionQuantity(): int
+    {
+        return $this->regraftScionUsedQuantity() + $this->batchScionUsedQuantity();
+    }
+
+    /**
      * Signed remaining scion stock: received minus used. It is allowed to be
      * negative so correction validation can detect and reject a state where
-     * more scions were consumed than received. Normal new-regraft validation
-     * uses the clamped {@see availableScionQuantity()}.
+     * more scions were consumed than received. Normal new-regraft/batch
+     * validation uses the clamped {@see availableScionQuantity()}.
      */
     public function scionBalance(): int
     {
